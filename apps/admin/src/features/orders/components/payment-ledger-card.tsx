@@ -13,6 +13,8 @@ export interface LedgerPayment {
   createdAt?: string | null
   recordedBy?: string | null
   submittedBy?: string | null
+  /** Resolved by the backend from the `staff:<userId>` recordedBy tag. */
+  recorder?: { id: string; firstName: string; lastName: string } | null
   notes?: string | null
 }
 
@@ -127,8 +129,16 @@ export function PaymentLedgerCard({
                         {statusLabel(p.status)}
                       </Badge>
                     </td>
-                    <td className="px-3 py-2 text-muted-foreground font-mono text-[11px]">
-                      {ledgerActor(p)}
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {p.recorder ? (
+                        <span className="text-foreground">
+                          {`${p.recorder.firstName} ${p.recorder.lastName}`.trim()}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground font-mono text-[11px]">
+                          {ledgerActor(p)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-muted-foreground max-w-40 truncate" title={p.notes || ''}>
                       {p.notes || '—'}

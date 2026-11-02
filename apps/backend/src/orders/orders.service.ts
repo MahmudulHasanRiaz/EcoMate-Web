@@ -1303,6 +1303,42 @@ export class OrdersService {
         // filters — derived at read time (writers never persist a source field).
         transformed.timeline = withTimelineSources(transformed.timeline);
       }
+      // Payment recorder names for the ledger card: resolve `staff:<userId>`
+      // recordedBy tags to the recorder's name, mirroring PaymentsService's
+      // list resolution — otherwise the order page can only print the raw
+      // truncated tag ("staff 8dc54b82") instead of who recorded the money.
+      if (Array.isArray((transformed as any).payments)) {
+        const payments = (transformed as any).payments as any[];
+        const staffIds = [
+          ...new Set(
+            payments
+              .map((p) => p?.recordedBy)
+              .filter(
+                (r): r is string =>
+                  typeof r === 'string' && r.startsWith('staff:'),
+              )
+              .map((r) => r.slice('staff:'.length)),
+          ),
+        ];
+        const userDelegate = (this.prisma as any)?.userProfile;
+        if (staffIds.length > 0 && typeof userDelegate?.findMany === 'function') {
+          const recorders = await userDelegate
+            .findMany({
+              where: { id: { in: staffIds } },
+              select: { id: true, firstName: true, lastName: true },
+            })
+            .catch(() => [] as any[]);
+          const byId = new Map(recorders.map((u: any) => [u.id, u]));
+          (transformed as any).payments = payments.map((p) => ({
+            ...p,
+            recorder:
+              typeof p?.recordedBy === 'string' &&
+              p.recordedBy.startsWith('staff:')
+                ? (byId.get(p.recordedBy.slice('staff:'.length)) ?? null)
+                : null,
+          }));
+        }
+      }
       // Live phone-block state for the order's numbers, so the detail page
       // can render Block vs Unblock truthfully (owner report 2026-10-31).
       (transformed as any).phoneBlocks =
@@ -1311,15 +1347,31 @@ export class OrdersService {
     return transformed;
   }
 
-  /** Resolve legacy `staff:<userId>` timeline actors to staff emails. */
+  /**
+   * Resolve legacy timeline actors to staff emails at read time. Writers
+   * historically stored the actor in three shapes: the email itself
+   * (current convention), a `staff:<userId>` tag, or a bare userId UUID
+   * (edit-lock + several fallback paths). The admin badge can only name
+   * the email shape, so tags and bare UUIDs are resolved here; the same
+   * resolution is applied to a payment-edit entry's `by` field, including
+   * the raw token embedded in its note text.
+   */
   private async resolveLegacyTimelineActors(
     timeline: any[],
   ): Promise<any[]> {
+    const UUID_RE =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const idOf = (v: unknown): string | null => {
+      if (typeof v !== 'string') return null;
+      if (v.startsWith('staff:')) return v.slice('staff:'.length);
+      if (UUID_RE.test(v)) return v;
+      return null;
+    };
     const ids = new Set<string>();
     for (const e of timeline) {
-      const v = (e as any)?.performedBy ?? (e as any)?.performer;
-      if (typeof v === 'string' && v.startsWith('staff:')) {
-        ids.add(v.slice('staff:'.length));
+      for (const key of ['performedBy', 'performer', 'by']) {
+        const id = idOf((e as any)?.[key]);
+        if (id) ids.add(id);
       }
     }
     if (ids.size === 0) return timeline;
@@ -1336,11 +1388,20 @@ export class OrdersService {
     return timeline.map((e) => {
       if (!e || typeof e !== 'object') return e;
       const out = { ...(e as any) };
-      for (const key of ['performedBy', 'performer']) {
+      for (const key of ['performedBy', 'performer', 'by']) {
         const v = out[key];
-        if (typeof v === 'string' && v.startsWith('staff:')) {
-          const email = emailById.get(v.slice('staff:'.length));
-          if (email) out[key] = email;
+        const id = idOf(v);
+        if (id) {
+          const email = emailById.get(id);
+          if (email) {
+            out[key] = email;
+            // Payment-edit notes embed the raw actor token ("... by
+            // <uuid>.") — swap the token for the resolved email so the
+            // visible text names the person too.
+            if (typeof out.note === 'string' && out.note.includes(v)) {
+              out.note = out.note.split(v).join(email);
+            }
+          }
         }
       }
       return out;
@@ -3119,6 +3180,13 @@ export class OrdersService {
     const timeline = [...this.parseTimeline(order.timeline)];
     const now = new Date().toISOString();
     const data: any = {};
+    // Every edit entry written below must name its actor — entries without
+    // performedBy render in the admin timeline with NO user attached
+    // (owner report 2026-11-02: product/shipping/discount edits showed no
+    // user name). The controller always supplies the staff email.
+    const actorStamp = opts?.performedBy
+      ? { performedBy: opts.performedBy }
+      : {};
 
     if (
       dto.shippingCharge !== undefined &&
@@ -3129,6 +3197,7 @@ export class OrdersService {
         type: 'shipping',
         visibility: 'public',
         timestamp: now,
+        ...actorStamp,
         oldValue: Number(order.shippingCharge),
         newValue: Number(dto.shippingCharge),
         note: `Shipping: ৳${Number(order.shippingCharge)} → ৳${Number(dto.shippingCharge)}`,
@@ -3150,6 +3219,7 @@ export class OrdersService {
         type: 'discount',
         visibility: 'public',
         timestamp: now,
+        ...actorStamp,
         oldValue: Number(order.discount),
         newValue: logNewVal,
         discountType: logType,
@@ -3204,6 +3274,7 @@ export class OrdersService {
         type: 'items',
         visibility: 'public',
         timestamp: now,
+        ...actorStamp,
         note: changes.length > 0 ? changes.join('; ') : 'Order items updated',
       });
     }
@@ -3343,6 +3414,7 @@ export class OrdersService {
         // customer-facing charge entries are public.
         visibility: 'private',
         timestamp: now,
+        ...actorStamp,
         oldValue: order.shippingCost === null ? null : Number(order.shippingCost),
         newValue: costFields.shippingCost,
         shippingCostSource: costFields.shippingCostSource,
@@ -3924,6 +3996,7 @@ export class OrdersService {
             type: 'payment',
             visibility: 'public',
             timestamp: now,
+            ...actorStamp,
             note: `Payment updated to ${dto.paymentOptionType.replace(/_/g, ' ').toLowerCase()}${dto.gatewayCode ? ` via ${dto.gatewayCode}` : ''}${dto.paymentOptionType === 'PARTIAL_PAYMENT' && dto.partialAmount ? ` (৳${dto.partialAmount})` : ''}.`,
           },
         ];
@@ -4031,15 +4104,20 @@ export class OrdersService {
                   },
                 });
                 // S2-ON direct edits stay auditable: append old → new + by.
+                // The actor is the staff EMAIL (the timeline convention);
+                // the note no longer embeds the raw actor value — the
+                // entry's performedBy/by fields carry it and the admin
+                // renders the name badge from them.
                 const editedBy =
-                  opts?.userId ?? opts?.performedBy ?? 'staff';
+                  opts?.performedBy ?? opts?.userId ?? 'staff';
                 data.timeline = [
                   ...((data.timeline as any[]) ?? timeline),
                   {
                     type: 'payment',
                     visibility: 'internal',
                     timestamp: now,
-                    note: `Payment row edited ৳${oldRow.amount} → ৳${paymentAmount} (${oldRow.gatewayCode} → ${gatewayCode}) by ${editedBy}.`,
+                    performedBy: editedBy,
+                    note: `Payment row edited ৳${oldRow.amount} → ৳${paymentAmount} (${oldRow.gatewayCode} → ${gatewayCode}).`,
                     old: oldRow,
                     new: {
                       gatewayCode,
@@ -5131,7 +5209,12 @@ export class OrdersService {
     return updated;
   }
 
-  async addItem(orderId: string, dto: UpdateOrderItemDto, userId?: string) {
+  async addItem(
+    orderId: string,
+    dto: UpdateOrderItemDto,
+    userId?: string,
+    performedBy?: string,
+  ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { items: true, status: { select: { name: true } } },
@@ -5232,6 +5315,7 @@ export class OrdersService {
           type: 'item_added',
           visibility: 'public',
           timestamp: new Date().toISOString(),
+          ...(performedBy ? { performedBy } : {}),
           note: `Item added: ${dto.quantity}x @ ৳${dto.price}`,
         },
       ];
@@ -5263,7 +5347,12 @@ export class OrdersService {
     return added;
   }
 
-  async removeItem(orderId: string, itemId: string, userId?: string) {
+  async removeItem(
+    orderId: string,
+    itemId: string,
+    userId?: string,
+    performedBy?: string,
+  ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { items: true, status: { select: { name: true } } },
@@ -5319,6 +5408,7 @@ export class OrdersService {
           type: 'item_removed',
           visibility: 'public',
           timestamp: new Date().toISOString(),
+          ...(performedBy ? { performedBy } : {}),
           note: `Item removed: ${removedItem.productId?.slice(0, 8)} (${removedItem.quantity}x @ ৳${Number(removedItem.price)})`,
         },
       ];
@@ -6111,7 +6201,7 @@ export class OrdersService {
     return { success: true, message: 'Order moved to trash' };
   }
 
-  async restore(orderId: string) {
+  async restore(orderId: string, performedBy?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { status: true },
@@ -6124,6 +6214,7 @@ export class OrdersService {
       {
         type: 'restore',
         timestamp: new Date().toISOString(),
+        ...(performedBy ? { performedBy } : {}),
         note: 'Order restored from trash',
       },
     ];

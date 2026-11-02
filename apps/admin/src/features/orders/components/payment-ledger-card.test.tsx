@@ -7,7 +7,7 @@ const rows = [
   {
     id: 'p1', amount: 1500, status: 'PAID', gatewayCode: 'bkash', account: '017XX',
     transactionId: 'TX1', recordedAt: '2026-02-01T10:00:00Z', createdAt: '2026-02-01T10:00:00Z',
-    recordedBy: 'staff:u1', verifiedBy: 'u2', verifiedAt: '2026-02-01T11:00:00Z', notes: 'advance',
+    recordedBy: 'staff:u1', recorder: { id: 'u1', firstName: 'Ayesha', lastName: 'Rahman' }, verifiedBy: 'u2', verifiedAt: '2026-02-01T11:00:00Z', notes: 'advance',
   },
   {
     id: 'p2', amount: -400, status: 'PAID', gatewayCode: 'bkash', account: '017XX',
@@ -33,6 +33,9 @@ describe('PaymentLedgerCard', () => {
     await expect.element(ui.getByText('TX1')).toBeInTheDocument()
     await expect.element(ui.getByText('verified').first()).toBeInTheDocument()
     await expect.element(ui.getByText('pending')).toBeInTheDocument()
+    // Resolved recorder renders the person's name; an unresolved tag keeps
+    // the short fallback.
+    await expect.element(ui.getByText('Ayesha Rahman')).toBeInTheDocument()
     await expect.element(ui.getByText('staff u1').first()).toBeInTheDocument()
     await expect.element(ui.getByText('partial refund')).toBeInTheDocument()
   })

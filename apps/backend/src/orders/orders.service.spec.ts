@@ -795,6 +795,39 @@ describe('OrdersService', () => {
       ]);
     });
 
+    it('resolves bare-UUID timeline actors and payment-edit `by` tokens to emails (2026-11-02)', async () => {
+      const UUID = '8dc54b82-1111-4222-8333-444455556666';
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        timeline: [
+          {
+            type: 'note',
+            performedBy: UUID,
+            timestamp: new Date().toISOString(),
+          },
+          {
+            type: 'payment',
+            by: UUID,
+            note: `Payment row edited ৳100 → ৳150 (cash → bkash) by ${UUID}.`,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      });
+      (prisma.userProfile as any).findMany = jest
+        .fn()
+        .mockResolvedValue([{ id: UUID, email: 'editor@shop.com' }]);
+
+      const result = await service.findOne('order-id-1', {
+        token: 'mock-view-token',
+        role: 'admin',
+      });
+
+      expect(result.timeline[0].performedBy).toBe('editor@shop.com');
+      expect((result.timeline[1] as any).by).toBe('editor@shop.com');
+      expect((result.timeline[1] as any).note).toContain('by editor@shop.com.');
+      expect((result.timeline[1] as any).note).not.toContain(UUID);
+    });
+
     it('loads product.category + combo relations so the browser Purchase can map content metadata (F1)', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
 
@@ -4134,6 +4167,7 @@ describe('OrdersService', () => {
       expect(updateCall.data.assignedAt).toBeUndefined();
     });
 
+
     it('preserves an existing assignment when another staff member mutates (sticky first assignment)', async () => {
       const assignedOrder = { ...mockOrder, assignedToId: 'user-a' };
       (prisma.order.findUnique as jest.Mock).mockResolvedValue(assignedOrder);
@@ -4282,6 +4316,32 @@ describe('OrdersService', () => {
       const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
       expect(updateCall.data.assignedToId).toBeUndefined();
       expect(updateCall.data.assignedAt).toBeUndefined();
+    });
+
+    it('stamps the editor email as performedBy on shipping/discount timeline entries (2026-11-02)', async () => {
+      const existingOrder = {
+        ...mockOrder,
+        shippingCharge: 100,
+        discount: 50,
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+      (prisma.order.update as jest.Mock).mockResolvedValue({
+        ...existingOrder,
+        shippingCharge: 150,
+        discount: 100,
+      });
+
+      await service.updateOrder('order-id-1', updateOrderDto, {
+        userId: 'user-b',
+        performedBy: 'editor@shop.com',
+      });
+
+      const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      const entries = (updateCall.data.timeline as any[]).filter((t) =>
+        ['shipping', 'discount'].includes(t.type),
+      );
+      expect(entries.length).toBe(2);
+      for (const e of entries) expect(e.performedBy).toBe('editor@shop.com');
     });
 
     it('blocks a save when another staff member holds a live edit lock', async () => {
@@ -5893,6 +5953,30 @@ await service.bulkAssign(['order-1', 'trashed-1'], 'staff-1');
 
       expect(prisma.orderItem.create).toHaveBeenCalled();
       expect(prisma.order.update).toHaveBeenCalled();
+    });
+
+    it('stamps performedBy on the item_added timeline entry (2026-11-02)', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderItem.create as jest.Mock).mockResolvedValue({
+        id: 'new-item',
+        productId: 'prod-2',
+        quantity: 1,
+        price: 500,
+      });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.addItem(
+        'order-id-1',
+        { productId: 'prod-2', quantity: 1, price: 500 },
+        'user-9',
+        'editor@shop.com',
+      );
+
+      const updateCall = (prisma.order.update as jest.Mock).mock.calls[0][0];
+      const entry = (updateCall.data.timeline as any[]).find(
+        (t) => t.type === 'item_added',
+      );
+      expect(entry?.performedBy).toBe('editor@shop.com');
     });
 
     it('should throw NotFoundException if order not found', async () => {

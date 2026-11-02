@@ -298,9 +298,9 @@ export class OrdersController {
   addItem(
     @Param('id') id: string,
     @Body() dto: UpdateOrderItemDto,
-    @CurrentUser() user: { userId: string },
+    @CurrentUser() user: { userId: string; email: string },
   ) {
-    return this.svc.addItem(id, dto, user.userId);
+    return this.svc.addItem(id, dto, user.userId, user.email);
   }
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
@@ -308,9 +308,9 @@ export class OrdersController {
   removeItem(
     @Param('id') id: string,
     @Param('itemId') itemId: string,
-    @CurrentUser() user: { userId: string },
+    @CurrentUser() user: { userId: string; email: string },
   ) {
-    return this.svc.removeItem(id, itemId, user.userId);
+    return this.svc.removeItem(id, itemId, user.userId, user.email);
   }
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
@@ -427,8 +427,11 @@ export class OrdersController {
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_orders')
   @Post(':id/restore')
-  restoreOrder(@Param('id') id: string) {
-    return this.svc.restore(id);
+  restoreOrder(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string; email: string },
+  ) {
+    return this.svc.restore(id, user.email || user.userId);
   }
 
   @Roles('superadmin', 'admin', 'employee')

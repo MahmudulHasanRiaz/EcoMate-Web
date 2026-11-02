@@ -109,6 +109,7 @@ export interface OrderResponse {
     accountRef?: { id: string; code: string; name: string } | null;
     account?: string | null;
     recordedBy?: string | null; submittedBy?: string | null; recordedAt?: string | null;
+    recorder?: { id: string; firstName: string; lastName: string } | null;
     verifiedBy?: string | null; verifiedAt?: string | null; notes?: string | null;
     createdAt?: string;
   }[];
