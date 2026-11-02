@@ -160,7 +160,7 @@ export function CmsPagesSettings() {
     <div className='space-y-6 w-full pb-8'>
       <div className='flex items-center gap-1.5'>
         <h2 className='text-2xl font-bold tracking-tight'>CMS Pages</h2>
-        <PageInfo text="Manage content pages (rich text) and system pages (fixed-layout pages such as Careers, About, and Contact — each editable through its own settings fields). Toggle any system page on or off." />
+        <PageInfo text="Manage content pages (rich text) and system pages (fixed-layout, each editable through its own settings fields). Toggle any system page on or off." />
       </div>
       <Separator className='my-6' />
 
