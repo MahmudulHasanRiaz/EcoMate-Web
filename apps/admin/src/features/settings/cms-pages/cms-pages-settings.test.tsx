@@ -77,7 +77,7 @@ describe('CmsPagesSettings', () => {
     await expect.element(getByText('System Pages', { exact: true })).toBeInTheDocument()
     await expect.element(getByText('Content Pages', { exact: true })).toBeInTheDocument()
     // system row shows the schema-backed page title
-    await expect.element(getByText('Careers')).toBeInTheDocument()
+    await expect.element(getByText('Careers', { exact: true })).toBeInTheDocument()
     // content row shows its own title
     await expect.element(getByText('About Us')).toBeInTheDocument()
   })
