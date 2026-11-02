@@ -5,6 +5,7 @@ import { Inventory } from '../index'
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: React.ReactNode }) => <a href="#">{children}</a>,
+  useSearch: () => ({}),
 }))
 vi.mock('@/components/layout/header', () => ({
   Header: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,

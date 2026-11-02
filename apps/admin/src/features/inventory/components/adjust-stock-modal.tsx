@@ -91,6 +91,14 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
     enabled: !!warehouseId,
   })
 
+  // A single configured warehouse is the only possible choice — select it
+  // automatically (owner select-UX rule: one option = auto-selected).
+  useEffect(() => {
+    if (!warehouseId && warehouses?.length === 1) {
+      setWarehouseId(warehouses[0].id)
+    }
+  }, [warehouses, warehouseId])
+
   // Reset dependent selections when parent changes
   useEffect(() => {
     if (!warehouseId) {
