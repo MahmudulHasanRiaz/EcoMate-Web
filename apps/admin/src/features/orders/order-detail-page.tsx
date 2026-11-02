@@ -1706,13 +1706,13 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                                   <EyeOff className='h-2.5 w-2.5 mr-1' />Private
                                 </Badge>
                               )}
-                              {performer && performer !== 'System' && performer !== 'Customer' && (
+                              {performer && performer.toLowerCase() !== 'system' && performer.toLowerCase() !== 'customer' && (
                                 <UserBadge email={performerEmail || performer} showEmail={false} size='sm' />
                               )}
-                              {performer === 'System' && (
+                              {performer.toLowerCase() === 'system' && (
                                 <Badge variant='secondary' className='text-[10px] h-4 font-normal'>Auto</Badge>
                               )}
-                              {performer === 'Customer' && (
+                              {performer.toLowerCase() === 'customer' && (
                                 <Badge variant='secondary' className='text-[10px] h-4 font-normal'>Customer</Badge>
                               )}
                               <span className='text-xs text-muted-foreground inline-flex items-center gap-1 ml-auto'>
