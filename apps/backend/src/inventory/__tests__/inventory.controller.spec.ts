@@ -27,7 +27,7 @@ describe('InventoryController', () => {
 
     it('caps perPage at 100 on logs and stock-overview', async () => {
       await controller.logs(undefined, '5000');
-      expect(service.logs).toHaveBeenCalledWith(1, 100, undefined, undefined, undefined);
+      expect(service.logs).toHaveBeenCalledWith(1, 100, undefined, undefined, undefined, undefined);
 
       await controller.stockOverview(undefined, '5000', undefined, undefined, undefined, 'x', 'y');
       expect(service.stockOverview).toHaveBeenCalledWith(

@@ -24,6 +24,7 @@ import {
   type SectionId,
 } from '@/features/settings/storefront/lib/categories'
 import { Button } from '@/components/ui/button'
+import { PageInfo } from '@/components/page-info'
 
 export function StorefrontSettings() {
   const hook = useStorefrontSettings()
@@ -87,11 +88,8 @@ export function StorefrontSettings() {
 
   return (
     <div className='space-y-6 w-full pb-8'>
-      <div className='space-y-0.5'>
+      <div className='flex items-center gap-1.5'>
         <h2 className='text-2xl font-bold tracking-tight'>Storefront Settings</h2>
-        <p className='text-muted-foreground'>
-          Configure how your storefront looks and behaves. Changes are saved per section.
-        </p>
       </div>
       <Separator className='my-6' />
 

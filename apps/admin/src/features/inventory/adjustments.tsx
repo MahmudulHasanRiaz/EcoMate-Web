@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Search, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { UserBadge } from '@/components/user-badge'
+import { PageInfo } from '@/components/page-info'
 
 interface AdjustmentLog {
   id: string
@@ -45,11 +46,26 @@ interface LogsResponse {
 
 export function Adjustments() {
   const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [warehouseId, setWarehouseId] = useState('all_wh')
+
+  const { data: warehouses } = useQuery<any[]>({
+    queryKey: ['warehouses'],
+    queryFn: () => apiClient.get('/warehouses').then(r => r.data?.data || r.data || []),
+  })
 
   const { data: logsData, isLoading, isError } = useQuery<LogsResponse>({
-    queryKey: ['inventory-adjustment-logs', page],
+    queryKey: ['inventory-adjustment-logs', page, search, warehouseId],
     queryFn: () =>
-      apiClient.get('/inventory/logs', { params: { type: 'adjustment', page, perPage: 15 } }).then(r => r.data),
+      apiClient.get('/inventory/logs', {
+        params: {
+          type: 'adjustment',
+          page,
+          perPage: 15,
+          search: search || undefined,
+          warehouseId: warehouseId !== 'all_wh' ? warehouseId : undefined,
+        },
+      }).then(r => r.data),
   })
 
   const logs = logsData?.data ?? []
@@ -66,22 +82,31 @@ export function Adjustments() {
       <Main className='flex flex-col gap-6'>
         <div className='flex items-center justify-between'>
           <div>
-            <h1 className='text-2xl font-bold tracking-tight'>Adjustment History</h1>
-            <p className='text-muted-foreground'>Audit trail of all physical inventory adjustments.</p>
+            <div className='flex items-center gap-1.5'>
+              <h1 className='text-2xl font-bold tracking-tight'>Adjustment History</h1>
+            </div>
           </div>
         </div>
 
         <div className="flex items-center gap-4 bg-muted/30 p-2 rounded-lg border">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search adjustment ID..." className="pl-9 bg-background" />
+            <Input
+              placeholder="Search product, adjustment ID or reason..."
+              className="pl-9 bg-background"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            />
           </div>
-          <Select defaultValue="all_wh">
+          <Select value={warehouseId} onValueChange={(v) => { setWarehouseId(v); setPage(1) }}>
             <SelectTrigger className="w-[180px] bg-background">
               <SelectValue placeholder="Warehouse" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all_wh">All Warehouses</SelectItem>
+              {(warehouses || []).map((w: any) => (
+                <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -136,7 +161,7 @@ export function Adjustments() {
                     </TableCell>
                     <TableCell>
                       <span className={log.direction === 'IN' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                        {log.direction === 'IN' ? '+' : ''}{log.quantity}
+                        {log.direction === 'IN' ? '+' : '-'}{log.quantity}
                       </span>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{log.stockBefore}</TableCell>

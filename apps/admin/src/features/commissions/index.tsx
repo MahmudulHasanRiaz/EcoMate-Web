@@ -14,6 +14,7 @@ import { EmployeeRulesCard, groupRulesByEmployee } from './components/employee-r
 import { CommissionReportTable } from './components/commission-report'
 import { EarningsTable } from './components/earnings-table'
 import { dhakaTodayString, toDhakaDateString } from '@/lib/dhaka-time'
+import { PageInfo } from '@/components/page-info'
 
 const RANGES = [
   { value: 'today', label: 'Today' },
@@ -65,12 +66,9 @@ export function CommissionsPage() {
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-start justify-between gap-3'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Commission</h2>
-            <p className='mt-1 text-sm text-muted-foreground'>
-              Pay employees per operational action. For each action, only the first person to move
-              an order into it earns.
-            </p>
+            <PageInfo text="Pay employees per operational action. For each action, only the first person to move an order into it earns." />
           </div>
           <RuleDialogV2 />
         </div>

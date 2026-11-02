@@ -207,7 +207,10 @@ export class DispatchService {
     }
   }
 
-  async findAll(query: DispatchQueryDto) {
+  /** Shared filter builder for the list AND the overview metrics, so the
+   * overview always describes exactly the set the list is showing
+   * (owner requirement, 2026-11-02). */
+  private buildWhere(query: DispatchQueryDto): Prisma.DispatchWhereInput {
     const where: Prisma.DispatchWhereInput = {};
 
     if (query.orderId) where.orderId = query.orderId;
@@ -241,6 +244,11 @@ export class DispatchService {
       if (query.startDate) where.createdAt.gte = new Date(query.startDate);
       if (query.endDate) where.createdAt.lte = new Date(query.endDate);
     }
+    return where;
+  }
+
+  async findAll(query: DispatchQueryDto) {
+    const where = this.buildWhere(query);
 
     const page = (query as any).page ? Number((query as any).page) : 1;
     const perPage = (query as any).perPage
@@ -1788,17 +1796,23 @@ export class DispatchService {
     return deleted;
   }
 
-  async getMetrics() {
+  async getMetrics(query: DispatchQueryDto = {}) {
+    // Filter-aware (owner requirement, 2026-11-02): the overview follows
+    // the SAME filters as the list — selecting a courier/status/search
+    // re-scopes every figure, never a global all-time summary.
+    const where = this.buildWhere(query);
     const [byCourier, byStatus, total] = await Promise.all([
       this.prisma.dispatch.groupBy({
         by: ['courier'],
+        where,
         _count: true,
       }),
       this.prisma.dispatch.groupBy({
         by: ['status'],
+        where,
         _count: true,
       }),
-      this.prisma.dispatch.count(),
+      this.prisma.dispatch.count({ where }),
     ]);
 
     return {

@@ -198,7 +198,7 @@ describe('InventoryService — grouped transfer history (listTransfers)', () => 
       },
       {
         NOT: { idempotencyKey: { startsWith: 'APPROVE_' } },
-        status: { in: ['IN_PROGRESS', 'COMPLETED'] },
+        status: { in: ['IN_PROGRESS', 'COMPLETED', 'PARTIAL'] },
       },
     ]);
   });

@@ -191,8 +191,20 @@ export class InventoryService {
     return { products, count: products.length };
   }
 
-  async logs(page = 1, perPage = 20, type?: string, warehouseId?: string, productId?: string) {
+  async logs(page = 1, perPage = 20, type?: string, warehouseId?: string, productId?: string, search?: string) {
     const where: any = {};
+    if (search?.trim()) {
+      // Free-text over the fields staff actually search by on the
+      // Adjustments / Movement History pages: ledger id, product name/SKU,
+      // and the recorded reason.
+      const term = search.trim();
+      where.OR = [
+        { id: { contains: term, mode: 'insensitive' } },
+        { reason: { contains: term, mode: 'insensitive' } },
+        { product: { name: { contains: term, mode: 'insensitive' } } },
+        { product: { sku: { contains: term, mode: 'insensitive' } } },
+      ];
+    }
     if (type) {
       if (type === 'adjustment') {
         where.type = { in: ['adjustment', 'ADJUSTMENT', 'physical_adjustment', 'PHYSICAL_ADJUSTMENT'] };
@@ -267,6 +279,9 @@ export class InventoryService {
         type: l.type.toLowerCase(),
         reason: l.reason,
         note: l.reason,
+        // The model carries unitCost — the Movement History "Unit Cost"
+        // column rendered "—" for every row because the mapper dropped it.
+        unitCost: l.unitCost != null ? Number(l.unitCost) : null,
         performedBy: l.performedBy || 'System',
         performedAt: l.createdAt,
         productName: l.product?.name || '—',
@@ -304,7 +319,10 @@ export class InventoryService {
     status?: string,
   ) {
     const REQUEST_REP = ['FULFILLED', 'APPROVAL_FAILED'];
-    const EXECUTED = ['IN_PROGRESS', 'COMPLETED'];
+    // PARTIAL included (2026-11-02 audit): manual transfers whose legs
+    // partially failed carry a PARTIAL header status — excluding it made
+    // those transfers invisible in History altogether.
+    const EXECUTED = ['IN_PROGRESS', 'COMPLETED', 'PARTIAL'];
 
     const and: any[] = [
       {
@@ -332,6 +350,15 @@ export class InventoryService {
       and.push({
         status: 'IN_PROGRESS',
         NOT: { idempotencyKey: { startsWith: 'APPROVE_' } },
+      });
+    } else if (status === 'partial') {
+      // Derived PARTIAL rows come from POS requests whose approval failed
+      // partway (APPROVAL_FAILED) and from manual PARTIAL headers.
+      and.push({
+        OR: [
+          { idempotencyKey: { startsWith: 'POS_TRF_' }, status: 'APPROVAL_FAILED' },
+          { status: 'PARTIAL', NOT: { idempotencyKey: { startsWith: 'APPROVE_' } } },
+        ],
       });
     }
 
@@ -1121,11 +1148,16 @@ export class InventoryService {
     type?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    productId?: string;
   }) {
     const page = params.page || 1;
     const perPage = params.perPage || 20;
     const where: any = { isActive: true };
 
+    // Exact product lookup (2026-11-02): the inventory detail page used to
+    // pass the product UUID as `search`, which only matches name/SKU
+    // substrings — the page rendered "Product not found" for real products.
+    if (params.productId) where.id = params.productId;
     if (params.search) {
       where.OR = [
         { name: { contains: params.search, mode: 'insensitive' } },
@@ -1684,10 +1716,239 @@ export class InventoryService {
     return { items, totalValue, totalStock, count: items.length, type: 'managed_stock_value' };
   }
 
+  /**
+   * Reports — Dead stock (2026-11-02): products still holding stock whose
+   * last movement in EITHER ledger is older than the window (or which have
+   * never moved at all). The Reports tab previously queried return logs and
+   * labelled them dead stock; this is the real computation.
+   */
+  async deadStock(days = 180) {
+    const windowDays = Math.min(3650, Math.max(1, days || 180));
+    const cutoff = new Date(Date.now() - windowDays * 86_400_000);
+
+    const [physicalSums, physicalLast, managedLast, products] = await Promise.all([
+      this.prisma.physicalInventory.groupBy({
+        by: ['productId'],
+        _sum: { quantity: true },
+      }),
+      this.prisma.physicalInventoryLedger.groupBy({
+        by: ['productId'],
+        _max: { createdAt: true },
+      }),
+      this.prisma.managedStockLedger.groupBy({
+        by: ['productId'],
+        _max: { performedAt: true },
+      }),
+      this.prisma.product.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          images: true,
+          standardCost: true,
+          managedStockQuantity: true,
+        },
+      }),
+    ]);
+
+    const physQty = new Map(physicalSums.map((r) => [r.productId, r._sum.quantity ?? 0]));
+    const lastMove = new Map<string, Date>();
+    for (const r of physicalLast) {
+      if (r.productId && r._max.createdAt) lastMove.set(r.productId, r._max.createdAt);
+    }
+    for (const r of managedLast) {
+      const d = r._max.performedAt;
+      if (!d || !r.productId) continue;
+      const prev = lastMove.get(r.productId);
+      if (!prev || d > prev) lastMove.set(r.productId, d);
+    }
+
+    const rows = products
+      .map((p) => {
+        const physicalQty = physQty.get(p.id) ?? 0;
+        const managedQty = p.managedStockQuantity ?? 0;
+        const last = lastMove.get(p.id) ?? null;
+        return { p, physicalQty, managedQty, last };
+      })
+      .filter(({ physicalQty, managedQty, last }) => {
+        if (physicalQty <= 0 && managedQty <= 0) return false;
+        return !last || last < cutoff;
+      })
+      .map(({ p, physicalQty, managedQty, last }) => {
+        const basisQty = physicalQty > 0 ? physicalQty : managedQty;
+        const firstImage = Array.isArray(p.images) && p.images.length ? p.images[0] : null;
+        return {
+          productId: p.id,
+          name: p.name,
+          sku: p.sku,
+          image: typeof firstImage === 'string' ? firstImage : null,
+          managedQty,
+          physicalQty,
+          lastMovementAt: last,
+          daysSinceMovement: last
+            ? Math.floor((Date.now() - last.getTime()) / 86_400_000)
+            : null,
+          totalValue: basisQty * Number(p.standardCost ?? 0),
+        };
+      })
+      .sort((a, b) => (b.daysSinceMovement ?? 1e9) - (a.daysSinceMovement ?? 1e9));
+
+    return { data: rows, days: windowDays, total: rows.length };
+  }
+
+  /**
+   * Reports — Fast moving (2026-11-02): per-product SOLD quantities
+   * aggregated across both ledgers (physical order-fulfilment deductions +
+   * managed ORDER_DEDUCTION rows), newest sale first tie-break by volume.
+   * The tab previously listed raw sale-log rows, one per movement.
+   */
+  async fastMoving(limit = 50) {
+    const cap = Math.min(200, Math.max(1, limit || 50));
+    const [physical, managed] = await Promise.all([
+      this.prisma.physicalInventoryLedger.groupBy({
+        by: ['productId'],
+        where: {
+          direction: 'OUT',
+          type: { in: ['sale', 'SALE', 'order_fulfilled', 'ORDER_FULFILLED', 'DEDUCTION'] },
+        },
+        _sum: { quantity: true },
+        _max: { createdAt: true },
+        _count: true,
+      }),
+      this.prisma.managedStockLedger.groupBy({
+        by: ['productId'],
+        where: { type: 'ORDER_DEDUCTION' as any },
+        _sum: { quantity: true },
+        _max: { performedAt: true },
+        _count: true,
+      }),
+    ]);
+
+    const merged = new Map<
+      string,
+      { qty: number; movements: number; lastSoldAt: Date | null }
+    >();
+    const fold = (id: string | null, qty: number, count: number, last: Date | null) => {
+      if (!id) return;
+      const cur = merged.get(id) ?? { qty: 0, movements: 0, lastSoldAt: null };
+      cur.qty += Math.abs(qty || 0);
+      cur.movements += count || 0;
+      if (last && (!cur.lastSoldAt || last > cur.lastSoldAt)) cur.lastSoldAt = last;
+      merged.set(id, cur);
+    };
+    for (const r of physical) fold(r.productId, r._sum.quantity ?? 0, r._count, r._max.createdAt);
+    for (const r of managed) fold(r.productId, r._sum.quantity ?? 0, r._count, r._max.performedAt);
+
+    const ids = [...merged.keys()];
+    const products = ids.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true, sku: true, images: true, basePrice: true },
+        })
+      : [];
+    const byId = new Map(products.map((p) => [p.id, p]));
+
+    const rows = ids
+      .map((id) => {
+        const p = byId.get(id);
+        const m = merged.get(id)!;
+        const firstImage =
+          p && Array.isArray(p.images) && p.images.length ? p.images[0] : null;
+        return {
+          productId: id,
+          name: p?.name ?? '—',
+          sku: p?.sku ?? '—',
+          image: typeof firstImage === 'string' ? firstImage : null,
+          qtySold: m.qty,
+          movements: m.movements,
+          lastSoldAt: m.lastSoldAt,
+          price: p ? Number(p.basePrice ?? 0) : 0,
+        };
+      })
+      .sort((a, b) => b.qtySold - a.qtySold)
+      .slice(0, cap);
+
+    return { data: rows, total: rows.length };
+  }
+
+  /**
+   * Reports — Stock aging (2026-11-02): per product, the OLDEST still-open
+   * FIFO costing lot decides the age; quantity/value sum over open lots.
+   * The tab previously listed plain stock figures with no age at all.
+   */
+  async stockAging() {
+    const lots = await this.prisma.costingLot.findMany({
+      where: { remainingQty: { gt: 0 } },
+      select: {
+        productId: true,
+        receivedAt: true,
+        remainingQty: true,
+        unitCost: true,
+      },
+      orderBy: { receivedAt: 'asc' },
+    });
+
+    const perProduct = new Map<
+      string,
+      { oldest: Date; qty: number; value: number; lots: number }
+    >();
+    for (const lot of lots) {
+      const cur = perProduct.get(lot.productId) ?? {
+        oldest: lot.receivedAt,
+        qty: 0,
+        value: 0,
+        lots: 0,
+      };
+      if (lot.receivedAt < cur.oldest) cur.oldest = lot.receivedAt;
+      cur.qty += lot.remainingQty;
+      cur.value += lot.remainingQty * Number(lot.unitCost ?? 0);
+      cur.lots += 1;
+      perProduct.set(lot.productId, cur);
+    }
+
+    const ids = [...perProduct.keys()];
+    const products = ids.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true, sku: true, images: true },
+        })
+      : [];
+    const byId = new Map(products.map((p) => [p.id, p]));
+
+    const rows = ids
+      .map((id) => {
+        const p = byId.get(id);
+        const a = perProduct.get(id)!;
+        const firstImage =
+          p && Array.isArray(p.images) && p.images.length ? p.images[0] : null;
+        return {
+          productId: id,
+          name: p?.name ?? '—',
+          sku: p?.sku ?? '—',
+          image: typeof firstImage === 'string' ? firstImage : null,
+          stockQty: a.qty,
+          lotCount: a.lots,
+          oldestReceivedAt: a.oldest,
+          daysInStock: Math.max(
+            0,
+            Math.floor((Date.now() - a.oldest.getTime()) / 86_400_000),
+          ),
+          totalValue: a.value,
+        };
+      })
+      .sort((a, b) => b.daysInStock - a.daysInStock);
+
+    return { data: rows, total: rows.length };
+  }
+
   async getLedger(query: LedgerQueryDto) {
     return this.managedStockLedgerService.find({
       productId: query.productId,
       variantId: query.variantId,
+      type: query.type,
+      referenceType: query.referenceType as any,
+      referenceId: query.referenceId,
       page: query.page,
       perPage: query.perPage,
     });

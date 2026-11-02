@@ -19,6 +19,7 @@ import { MediaPicker } from '@/components/media-picker'
 import { mediaUrl, getStorefrontUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { PageInfo } from '@/components/page-info'
 
 export function Categories() {
   const queryClient = useQueryClient()
@@ -273,10 +274,9 @@ export function Categories() {
       </Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Categories</h2>
-            <p className='text-muted-foreground'>Manage product categories.</p>
-          </div>
+            </div>
           <Button size='sm' onClick={() => setShowCreate(true)}><Plus className='h-4 w-4' /> Add Category</Button>
         </div>
 

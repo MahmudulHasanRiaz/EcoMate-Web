@@ -65,7 +65,9 @@ type DispatchTableProps = {
   isLoading?: boolean
   isSyncing?: boolean
   onDelete: (id: string) => void
-  onSyncSelected: (ids: string[]) => void
+  onSyncSelected: (entries: { id: string; courier: string }[]) => void
+  syncProgress?: { done: number; total: number } | null
+  onCancelSync?: () => void
   onConfirmPanelCancel: (id: string) => void
   confirmingId?: string | null
   onAssign: (dispatch: DispatchResponse) => void
@@ -168,6 +170,8 @@ export function DispatchTable({
   isSyncing,
   onDelete,
   onSyncSelected,
+  syncProgress,
+  onCancelSync,
   onConfirmPanelCancel,
   confirmingId,
   onAssign,
@@ -608,34 +612,73 @@ export function DispatchTable({
         table={table}
         className='mt-auto'
         totalCount={total}
+        pageSizeOptions={[10, 25, 50, 100, 200, 500]}
       />
 
       <DataTableBulkActions table={table} entityName='dispatch'>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant='outline'
-              size='icon'
-              className='size-8'
-              disabled={isSyncing}
-              onClick={() => {
-                const selectedIds = table
-                  .getFilteredSelectedRowModel()
-                  .rows.map((row) => row.original.id)
-                table.resetRowSelection()
-                onSyncSelected(selectedIds)
-              }}
-              aria-label='Sync status from courier'
-              title='Sync status from courier'
+        {syncProgress ? (
+          <div className='flex items-center gap-2'>
+            <div
+              className='h-2 w-36 overflow-hidden rounded-full bg-muted'
+              role='progressbar'
+              aria-valuenow={syncProgress.done}
+              aria-valuemax={syncProgress.total}
+              aria-label='Courier sync progress'
             >
-              <RefreshCw className={cn(isSyncing && 'animate-spin')} />
-              <span className='sr-only'>Sync status from courier</span>
+              <div
+                className='h-full rounded-full bg-primary transition-all'
+                style={{
+                  width: `${Math.min(
+                    100,
+                    Math.round((syncProgress.done / Math.max(1, syncProgress.total)) * 100),
+                  )}%`,
+                }}
+              />
+            </div>
+            <span className='text-xs tabular-nums text-muted-foreground'>
+              Syncing {syncProgress.done}/{syncProgress.total}
+            </span>
+            <Button
+              variant='ghost'
+              size='icon'
+              className='size-7'
+              onClick={onCancelSync}
+              aria-label='Cancel sync'
+              title='Cancel sync'
+            >
+              <Cross2Icon className='h-3.5 w-3.5' />
             </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Sync status from courier</p>
-          </TooltipContent>
-        </Tooltip>
+          </div>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant='outline'
+                size='icon'
+                className='size-8'
+                disabled={isSyncing}
+                onClick={() => {
+                  const selectedEntries = table
+                    .getFilteredSelectedRowModel()
+                    .rows.map((row) => ({
+                      id: row.original.id,
+                      courier: row.original.courier,
+                    }))
+                  table.resetRowSelection()
+                  onSyncSelected(selectedEntries)
+                }}
+                aria-label='Sync status from courier'
+                title='Sync status from courier'
+              >
+                <RefreshCw className={cn(isSyncing && 'animate-spin')} />
+                <span className='sr-only'>Sync status from courier</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Sync status from courier</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </DataTableBulkActions>
     </div>
   )

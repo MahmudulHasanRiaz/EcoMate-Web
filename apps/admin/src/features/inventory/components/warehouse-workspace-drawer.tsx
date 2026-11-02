@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Building2, Package, MapPin, ArrowLeftRight, ExternalLink, Loader2, Plus, Pencil, Trash2 } from 'lucide-react'
 import { UserBadge } from '@/components/user-badge'
 import { Link } from '@tanstack/react-router'
@@ -26,10 +27,30 @@ interface BinLocation {
   id: string
   warehouseId: string
   code: string
-  zone: string | null
-  rack: string | null
-  shelf: string | null
+  zoneId: string | null
+  rackId: string | null
+  shelfId: string | null
+  zone?: { id: string; name: string } | null
+  rack?: { id: string; name: string } | null
+  shelf?: { id: string; name: string } | null
   isActive: boolean
+}
+
+interface HierarchyShelf {
+  id: string
+  name: string
+}
+
+interface HierarchyRack {
+  id: string
+  name: string
+  shelves: HierarchyShelf[]
+}
+
+interface HierarchyZone {
+  id: string
+  name: string
+  racks: HierarchyRack[]
 }
 
 interface WarehouseWorkspaceDrawerProps {
@@ -47,23 +68,41 @@ function BinFormDialog({
   editBin?: BinLocation | null
   onSaved: () => void
 }) {
+  // The parent renders this dialog with key={editBin?.id ?? 'new'}, so the
+  // form state below always initializes from the bin actually being edited.
   const [code, setCode] = useState(editBin?.code || '')
-  const [zone, setZone] = useState(editBin?.zone || '')
-  const [rack, setRack] = useState(editBin?.rack || '')
-  const [shelf, setShelf] = useState(editBin?.shelf || '')
+  const [zoneId, setZoneId] = useState(editBin?.zoneId || '')
+  const [rackId, setRackId] = useState(editBin?.rackId || '')
+  const [shelfId, setShelfId] = useState(editBin?.shelfId || '')
   const [pending, setPending] = useState(false)
 
   const isEdit = !!editBin
 
+  // Cascading hierarchy: zones of this warehouse → racks of the zone →
+  // shelves of the rack (same warehouses API as the Bin Locations page).
+  const { data: zones } = useQuery<HierarchyZone[]>({
+    queryKey: ['zones', warehouseId],
+    queryFn: () => apiClient.get(`/warehouses/${warehouseId}/zones`).then(r => r.data || []),
+    enabled: open && !!warehouseId,
+  })
+  const racks = zones?.find(z => z.id === zoneId)?.racks ?? []
+  const shelves = racks.find(r => r.id === rackId)?.shelves ?? []
+
   async function handleSubmit() {
     if (!code.trim()) { toast.error('Bin code is required'); return }
     setPending(true)
+    const payload = {
+      code: code.trim(),
+      zoneId: zoneId || undefined,
+      rackId: rackId || undefined,
+      shelfId: shelfId || undefined,
+    }
     try {
       if (isEdit) {
-        await apiClient.put(`/warehouses/${warehouseId}/bin-locations/${editBin.id}`, { code: code.trim(), zone: zone.trim() || undefined, rack: rack.trim() || undefined, shelf: shelf.trim() || undefined })
+        await apiClient.put(`/warehouses/${warehouseId}/bin-locations/${editBin.id}`, payload)
         toast.success('Bin updated')
       } else {
-        await apiClient.post(`/warehouses/${warehouseId}/bin-locations`, { code: code.trim(), zone: zone.trim() || undefined, rack: rack.trim() || undefined, shelf: shelf.trim() || undefined })
+        await apiClient.post(`/warehouses/${warehouseId}/bin-locations`, payload)
         toast.success('Bin created')
       }
       onSaved()
@@ -88,16 +127,51 @@ function BinFormDialog({
           </div>
           <div className='space-y-1.5'>
             <Label>Zone</Label>
-            <Input value={zone} onChange={e => setZone(e.target.value)} placeholder='e.g. Dry Goods' />
+            <Select
+              value={zoneId || '__none__'}
+              onValueChange={(v) => { setZoneId(v === '__none__' ? '' : v); setRackId(''); setShelfId('') }}
+            >
+              <SelectTrigger><SelectValue placeholder='Select zone' /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value='__none__'>None</SelectItem>
+                {(zones ?? []).map(z => (
+                  <SelectItem key={z.id} value={z.id}>{z.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className='grid grid-cols-2 gap-3'>
             <div className='space-y-1.5'>
               <Label>Rack</Label>
-              <Input value={rack} onChange={e => setRack(e.target.value)} placeholder='e.g. R-01' />
+              <Select
+                value={rackId || '__none__'}
+                onValueChange={(v) => { setRackId(v === '__none__' ? '' : v); setShelfId('') }}
+                disabled={!zoneId}
+              >
+                <SelectTrigger><SelectValue placeholder='Select rack' /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='__none__'>None</SelectItem>
+                  {racks.map(r => (
+                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className='space-y-1.5'>
               <Label>Shelf</Label>
-              <Input value={shelf} onChange={e => setShelf(e.target.value)} placeholder='e.g. S-01' />
+              <Select
+                value={shelfId || '__none__'}
+                onValueChange={(v) => setShelfId(v === '__none__' ? '' : v)}
+                disabled={!rackId}
+              >
+                <SelectTrigger><SelectValue placeholder='Select shelf' /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='__none__'>None</SelectItem>
+                  {shelves.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>
@@ -235,7 +309,7 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
 
               <TabsContent value="bins" className="space-y-4 pt-4">
                 <div className="flex justify-between items-center">
-                  <h4 className="text-sm font-medium">Active Bins ({bins.length})</h4>
+                  <h4 className="text-sm font-medium">Bins ({bins.length})</h4>
                   <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => { setEditBin(null); setBinDialogOpen(true) }}>
                     <Plus className="h-3.5 w-3.5 mr-1" /> Add Bin
                   </Button>
@@ -248,13 +322,14 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
                         <TableHead>Zone</TableHead>
                         <TableHead>Rack</TableHead>
                         <TableHead>Shelf</TableHead>
+                        <TableHead>Status</TableHead>
                         <TableHead className="w-[80px]"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {binsLoading ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center py-6">
+                          <TableCell colSpan={6} className="text-center py-6">
                             <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                           </TableCell>
                         </TableRow>
@@ -265,9 +340,14 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
                               <MapPin className="h-3 w-3 inline mr-1 text-muted-foreground" />
                               {bin.code}
                             </TableCell>
-                            <TableCell className="text-xs">{bin.zone || '-'}</TableCell>
-                            <TableCell className="text-xs">{bin.rack || '-'}</TableCell>
-                            <TableCell className="text-xs">{bin.shelf || '-'}</TableCell>
+                            <TableCell className="text-xs">{bin.zone?.name || '-'}</TableCell>
+                            <TableCell className="text-xs">{bin.rack?.name || '-'}</TableCell>
+                            <TableCell className="text-xs">{bin.shelf?.name || '-'}</TableCell>
+                            <TableCell>
+                              <Badge variant={bin.isActive ? 'default' : 'secondary'} className="text-[10px]">
+                                {bin.isActive ? 'Active' : 'Inactive'}
+                              </Badge>
+                            </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1">
                                 <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit"
@@ -284,7 +364,7 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                          <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
                             <Package className="h-4 w-4 mx-auto mb-1" />
                             No bin locations configured.
                           </TableCell>
@@ -316,7 +396,7 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
                           activityData.map((log: any) => (
                             <TableRow key={log.id}>
                               <TableCell className="text-xs">
-                                {log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}
+                                {log.performedAt ? new Date(log.performedAt).toLocaleString() : '—'}
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline" className="text-[10px]">{log.type || '—'}</Badge>
@@ -377,6 +457,7 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
       </SheetContent>
 
       <BinFormDialog
+        key={editBin?.id ?? 'new'}
         open={binDialogOpen}
         onOpenChange={(v) => { if (!v) setEditBin(null); setBinDialogOpen(v) }}
         warehouseId={warehouse.id}

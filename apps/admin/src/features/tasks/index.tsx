@@ -10,6 +10,7 @@ import { TasksDialogs } from './components/tasks-dialogs'
 import { TasksPrimaryButtons } from './components/tasks-primary-buttons'
 import { TasksProvider } from './components/tasks-provider'
 import { TasksTable } from './components/tasks-table'
+import { PageInfo } from '@/components/page-info'
 
 export function Tasks() {
   const [pagination, setPagination] = useState<PaginationState>({
@@ -32,12 +33,9 @@ export function Tasks() {
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Tasks</h2>
-            <p className='text-muted-foreground'>
-              Here&apos;s a list of your tasks for this month!
-            </p>
-          </div>
+            </div>
           <TasksPrimaryButtons />
         </div>
         <TasksTable

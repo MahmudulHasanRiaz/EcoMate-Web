@@ -67,6 +67,7 @@ export class InventoryController {
     @Query('type') type?: string,
     @Query('warehouseId') warehouseId?: string,
     @Query('productId') productId?: string,
+    @Query('search') search?: string,
   ) {
     return this.inventoryService.logs(
       this.clampPage(page),
@@ -74,6 +75,7 @@ export class InventoryController {
       type,
       warehouseId,
       productId,
+      search,
     );
   }
 
@@ -103,6 +105,7 @@ export class InventoryController {
     @Query('type') type?: string,
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string,
+    @Query('productId') productId?: string,
   ) {
     return this.inventoryService.stockOverview({
       page: this.clampPage(page),
@@ -112,6 +115,7 @@ export class InventoryController {
       type,
       sortBy,
       sortOrder: sortOrder as 'asc' | 'desc' | undefined,
+      productId,
     });
   }
 
@@ -179,6 +183,27 @@ export class InventoryController {
   @Get('ledger')
   async getLedger(@Query() query: LedgerQueryDto) {
     return this.inventoryService.getLedger(query);
+  }
+
+  // Inventory Reports tabs (2026-11-02): real aggregations behind the
+  // Fast Moving / Dead Stock / Aging tabs, which previously rendered raw
+  // log rows or unrelated datasets under those titles.
+  @Roles('superadmin', 'admin', 'employee')
+  @Get('reports/fast-moving')
+  async fastMoving(@Query('limit') limit?: string) {
+    return this.inventoryService.fastMoving(limit ? Number(limit) : 50);
+  }
+
+  @Roles('superadmin', 'admin', 'employee')
+  @Get('reports/dead-stock')
+  async deadStock(@Query('days') days?: string) {
+    return this.inventoryService.deadStock(days ? Number(days) : 180);
+  }
+
+  @Roles('superadmin', 'admin', 'employee')
+  @Get('reports/aging')
+  async stockAging() {
+    return this.inventoryService.stockAging();
   }
 
   @Roles('superadmin', 'admin', 'employee')

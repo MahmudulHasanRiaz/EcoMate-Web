@@ -7,28 +7,14 @@ import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { GlobalSearchBar } from '@/components/global-search-bar'
+import { SafeImage } from '@/components/safe-image'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, TrendingDown, TrendingUp, ArchiveX, Package, Loader2, DollarSign } from 'lucide-react'
-
-interface LogEntry {
-  id: string
-  productId: string
-  productName: string
-  variantName: string | null
-  comboName: string | null
-  quantity: number
-  direction: string
-  type: string
-  stockBefore: number
-  stockAfter: number
-  note: string | null
-  performedBy: string | null
-  performedAt: string
-}
+import { AlertCircle, TrendingDown, TrendingUp, ArchiveX, Package, Loader2, DollarSign, Download } from 'lucide-react'
+import { PageInfo } from '@/components/page-info'
 
 interface StockItem {
   id: string
@@ -41,6 +27,7 @@ interface StockItem {
   lowStockQty: number | null
   basePrice: number | null
   salePrice: number | null
+  images?: any[]
 }
 
 interface PaginationMeta {
@@ -50,26 +37,162 @@ interface PaginationMeta {
   totalPages: number
 }
 
+interface FastMovingRow {
+  productId: string
+  name: string
+  sku: string | null
+  image: string | null
+  qtySold: number
+  movements: number
+  lastSoldAt: string | null
+  price: number | null
+}
+
+interface DeadStockRow {
+  productId: string
+  name: string
+  sku: string | null
+  image: string | null
+  managedQty: number
+  physicalQty: number
+  lastMovementAt: string | null
+  daysSinceMovement: number | null
+  totalValue: number
+}
+
+interface AgingRow {
+  productId: string
+  name: string
+  sku: string | null
+  image: string | null
+  stockQty: number
+  lotCount: number
+  oldestReceivedAt: string | null
+  daysInStock: number
+  totalValue: number
+}
+
+/** Client-side CSV download of the rows a report tab has already loaded. */
+function downloadCsv(
+  filename: string,
+  headers: string[],
+  rows: Array<Array<string | number | null | undefined>>,
+) {
+  const esc = (v: string | number | null | undefined) => {
+    const s = v == null ? '' : String(v)
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const csv = [
+    headers.map(esc).join(','),
+    ...rows.map((r) => r.map(esc).join(',')),
+  ].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return '—'
+  const d = new Date(value)
+  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString()
+}
+
+function formatMoney(value: number | null | undefined): string {
+  if (value == null || isNaN(Number(value))) return '—'
+  return `৳${Number(value).toFixed(2)}`
+}
+
+function ProductCell({ name, sku, image }: { name: string; sku: string | null; image: string | null }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="h-10 w-10 shrink-0 rounded-md border bg-muted flex items-center justify-center overflow-hidden">
+        {image ? (
+          <SafeImage src={image} alt={name} className="h-full w-full object-cover" />
+        ) : (
+          <Package className="h-5 w-5 text-muted-foreground/50" />
+        )}
+      </div>
+      <div>
+        <div className='font-medium text-sm'>{name}</div>
+        <div className='text-xs text-muted-foreground'>{sku ?? '—'}</div>
+      </div>
+    </div>
+  )
+}
+
+const REPORT_PAGE_SIZE = 15
+
+function ClientPager({
+  page,
+  totalItems,
+  onPageChange,
+}: {
+  page: number
+  totalItems: number
+  onPageChange: (page: number) => void
+}) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / REPORT_PAGE_SIZE))
+  if (totalItems <= REPORT_PAGE_SIZE) return null
+  return (
+    <div className="flex items-center justify-between pt-4">
+      <p className="text-sm text-muted-foreground">
+        Page {page} of {totalPages} ({totalItems} items)
+      </p>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+          Previous
+        </Button>
+        <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+          Next
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function paginate<T>(rows: T[], page: number): T[] {
+  const totalPages = Math.max(1, Math.ceil(rows.length / REPORT_PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  return rows.slice((safePage - 1) * REPORT_PAGE_SIZE, safePage * REPORT_PAGE_SIZE)
+}
+
 export function Reports() {
-  const [negPage, setNegPage] = useState(1)
+  const [negListPage, setNegListPage] = useState(1)
   const [agingPage, setAgingPage] = useState(1)
   const [fastPage, setFastPage] = useState(1)
   const [deadPage, setDeadPage] = useState(1)
 
-  const perPage = 10
-
+  // Negative stock is a client-side filter, so EVERY stock-overview page
+  // must be loaded first — page 1 alone silently missed negatives beyond
+  // the first 100 products.
   const {
-    data: stockData,
+    data: allStock,
     isLoading: stockLoading,
     error: stockError,
   } = useQuery({
-    queryKey: ['stock-overview', 1, 100],
-    queryFn: () =>
-      apiClient
-        .get<{ data: StockItem[]; meta: PaginationMeta }>('/inventory/stock-overview', {
-          params: { page: 1, perPage: 100 },
-        })
-        .then((r) => r.data),
+    queryKey: ['stock-overview', 'all-pages'],
+    queryFn: async () => {
+      const items: StockItem[] = []
+      let page = 1
+      let totalPages = 1
+      do {
+        const res = await apiClient
+          .get<{ data: StockItem[]; meta: PaginationMeta }>('/inventory/stock-overview', {
+            params: { page, perPage: 100 },
+          })
+          .then((r) => r.data)
+        items.push(...(res.data ?? []))
+        totalPages = res.meta?.totalPages ?? 1
+        page += 1
+      } while (page <= totalPages && page <= 20)
+      return items
+    },
   })
 
   const { data: physValuation } = useQuery({
@@ -78,30 +201,14 @@ export function Reports() {
   })
 
   const {
-    data: agingData,
-    isLoading: agingLoading,
-    error: agingError,
+    data: fastData,
+    isLoading: fastLoading,
+    error: fastError,
   } = useQuery({
-    queryKey: ['stock-overview', agingPage, perPage],
+    queryKey: ['inventory-reports', 'fast-moving'],
     queryFn: () =>
       apiClient
-        .get<{ data: StockItem[]; meta: PaginationMeta }>('/inventory/stock-overview', {
-          params: { page: agingPage, perPage },
-        })
-        .then((r) => r.data),
-  })
-
-  const {
-    data: saleData,
-    isLoading: saleLoading,
-    error: saleError,
-  } = useQuery({
-    queryKey: ['inventory-logs', 'sale', fastPage],
-    queryFn: () =>
-      apiClient
-        .get<{ data: LogEntry[]; meta: PaginationMeta }>('/inventory/logs', {
-          params: { page: fastPage, perPage, type: 'sale' },
-        })
+        .get<{ data: FastMovingRow[]; total: number }>('/inventory/reports/fast-moving')
         .then((r) => r.data),
   })
 
@@ -110,12 +217,24 @@ export function Reports() {
     isLoading: deadLoading,
     error: deadError,
   } = useQuery({
-    queryKey: ['inventory-logs', 'return', deadPage],
+    queryKey: ['inventory-reports', 'dead-stock'],
     queryFn: () =>
       apiClient
-        .get<{ data: LogEntry[]; meta: PaginationMeta }>('/inventory/logs', {
-          params: { page: deadPage, perPage, type: 'return' },
+        .get<{ data: DeadStockRow[]; days: number; total: number }>('/inventory/reports/dead-stock', {
+          params: { days: 180 },
         })
+        .then((r) => r.data),
+  })
+
+  const {
+    data: agingData,
+    isLoading: agingLoading,
+    error: agingError,
+  } = useQuery({
+    queryKey: ['inventory-reports', 'aging'],
+    queryFn: () =>
+      apiClient
+        .get<{ data: AgingRow[]; total: number }>('/inventory/reports/aging')
         .then((r) => r.data),
   })
 
@@ -128,17 +247,74 @@ export function Reports() {
   }, [agingError])
 
   useEffect(() => {
-    if (saleError) toast.error('Failed to load sales data.')
-  }, [saleError])
+    if (fastError) toast.error('Failed to load fast moving data.')
+  }, [fastError])
 
   useEffect(() => {
     if (deadError) toast.error('Failed to load dead stock data.')
   }, [deadError])
 
-  const negativeStock = (stockData?.data || []).filter((i) => i.managedStockQuantity < 0)
-  const agingList = agingData?.data || []
-  const saleList = saleData?.data || []
-  const deadList = deadData?.data || []
+  const negativeStock = (allStock ?? []).filter((i) => i.managedStockQuantity < 0)
+  const fastRows = fastData?.data ?? []
+  const deadRows = deadData?.data ?? []
+  const agingRows = agingData?.data ?? []
+
+  const exportNegative = () =>
+    downloadCsv(
+      'negative-stock.csv',
+      ['Product', 'SKU', 'Negative Qty', 'Unit Price', 'Estimated Value Impact'],
+      negativeStock.map((i) => [
+        i.name,
+        i.sku ?? '',
+        i.managedStockQuantity,
+        i.basePrice ?? 0,
+        Math.abs(i.managedStockQuantity) * (i.basePrice || 0),
+      ]),
+    )
+
+  const exportFast = () =>
+    downloadCsv(
+      'fast-moving.csv',
+      ['Product', 'SKU', 'Qty Sold', 'Movements', 'Last Sold', 'Unit Price'],
+      fastRows.map((r) => [
+        r.name,
+        r.sku ?? '',
+        r.qtySold,
+        r.movements,
+        r.lastSoldAt ? formatDate(r.lastSoldAt) : '',
+        r.price ?? 0,
+      ]),
+    )
+
+  const exportDead = () =>
+    downloadCsv(
+      'dead-stock.csv',
+      ['Product', 'SKU', 'Managed Qty', 'Physical Qty', 'Last Movement', 'Days Since Movement', 'Total Value'],
+      deadRows.map((r) => [
+        r.name,
+        r.sku ?? '',
+        r.managedQty,
+        r.physicalQty,
+        r.lastMovementAt ? formatDate(r.lastMovementAt) : 'Never',
+        r.daysSinceMovement ?? '',
+        r.totalValue,
+      ]),
+    )
+
+  const exportAging = () =>
+    downloadCsv(
+      'stock-aging.csv',
+      ['Product', 'SKU', 'Stock Qty', 'Lots', 'Oldest Received', 'Days In Stock', 'Total Value'],
+      agingRows.map((r) => [
+        r.name,
+        r.sku ?? '',
+        r.stockQty,
+        r.lotCount,
+        r.oldestReceivedAt ? formatDate(r.oldestReceivedAt) : '',
+        r.daysInStock,
+        r.totalValue,
+      ]),
+    )
 
   return (
     <>
@@ -149,8 +325,9 @@ export function Reports() {
       </Header>
       <Main className='flex flex-col gap-6'>
         <div>
-          <h1 className='text-2xl font-bold tracking-tight'>Inventory Reports</h1>
-          <p className='text-muted-foreground'>Analyze managed stock movements and physical inventory valuation.</p>
+          <div className='flex items-center gap-1.5'>
+            <h1 className='text-2xl font-bold tracking-tight'>Inventory Reports</h1>
+          </div>
         </div>
         <Tabs defaultValue='negative' className='w-full space-y-4'>
           <TabsList className='grid grid-cols-5 w-[700px]'>
@@ -168,7 +345,9 @@ export function Reports() {
                   <CardTitle>Negative Stock Report</CardTitle>
                   <CardDescription>Items that have a stock quantity below zero, usually indicating missing receipts or over-shipment.</CardDescription>
                 </div>
-                <Button variant="outline" size="sm">Export CSV</Button>
+                <Button variant="outline" size="sm" onClick={exportNegative} disabled={negativeStock.length === 0}>
+                  <Download className="h-4 w-4 mr-2" /> Export CSV
+                </Button>
               </CardHeader>
               <CardContent>
                 {stockLoading ? (
@@ -181,48 +360,47 @@ export function Reports() {
                     <p className="text-sm">Failed to load stock data.</p>
                   </div>
                 ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Product</TableHead>
-                          <TableHead className="text-right">Negative Qty</TableHead>
-                          <TableHead className="text-right">Estimated Value Impact</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {negativeStock.length === 0 ? (
+                  <>
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
                           <TableRow>
-                            <TableCell colSpan={3} className="text-center py-12 text-muted-foreground">
-                              No items with negative stock.
-                            </TableCell>
+                            <TableHead>Product</TableHead>
+                            <TableHead className="text-right">Negative Qty</TableHead>
+                            <TableHead className="text-right">Estimated Value Impact</TableHead>
                           </TableRow>
-                        ) : (
-                          negativeStock.map((item) => (
-                            <TableRow key={item.id}>
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <div className="h-10 w-10 shrink-0 rounded-md border bg-muted flex items-center justify-center overflow-hidden">
-                                    <Package className="h-5 w-5 text-muted-foreground/50" />
-                                  </div>
-                                  <div>
-                                    <div className='font-medium text-sm'>{item.name}</div>
-                                    <div className='text-xs text-muted-foreground'>{item.slug}</div>
-                                  </div>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right text-red-600 font-bold">
-                                {item.managedStockQuantity}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                ৳{(Math.abs(item.managedStockQuantity) * (item.basePrice || 0)).toFixed(2)}
+                        </TableHeader>
+                        <TableBody>
+                          {negativeStock.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={3} className="text-center py-12 text-muted-foreground">
+                                No items with negative stock.
                               </TableCell>
                             </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
+                          ) : (
+                            paginate(negativeStock, negListPage).map((item) => (
+                              <TableRow key={item.id}>
+                                <TableCell>
+                                  <ProductCell
+                                    name={item.name}
+                                    sku={item.sku}
+                                    image={Array.isArray(item.images) && item.images.length && typeof item.images[0] === 'string' ? item.images[0] : null}
+                                  />
+                                </TableCell>
+                                <TableCell className="text-right text-red-600 font-bold">
+                                  {item.managedStockQuantity}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  ৳{(Math.abs(item.managedStockQuantity) * (item.basePrice || 0)).toFixed(2)}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <ClientPager page={negListPage} totalItems={negativeStock.length} onPageChange={setNegListPage} />
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -233,9 +411,11 @@ export function Reports() {
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <div>
                   <CardTitle>Inventory Aging Report</CardTitle>
-                  <CardDescription>Track how long items have been sitting in the warehouse.</CardDescription>
+                  <CardDescription>How long stock has been sitting in the warehouse, based on the oldest open FIFO costing lot per product.</CardDescription>
                 </div>
-                <Button variant="outline" size="sm">Export CSV</Button>
+                <Button variant="outline" size="sm" onClick={exportAging} disabled={agingRows.length === 0}>
+                  <Download className="h-4 w-4 mr-2" /> Export CSV
+                </Button>
               </CardHeader>
               <CardContent>
                 {agingLoading ? (
@@ -254,78 +434,38 @@ export function Reports() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Product</TableHead>
-                            <TableHead className="text-right">Current Stock</TableHead>
-                            <TableHead className="text-right">Low Stock Threshold</TableHead>
-                            <TableHead className="text-right">Unit Price</TableHead>
+                            <TableHead className="text-right">Stock Qty</TableHead>
+                            <TableHead className="text-right">Lots</TableHead>
+                            <TableHead className="text-right">Oldest Received</TableHead>
+                            <TableHead className="text-right">Days In Stock</TableHead>
                             <TableHead className="text-right">Total Value</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {agingList.length === 0 ? (
+                          {agingRows.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
-                                No stock data available.
+                              <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                                No aging data available.
                               </TableCell>
                             </TableRow>
                           ) : (
-                            agingList.map((item) => (
-                              <TableRow key={item.id}>
+                            paginate(agingRows, agingPage).map((row) => (
+                              <TableRow key={row.productId}>
                                 <TableCell>
-                                  <div className="flex items-center gap-3">
-                                    <div className="h-10 w-10 shrink-0 rounded-md border bg-muted flex items-center justify-center overflow-hidden">
-                                      <Package className="h-5 w-5 text-muted-foreground/50" />
-                                    </div>
-                                    <div>
-                                      <div className='font-medium text-sm'>{item.name}</div>
-                                      <div className='text-xs text-muted-foreground'>{item.slug}</div>
-                                    </div>
-                                  </div>
+                                  <ProductCell name={row.name} sku={row.sku} image={row.image} />
                                 </TableCell>
-                                <TableCell className="text-right font-bold">
-                                  {item.managedStockQuantity}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {item.lowStockQty ?? '-'}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {item.basePrice != null ? `৳${Number(item.basePrice).toFixed(2)}` : '-'}
-                                </TableCell>
-                                <TableCell className="text-right font-medium">
-                                  {item.basePrice != null
-                                    ? `৳${(Number(item.basePrice) * item.managedStockQuantity).toFixed(2)}`
-                                    : '-'}
-                                </TableCell>
+                                <TableCell className="text-right font-bold">{row.stockQty}</TableCell>
+                                <TableCell className="text-right">{row.lotCount}</TableCell>
+                                <TableCell className="text-right text-sm">{formatDate(row.oldestReceivedAt)}</TableCell>
+                                <TableCell className="text-right font-medium">{row.daysInStock}</TableCell>
+                                <TableCell className="text-right font-medium">{formatMoney(row.totalValue)}</TableCell>
                               </TableRow>
                             ))
                           )}
                         </TableBody>
                       </Table>
                     </div>
-                    {agingData?.meta && (
-                      <div className="flex items-center justify-between pt-4">
-                        <p className="text-sm text-muted-foreground">
-                          Page {agingData.meta.page} of {agingData.meta.totalPages} ({agingData.meta.total} items)
-                        </p>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={agingPage <= 1}
-                            onClick={() => setAgingPage((p) => p - 1)}
-                          >
-                            Previous
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={agingPage >= (agingData.meta.totalPages || 1)}
-                            onClick={() => setAgingPage((p) => p + 1)}
-                          >
-                            Next
-                          </Button>
-                        </div>
-                      </div>
-                    )}
+                    <ClientPager page={agingPage} totalItems={agingRows.length} onPageChange={setAgingPage} />
                   </>
                 )}
               </CardContent>
@@ -337,19 +477,21 @@ export function Reports() {
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <div>
                   <CardTitle>Fast Moving Items</CardTitle>
-                  <CardDescription>High-turnover products that require frequent replenishment.</CardDescription>
+                  <CardDescription>Products ranked by total quantity sold — high-turnover items that require frequent replenishment.</CardDescription>
                 </div>
-                <Button variant="outline" size="sm">Export CSV</Button>
+                <Button variant="outline" size="sm" onClick={exportFast} disabled={fastRows.length === 0}>
+                  <Download className="h-4 w-4 mr-2" /> Export CSV
+                </Button>
               </CardHeader>
               <CardContent>
-                {saleLoading ? (
+                {fastLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="animate-spin h-6 w-6" />
                   </div>
-                ) : saleError ? (
+                ) : fastError ? (
                   <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                     <AlertCircle className="h-6 w-6 mb-2" />
-                    <p className="text-sm">Failed to load sales data.</p>
+                    <p className="text-sm">Failed to load fast moving data.</p>
                   </div>
                 ) : (
                   <>
@@ -359,69 +501,35 @@ export function Reports() {
                           <TableRow>
                             <TableHead>Product</TableHead>
                             <TableHead className="text-right">Qty Sold</TableHead>
-                            <TableHead className="text-right">Stock After</TableHead>
-                            <TableHead className="text-right">Date</TableHead>
+                            <TableHead className="text-right">Movements</TableHead>
+                            <TableHead className="text-right">Last Sold</TableHead>
+                            <TableHead className="text-right">Unit Price</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {saleList.length === 0 ? (
+                          {fastRows.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={4} className="text-center py-12 text-muted-foreground">
+                              <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
                                 No sales data available.
                               </TableCell>
                             </TableRow>
                           ) : (
-                            saleList.map((log) => (
-                              <TableRow key={log.id}>
+                            paginate(fastRows, fastPage).map((row) => (
+                              <TableRow key={row.productId}>
                                 <TableCell>
-                                  <div className="flex items-center gap-3">
-                                    <div className="h-10 w-10 shrink-0 rounded-md border bg-muted flex items-center justify-center overflow-hidden">
-                                      <Package className="h-5 w-5 text-muted-foreground/50" />
-                                    </div>
-                                    <div>
-                                      <div className='font-medium text-sm'>{log.productName}</div>
-                                      <div className='text-xs text-muted-foreground'>
-                                        {[log.variantName, log.comboName].filter(Boolean).join(' / ') || log.type}
-                                      </div>
-                                    </div>
-                                  </div>
+                                  <ProductCell name={row.name} sku={row.sku} image={row.image} />
                                 </TableCell>
-                                <TableCell className="text-right font-medium">{log.quantity}</TableCell>
-                                <TableCell className="text-right">{log.stockAfter}</TableCell>
-                                <TableCell className="text-right text-sm">
-                                  {new Date(log.performedAt).toLocaleDateString()}
-                                </TableCell>
+                                <TableCell className="text-right font-bold">{row.qtySold}</TableCell>
+                                <TableCell className="text-right">{row.movements}</TableCell>
+                                <TableCell className="text-right text-sm">{formatDate(row.lastSoldAt)}</TableCell>
+                                <TableCell className="text-right">{formatMoney(row.price)}</TableCell>
                               </TableRow>
                             ))
                           )}
                         </TableBody>
                       </Table>
                     </div>
-                    {saleData?.meta && (
-                      <div className="flex items-center justify-between pt-4">
-                        <p className="text-sm text-muted-foreground">
-                          Page {saleData.meta.page} of {saleData.meta.totalPages} ({saleData.meta.total} items)
-                        </p>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={fastPage <= 1}
-                            onClick={() => setFastPage((p) => p - 1)}
-                          >
-                            Previous
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={fastPage >= (saleData.meta.totalPages || 1)}
-                            onClick={() => setFastPage((p) => p + 1)}
-                          >
-                            Next
-                          </Button>
-                        </div>
-                      </div>
-                    )}
+                    <ClientPager page={fastPage} totalItems={fastRows.length} onPageChange={setFastPage} />
                   </>
                 )}
               </CardContent>
@@ -433,9 +541,11 @@ export function Reports() {
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <div>
                   <CardTitle>Dead Stock</CardTitle>
-                  <CardDescription>Items with no movement in the last 180 days that may require liquidation.</CardDescription>
+                  <CardDescription>Products holding stock with no movement in the last 180 days — candidates for clearance or liquidation.</CardDescription>
                 </div>
-                <Button variant="outline" size="sm">Export CSV</Button>
+                <Button variant="outline" size="sm" onClick={exportDead} disabled={deadRows.length === 0}>
+                  <Download className="h-4 w-4 mr-2" /> Export CSV
+                </Button>
               </CardHeader>
               <CardContent>
                 {deadLoading ? (
@@ -454,70 +564,42 @@ export function Reports() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Product</TableHead>
-                            <TableHead className="text-right">Qty</TableHead>
-                            <TableHead>Note</TableHead>
-                            <TableHead className="text-right">Date</TableHead>
+                            <TableHead className="text-right">Managed Qty</TableHead>
+                            <TableHead className="text-right">Physical Qty</TableHead>
+                            <TableHead className="text-right">Last Movement</TableHead>
+                            <TableHead className="text-right">Days Since Movement</TableHead>
+                            <TableHead className="text-right">Total Value</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {deadList.length === 0 ? (
+                          {deadRows.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={4} className="text-center py-12 text-muted-foreground">
+                              <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                                 No dead stock items found.
                               </TableCell>
                             </TableRow>
                           ) : (
-                            deadList.map((log) => (
-                              <TableRow key={log.id}>
+                            paginate(deadRows, deadPage).map((row) => (
+                              <TableRow key={row.productId}>
                                 <TableCell>
-                                  <div className="flex items-center gap-3">
-                                    <div className="h-10 w-10 shrink-0 rounded-md border bg-muted flex items-center justify-center overflow-hidden">
-                                      <Package className="h-5 w-5 text-muted-foreground/50" />
-                                    </div>
-                                    <div>
-                                      <div className='font-medium text-sm'>{log.productName}</div>
-                                      <div className='text-xs text-muted-foreground'>
-                                        {[log.variantName, log.comboName].filter(Boolean).join(' / ') || log.type}
-                                      </div>
-                                    </div>
-                                  </div>
+                                  <ProductCell name={row.name} sku={row.sku} image={row.image} />
                                 </TableCell>
-                                <TableCell className="text-right font-bold">{log.quantity}</TableCell>
-                                <TableCell className="text-sm">{log.note || '-'}</TableCell>
+                                <TableCell className="text-right font-bold">{row.managedQty}</TableCell>
+                                <TableCell className="text-right">{row.physicalQty}</TableCell>
                                 <TableCell className="text-right text-sm">
-                                  {new Date(log.performedAt).toLocaleDateString()}
+                                  {row.lastMovementAt ? formatDate(row.lastMovementAt) : 'Never'}
                                 </TableCell>
+                                <TableCell className="text-right font-medium">
+                                  {row.daysSinceMovement != null ? row.daysSinceMovement : '—'}
+                                </TableCell>
+                                <TableCell className="text-right font-medium">{formatMoney(row.totalValue)}</TableCell>
                               </TableRow>
                             ))
                           )}
                         </TableBody>
                       </Table>
                     </div>
-                    {deadData?.meta && (
-                      <div className="flex items-center justify-between pt-4">
-                        <p className="text-sm text-muted-foreground">
-                          Page {deadData.meta.page} of {deadData.meta.totalPages} ({deadData.meta.total} items)
-                        </p>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={deadPage <= 1}
-                            onClick={() => setDeadPage((p) => p - 1)}
-                          >
-                            Previous
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={deadPage >= (deadData.meta.totalPages || 1)}
-                            onClick={() => setDeadPage((p) => p + 1)}
-                          >
-                            Next
-                          </Button>
-                        </div>
-                      </div>
-                    )}
+                    <ClientPager page={deadPage} totalItems={deadRows.length} onPageChange={setDeadPage} />
                   </>
                 )}
               </CardContent>

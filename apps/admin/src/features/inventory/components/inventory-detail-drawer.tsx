@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Sheet,
   SheetContent,
@@ -6,15 +7,28 @@ import {
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ArrowLeftRight, Edit3, FileText, Package, Filter, Building2, Tag, ShieldCheck, DollarSign, Clock, Loader2 } from 'lucide-react'
+import { ArrowLeftRight, Edit3, FileText, Package, Filter, Building2, ShieldCheck, DollarSign, Clock, Loader2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Link } from '@tanstack/react-router'
 import { useInventoryManagement } from '../hooks/use-inventory-management'
+import { MOVEMENT_TYPE_LABELS } from '../utils/movement-type-labels'
+
+// Managed Stock Ledger entry types (the /inventory/ledger source).
+const LEDGER_TYPE_OPTIONS = [
+  'INITIAL',
+  'ORDER_DEDUCTION',
+  'MANUAL_ADD',
+  'MANUAL_REMOVE',
+  'ADJUSTMENT',
+  'RETURN',
+  'CANCEL_RELEASE',
+  'RESERVE',
+  'RELEASE',
+]
 
 interface InventoryDetailDrawerProps {
   open: boolean
@@ -25,10 +39,17 @@ interface InventoryDetailDrawerProps {
 
 export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAdjust }: InventoryDetailDrawerProps) {
   const { data: imEnabled = true } = useInventoryManagement()
+  const [ledgerType, setLedgerType] = useState('all_types')
 
   const { data: ledgerData, isLoading: ledgerLoading } = useQuery({
-    queryKey: ['inventory-ledger', productDetails?.id],
-    queryFn: () => apiClient.get('/inventory/ledger', { params: { productId: productDetails.id, perPage: 10 } }).then(r => r.data),
+    queryKey: ['inventory-ledger', productDetails?.id, ledgerType],
+    queryFn: () => apiClient.get('/inventory/ledger', {
+      params: {
+        productId: productDetails.id,
+        perPage: 10,
+        type: ledgerType !== 'all_types' ? ledgerType : undefined,
+      },
+    }).then(r => r.data),
     enabled: !!productDetails?.id,
   })
 
@@ -38,7 +59,44 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
     enabled: !!productDetails?.id,
   })
 
+  const { data: reservationsData, isLoading: reservationsLoading } = useQuery({
+    queryKey: ['inventory-reservations', productDetails?.id],
+    queryFn: () => apiClient.get('/inventory/physical/reservations', { params: { productId: productDetails.id } }).then(r => r.data),
+    enabled: !!productDetails?.id,
+  })
+
   if (!productDetails) return null
+
+  // Callers pass either the drawer's explicit shape
+  // (onHand/available/reserved/cost/status) or a raw stock-overview row
+  // (managedStockQuantity/availableStock/reservedStock/standardCost ??
+  // basePrice, inventoryStatus). Normalize once so every figure below is
+  // real for both shapes — previously the overview shape rendered blanks.
+  const onHand: number = productDetails.onHand ?? productDetails.managedStockQuantity ?? 0
+  const available: number | null = productDetails.available ?? productDetails.availableStock ?? null
+  const reserved: number = productDetails.reserved ?? productDetails.reservedStock ?? 0
+  const cost: number | null =
+    productDetails.cost ?? productDetails.standardCost ?? productDetails.basePrice ?? null
+  const status: 'negative' | 'low' | 'optimal' =
+    productDetails.status === 'negative' || productDetails.status === 'low'
+      ? productDetails.status
+      : typeof productDetails.inventoryStatus === 'string' &&
+          productDetails.inventoryStatus.toLowerCase().includes('negative')
+        ? 'negative'
+        : typeof productDetails.inventoryStatus === 'string' &&
+            productDetails.inventoryStatus.toLowerCase().includes('low')
+          ? 'low'
+          : available != null && available < 0
+            ? 'negative'
+            : available != null &&
+                productDetails.lowStockQty != null &&
+                available <= productDetails.lowStockQty
+              ? 'low'
+              : 'optimal'
+
+  const ledgerEntries: any[] = (ledgerData as any)?.data ?? []
+  const lastAuditedAt: string | null = ledgerEntries[0]?.performedAt ?? ledgerEntries[0]?.createdAt ?? null
+  const reservations: any[] = Array.isArray(reservationsData) ? reservationsData : []
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -52,12 +110,12 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
               </SheetTitle>
               <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
                 SKU: {productDetails.sku}
-                {productDetails.status === 'negative' && <Badge variant="destructive" className="h-5 text-[10px]">Negative Stock</Badge>}
-                {productDetails.status === 'low' && <Badge variant="outline" className="border-amber-500 text-amber-600 h-5 text-[10px]">Low Stock</Badge>}
+                {status === 'negative' && <Badge variant="destructive" className="h-5 text-[10px]">Negative Stock</Badge>}
+                {status === 'low' && <Badge variant="outline" className="border-amber-500 text-amber-600 h-5 text-[10px]">Low Stock</Badge>}
               </p>
             </div>
             <div className="text-right">
-              <div className="text-2xl font-bold">{productDetails.onHand}</div>
+              <div className="text-2xl font-bold">{onHand}</div>
               <div className="text-xs text-muted-foreground">On Hand</div>
             </div>
           </div>
@@ -78,9 +136,6 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
               </Button>
               <Button variant="outline" size="sm" asChild onClick={() => onOpenChange(false)}>
                 <Link to="/op/inventory/warehouses"><Building2 className="mr-2 h-4 w-4" /> View Warehouse</Link>
-              </Button>
-              <Button variant="outline" size="sm">
-                <Tag className="mr-2 h-4 w-4" /> View Lot
               </Button>
               <Button variant="outline" size="sm" asChild onClick={() => onOpenChange(false)}>
                 <Link to="/op/inventory/detail" search={{ productId: productDetails.id }}><FileText className="mr-2 h-4 w-4" /> Full Detail Page</Link>
@@ -104,15 +159,15 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   <div className="rounded-lg border bg-card p-3">
                     <div className="text-xs font-medium text-muted-foreground">Available</div>
-                    <div className="text-xl font-bold mt-1">{productDetails.available}</div>
+                    <div className="text-xl font-bold mt-1">{available === null ? '∞' : available}</div>
                   </div>
                   <div className="rounded-lg border bg-card p-3">
                     <div className="text-xs font-medium text-muted-foreground">Reserved</div>
-                    <div className="text-xl font-bold mt-1 text-orange-600">{productDetails.reserved}</div>
+                    <div className="text-xl font-bold mt-1 text-orange-600">{reserved}</div>
                   </div>
                   <div className="rounded-lg border bg-card p-3">
                     <div className="text-xs font-medium text-muted-foreground">Total On Hand</div>
-                    <div className="text-xl font-bold mt-1">{productDetails.onHand}</div>
+                    <div className="text-xl font-bold mt-1">{onHand}</div>
                   </div>
                 </div>
 
@@ -121,11 +176,11 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                     <h4 className="text-sm font-semibold flex items-center gap-2"><DollarSign className="h-4 w-4" /> Cost Information</h4>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Unit Cost (Avg)</span>
-                      <span className="font-medium">{productDetails.cost != null ? `৳${productDetails.cost.toFixed(2)}` : '—'}</span>
+                      <span className="font-medium">{cost != null ? `৳${Number(cost).toFixed(2)}` : '—'}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Total Inventory Value</span>
-                      <span className="font-medium">{productDetails.cost != null ? `৳${(productDetails.onHand * productDetails.cost).toLocaleString()}` : '—'}</span>
+                      <span className="font-medium">{cost != null ? `৳${(onHand * Number(cost)).toLocaleString()}` : '—'}</span>
                     </div>
                   </div>
                   <div className="rounded-lg border bg-card p-4 space-y-2">
@@ -136,8 +191,8 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Health Status</span>
-                      <span className={`font-medium ${productDetails.status === 'negative' ? 'text-red-600' : productDetails.status === 'low' ? 'text-amber-600' : 'text-green-600'}`}>
-                        {productDetails.status === 'negative' ? 'Negative Stock' : productDetails.status === 'low' ? 'Low Stock' : 'Optimal'}
+                      <span className={`font-medium ${status === 'negative' ? 'text-red-600' : status === 'low' ? 'text-amber-600' : 'text-green-600'}`}>
+                        {status === 'negative' ? 'Negative Stock' : status === 'low' ? 'Low Stock' : 'Optimal'}
                       </span>
                     </div>
                   </div>
@@ -197,22 +252,15 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                   <div className="flex items-center gap-2 text-sm text-muted-foreground mr-2 shrink-0">
                     <Filter className="h-4 w-4" />
                   </div>
-                  <Select defaultValue="all_types">
-                    <SelectTrigger className="h-8 w-[120px] shrink-0 text-xs bg-background"><SelectValue placeholder="Type" /></SelectTrigger>
+                  <Select value={ledgerType} onValueChange={setLedgerType}>
+                    <SelectTrigger className="h-8 w-[160px] shrink-0 text-xs bg-background"><SelectValue placeholder="Type" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all_types">All Types</SelectItem>
-                      <SelectItem value="receipt">GRN / Receipts</SelectItem>
-                      <SelectItem value="transfer">Transfers</SelectItem>
-                      <SelectItem value="adjustment">Adjustments</SelectItem>
+                      {LEDGER_TYPE_OPTIONS.map((t) => (
+                        <SelectItem key={t} value={t}>{MOVEMENT_TYPE_LABELS[t] ?? t}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                  <Select defaultValue="all_wh">
-                    <SelectTrigger className="h-8 w-[120px] shrink-0 text-xs bg-background"><SelectValue placeholder="Warehouse" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all_wh">All Warehouses</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input placeholder="Reference..." className="h-8 w-[120px] shrink-0 text-xs bg-background" />
                 </div>
                 
                 <div className="rounded-md border bg-card">
@@ -233,8 +281,8 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                             <Loader2 className="animate-spin h-5 w-5 mx-auto" />
                           </TableCell>
                         </TableRow>
-                      ) : (ledgerData as any)?.data?.length ? (
-                        (ledgerData as any).data.map((entry: any) => (
+                      ) : ledgerEntries.length ? (
+                        ledgerEntries.map((entry: any) => (
                           <TableRow key={entry.id}>
                             <TableCell>
                               <div className="text-xs font-medium">
@@ -264,17 +312,57 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                   </Table>
                 </div>
                 
-                <div className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
-                  <Clock className="h-3 w-3" /> Last audited: Yesterday, 4:00 PM
-                </div>
+                {lastAuditedAt && (
+                  <div className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
+                    <Clock className="h-3 w-3" /> Last audited: {new Date(lastAuditedAt).toLocaleString()}
+                  </div>
+                )}
               </TabsContent>
 
               {/* Pending Operations */}
               {imEnabled && (
               <TabsContent value="pending" className="space-y-4 pt-4">
-                <div className="rounded-md border bg-card p-8 text-center">
-                  <p className="text-sm text-muted-foreground">No pending reservations or allocations for this item.</p>
-                </div>
+                {reservationsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="animate-spin h-5 w-5" />
+                  </div>
+                ) : reservations.length > 0 ? (
+                  <div className="rounded-md border bg-card">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Warehouse</TableHead>
+                          <TableHead className="text-right">Reserved Qty</TableHead>
+                          <TableHead className="text-right">Date</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {reservations.map((r: any) => (
+                          <TableRow key={r.id}>
+                            <TableCell className="font-medium text-sm">
+                              {r.warehouse?.name || '—'}
+                              {r.isManaged && (
+                                <Badge variant="secondary" className="ml-2 text-[10px]">Managed</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-medium text-orange-600">{r.reservedQuantity}</TableCell>
+                            <TableCell className="text-right text-xs text-muted-foreground">
+                              {r.updatedAt
+                                ? new Date(r.updatedAt).toLocaleString()
+                                : r.createdAt
+                                  ? new Date(r.createdAt).toLocaleString()
+                                  : '—'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="rounded-md border bg-card p-8 text-center">
+                    <p className="text-sm text-muted-foreground">No pending reservations or allocations for this item.</p>
+                  </div>
+                )}
               </TabsContent>
               )}
 

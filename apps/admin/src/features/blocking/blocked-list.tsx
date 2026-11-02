@@ -18,6 +18,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { toast } from 'sonner'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { PageInfo } from '@/components/page-info'
 
 type FilterType = 'all' | 'ip' | 'phone' | 'active' | 'whitelisted'
 
@@ -141,10 +142,9 @@ export function BlockedListPage() {
       </Header>
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
-        <div>
+        <div className='flex items-center gap-1.5'>
           <h2 className='text-2xl font-bold tracking-tight'>Blocked Items</h2>
-          <p className='text-muted-foreground'>Manage blocked IP addresses and phone numbers.</p>
-        </div>
+          </div>
 
         <div className='flex items-center gap-2'>
           {tabs.map(tab => (

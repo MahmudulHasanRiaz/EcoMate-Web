@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SafeImage } from '@/components/safe-image'
+import { PageInfo } from '@/components/page-info'
 
 const COLOR_MAP: Record<string, string> = {
   red: '#EF4444', blue: '#3B82F6', green: '#22C55E', yellow: '#EAB308',
@@ -164,10 +165,9 @@ export function Attributes() {
       </Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Attributes</h2>
-            <p className='text-muted-foreground'>Manage custom product attributes like Color, Size, Material etc.</p>
-          </div>
+            </div>
           <form onSubmit={handleCreate} className='flex gap-2'>
             <Input
               placeholder='New attribute name...'

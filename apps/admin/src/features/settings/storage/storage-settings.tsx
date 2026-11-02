@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Loader2, Cloud, HardDrive, ShieldCheck, Save } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
+import { PageInfo } from '@/components/page-info'
 
 export function StorageSettings() {
   const queryClient = useQueryClient()
@@ -58,9 +59,8 @@ export function StorageSettings() {
 
   return (
     <div className='space-y-6 w-full pb-8'>
-      <div className='space-y-0.5'>
+      <div className='flex items-center gap-1.5'>
         <h2 className='text-2xl font-bold tracking-tight'>Media Storage</h2>
-        <p className='text-muted-foreground'>Choose where your product images and other assets are hosted.</p>
       </div>
       <Separator className='my-6' />
       <Card className='overflow-hidden border-none shadow-md bg-gradient-to-br from-background to-muted/20'>

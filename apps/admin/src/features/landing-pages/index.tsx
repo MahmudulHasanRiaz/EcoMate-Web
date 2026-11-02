@@ -18,6 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { landingPagesApi, type LandingPage } from './api'
 import { apiClient } from '@/lib/api-client'
+import { PageInfo } from '@/components/page-info'
 
 export function LandingPages() {
   const queryClient = useQueryClient()
@@ -526,10 +527,9 @@ export function LandingPages() {
       </Header>
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Landing Pages</h2>
-            <p className='text-muted-foreground'>Create sales pages and campaign landing pages.</p>
-          </div>
+            </div>
           <Button onClick={() => { reset(); setFormOpen(true); }}>
             <Plus className='h-4 w-4 mr-1' /> Add Landing Page
           </Button>

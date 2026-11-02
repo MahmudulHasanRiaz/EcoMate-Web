@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Loader2, Save, Plus, Pencil, Trash2, FileText, LayoutTemplate, ExternalLink, ToggleRight } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
+import { PageInfo } from '@/components/page-info'
 
 const emptyForm: CreateCmsPageInput = {
   slug: '',
@@ -157,12 +158,9 @@ export function CmsPagesSettings() {
 
   return (
     <div className='space-y-6 w-full pb-8'>
-      <div className='space-y-0.5'>
+      <div className='flex items-center gap-1.5'>
         <h2 className='text-2xl font-bold tracking-tight'>CMS Pages</h2>
-        <p className='text-muted-foreground'>
-          Manage content pages (rich text) and system pages (fixed-layout pages such as Careers, About, and
-          Contact — each editable through its own settings fields). Toggle any system page on or off.
-        </p>
+        <PageInfo text="Manage content pages (rich text) and system pages (fixed-layout pages such as Careers, About, and Contact — each editable through its own settings fields). Toggle any system page on or off." />
       </div>
       <Separator className='my-6' />
 

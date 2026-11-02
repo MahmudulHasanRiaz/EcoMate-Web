@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Filter, Download, ExternalLink, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -30,6 +29,42 @@ interface LedgerEntry {
   createdAt: string
   productName?: string
   variantName?: string
+  warehouseName?: string | null
+  lotNumber?: string | null
+}
+
+// Managed Stock Ledger entry types (the /inventory/ledger source).
+const LEDGER_TYPE_OPTIONS = [
+  'INITIAL',
+  'ORDER_DEDUCTION',
+  'MANUAL_ADD',
+  'MANUAL_REMOVE',
+  'ADJUSTMENT',
+  'RETURN',
+  'CANCEL_RELEASE',
+  'RESERVE',
+  'RELEASE',
+]
+
+function downloadCsv(
+  filename: string,
+  headers: string[],
+  rows: Array<Array<string | number | null | undefined>>,
+) {
+  const esc = (v: string | number | null | undefined) => {
+    const s = v == null ? '' : String(v)
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const csv = [headers.map(esc).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 interface LedgerResponse {
@@ -49,14 +84,21 @@ interface MovementLedgerProps {
 
 export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
   const [page, setPage] = useState(1)
+  const [typeFilter, setTypeFilter] = useState('all_types')
   const perPage = 20
 
   const { data, isLoading, isError } = useQuery<LedgerResponse>({
-    queryKey: ['inventory-ledger', productId, variantId, page],
+    queryKey: ['inventory-ledger', productId, variantId, page, typeFilter],
     queryFn: () =>
       apiClient
         .get('/inventory/ledger', {
-          params: { productId, variantId, page, perPage },
+          params: {
+            productId,
+            variantId,
+            page,
+            perPage,
+            type: typeFilter !== 'all_types' ? typeFilter : undefined,
+          },
         })
         .then((r) => r.data),
     enabled: !!productId,
@@ -64,6 +106,27 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
 
   const entries = data?.data ?? []
   const meta = data?.meta
+  // Managed ledger rows carry no warehouse/lot — only render the column
+  // when a row actually provides one.
+  const showLocation = entries.some((e) => e.warehouseName || e.lotNumber)
+  const columnCount = showLocation ? 8 : 7
+
+  const exportCsv = () =>
+    downloadCsv(
+      'movement-ledger.csv',
+      ['Date', 'Reference', 'Type', 'Direction', 'Qty', 'Stock Before', 'Stock After', 'Performed By', 'Note'],
+      entries.map((e) => [
+        new Date(e.performedAt).toISOString(),
+        e.referenceId ?? '',
+        MOVEMENT_TYPE_LABELS[e.type] || e.type,
+        e.direction,
+        e.quantity,
+        e.stockBefore,
+        e.stockAfter,
+        e.performedBy ?? '',
+        e.note ?? '',
+      ]),
+    )
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr)
@@ -83,29 +146,17 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
           <div className="flex items-center gap-2 text-sm text-muted-foreground mr-2">
             <Filter className="h-4 w-4" /> Filters:
           </div>
-          <Select defaultValue="all_types">
-            <SelectTrigger className="h-9 w-[150px] bg-background"><SelectValue placeholder="Movement Type" /></SelectTrigger>
+          <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(1) }}>
+            <SelectTrigger className="h-9 w-[180px] bg-background"><SelectValue placeholder="Movement Type" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all_types">All Types</SelectItem>
-              <SelectItem value="receipt">Purchase Receipts</SelectItem>
-              <SelectItem value="transfer">Transfers</SelectItem>
-              <SelectItem value="adjustment">Adjustments</SelectItem>
-              <SelectItem value="sale">Sales Dispatch</SelectItem>
-              <SelectItem value="return">Customer Returns</SelectItem>
+              {LEDGER_TYPE_OPTIONS.map((t) => (
+                <SelectItem key={t} value={t}>{MOVEMENT_TYPE_LABELS[t] ?? t}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
-          <Select defaultValue="all_wh">
-            <SelectTrigger className="h-9 w-[150px] bg-background"><SelectValue placeholder="Warehouse" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all_wh">All Warehouses</SelectItem>
-              <SelectItem value="main">Main Warehouse</SelectItem>
-              <SelectItem value="retail">Retail Store</SelectItem>
-            </SelectContent>
-          </Select>
-          <Input placeholder="Ref / Lot / User..." className="h-9 w-[180px] bg-background" />
-          <Input type="date" className="h-9 w-[150px] bg-background" />
         </div>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" onClick={exportCsv} disabled={entries.length === 0}>
           <Download className="mr-2 h-4 w-4" /> Export CSV
         </Button>
       </div>
@@ -116,7 +167,7 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Reference</TableHead>
-              <TableHead>Location & Lot</TableHead>
+              {showLocation && <TableHead>Location & Lot</TableHead>}
               <TableHead>Type</TableHead>
               <TableHead>User / Audit</TableHead>
               <TableHead className="text-right">Qty Change</TableHead>
@@ -127,19 +178,19 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8">
+                <TableCell colSpan={columnCount} className="text-center py-8">
                   <Loader2 className="animate-spin h-6 w-6 mx-auto" />
                 </TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-destructive">
+                <TableCell colSpan={columnCount} className="text-center py-8 text-destructive">
                   Failed to load ledger entries.
                 </TableCell>
               </TableRow>
             ) : entries.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={columnCount} className="text-center py-8 text-muted-foreground">
                   No ledger entries found.
                 </TableCell>
               </TableRow>
@@ -152,10 +203,14 @@ export function MovementLedger({ productId, variantId }: MovementLedgerProps) {
                       {entry.referenceId || '-'} <ExternalLink className="h-3 w-3" />
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="text-sm">-</div>
-                    <div className="text-xs text-muted-foreground">-</div>
-                  </TableCell>
+                  {showLocation && (
+                    <TableCell>
+                      <div className="text-sm">{entry.warehouseName || '—'}</div>
+                      {entry.lotNumber && (
+                        <div className="text-xs text-muted-foreground">Lot: {entry.lotNumber}</div>
+                      )}
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Badge variant={getMovementTypeBadgeVariant(entry.type)} className="text-xs">
                       {MOVEMENT_TYPE_LABELS[entry.type] || entry.type}

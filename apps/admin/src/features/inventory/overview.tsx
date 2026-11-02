@@ -14,9 +14,12 @@ import { DollarSign, AlertTriangle, Package, TrendingDown, FileEdit } from 'luci
 import { Link } from '@tanstack/react-router'
 import { MOVEMENT_TYPE_LABELS } from './utils/movement-type-labels'
 import { UserBadge } from '@/components/user-badge'
+import { PageInfo } from '@/components/page-info'
 
 type LowStockItem = {
   id: string
+  productId?: string
+  variantId?: string | null
   name: string
   slug: string
   stock: number
@@ -52,7 +55,7 @@ type InventoryLog = {
   type: string
   reason: string | null
   performedBy: string | null
-  createdAt: string
+  performedAt: string
   productName: string | null
   variantName: string | null
 }
@@ -107,17 +110,22 @@ export function StockOverview() {
 
   const { data: logsData, isLoading: logsLoading } = useQuery<LogsResponse>({
     queryKey: ['inventory', 'logs'],
-    queryFn: () => apiClient.get('/inventory/logs', { params: { perPage: 5 } }).then(r => r.data),
+    queryFn: () => apiClient.get('/inventory/logs', { params: { perPage: 5, type: 'adjustment' } }).then(r => r.data),
     refetchInterval: 30000,
   })
 
+  const lowStockProducts = lowStock?.products ?? []
+  // The low-stock list carries one entry per product OR variant, while the
+  // KPI math is per product — count DISTINCT products so "In Stock"
+  // (total products − low-stock products) uses consistent units.
+  const lowStockCount = new Set(
+    lowStockProducts.map((i) => i.productId ?? i.id),
+  ).size
   const totalProducts = stockOverview?.meta.total ?? 0
-  const lowStockCount = lowStock?.count ?? 0
   const inStockCount = totalProducts - lowStockCount
   const totalValue = valuation?.totalValue ?? 0
 
   const loading = lowStockLoading || stockLoading || valuationLoading
-  const lowStockProducts = lowStock?.products ?? []
   const logs = logsData?.data ?? []
 
   return (
@@ -130,8 +138,9 @@ export function StockOverview() {
 
       <Main className='flex flex-col gap-6'>
         <div>
-          <h1 className='text-2xl font-bold tracking-tight'>Inventory Overview</h1>
-          <p className='text-muted-foreground'>High-level snapshot of managed stock and physical inventory operations.</p>
+          <div className='flex items-center gap-1.5'>
+            <h1 className='text-2xl font-bold tracking-tight'>Inventory Overview</h1>
+          </div>
         </div>
 
         {loading ? (
@@ -305,7 +314,7 @@ export function StockOverview() {
                         </div>
                       </div>
                       <div className="text-right text-xs text-muted-foreground">
-                        {formatTimeAgo(log.createdAt)}
+                        {formatTimeAgo(log.performedAt)}
                       </div>
                     </div>
                   ))}

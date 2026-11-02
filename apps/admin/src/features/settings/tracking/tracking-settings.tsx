@@ -17,6 +17,7 @@ import { MetaDestinationsCard, hasConfiguredDestinations } from './meta-destinat
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ProviderHeader, PurchaseTimingFields } from './tracking-ui'
 import { OrderSourcePolicy } from './order-source-policy'
+import { PageInfo } from '@/components/page-info'
 
 export function TrackingSettings() {
   const queryClient = useQueryClient()
@@ -119,11 +120,9 @@ export function TrackingSettings() {
 
   return (
     <div className='space-y-6 w-full pb-8'>
-      <div className='space-y-0.5'>
+      <div className='flex items-center gap-1.5'>
         <h2 className='text-2xl font-bold tracking-tight'>Tracking Configuration</h2>
-        <p className='text-muted-foreground'>
-          Configure Meta (Facebook) Conversions API and TikTok Events API for server-side event tracking.
-        </p>
+        <PageInfo text="Configure Meta (Facebook) Conversions API and TikTok Events API for server-side event tracking." />
       </div>
       <TrackingTabs />
       <OrderSourcePolicy />

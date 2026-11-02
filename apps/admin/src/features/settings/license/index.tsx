@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { Loader2, RefreshCw, Key, ShieldCheck, Calendar, Globe, Award, HelpCircle, ArrowUpCircle, DollarSign, ListChecks } from 'lucide-react'
 import { UpgradeDialog } from './components/UpgradeDialog'
 import { FeatureComparison } from './components/FeatureComparison'
+import { PageInfo } from '@/components/page-info'
 
 interface LicenseStatusResponse {
   active: boolean
@@ -74,12 +75,9 @@ export function LicenseSettings() {
 
   return (
     <div className='space-y-6 w-full max-w-4xl'>
-      <div>
+      <div className='flex items-center gap-1.5'>
         <h2 className='text-2xl font-bold tracking-tight'>License Settings</h2>
-        <p className='text-muted-foreground'>
-          Manage your software activation, check limits, and instantly revalidate features.
-        </p>
-      </div>
+        </div>
       <Separator />
 
       <div className='grid gap-6 md:grid-cols-3'>

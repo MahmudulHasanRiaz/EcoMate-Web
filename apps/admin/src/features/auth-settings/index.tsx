@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { authSettingsApi, type AuthProviderResponse } from './api'
+import { PageInfo } from '@/components/page-info'
 
 const PROVIDERS = [
   { key: 'google', label: 'Google', icon: 'G' },
@@ -99,10 +100,9 @@ export default function AuthSettingsPage() {
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Auth & Integrations</h2>
-            <p className='text-muted-foreground'>Configure OAuth provider credentials and enable/disable social login methods.</p>
-          </div>
+            </div>
         </div>
 
         {isLoading ? (

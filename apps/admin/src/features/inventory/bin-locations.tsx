@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
@@ -16,6 +16,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Plus, Pencil, Trash2, MapPin, Search, X, Warehouse } from 'lucide-react'
+import { PageInfo } from '@/components/page-info'
 
 interface BinLocation {
   id: string
@@ -106,24 +107,37 @@ export function BinLocations() {
   const selectedRack = racks.find(r => r.id === form.rackId)
   const shelves = selectedRack?.shelves ?? []
 
-  // Reset dependent fields when parent changes
+  // Reset dependent fields when parent changes. Guarded by an initializing
+  // flag: openEdit sets warehouse/zone/rack/shelf in ONE setForm, and without
+  // the guard the warehouse effect immediately wiped the zone/rack/shelf it
+  // had just loaded. The flag is set in openEdit and cleared by the last
+  // effect below once the initialization commit has run.
+  const initializingRef = useRef(false)
+
   useEffect(() => {
+    if (initializingRef.current) return
     if (form.warehouseId) {
       setForm(f => ({ ...f, zoneId: '', rackId: '', shelfId: '' }))
     }
   }, [form.warehouseId])
 
   useEffect(() => {
+    if (initializingRef.current) return
     if (form.zoneId) {
       setForm(f => ({ ...f, rackId: '', shelfId: '' }))
     }
   }, [form.zoneId])
 
   useEffect(() => {
+    if (initializingRef.current) return
     if (form.rackId) {
       setForm(f => ({ ...f, shelfId: '' }))
     }
   }, [form.rackId])
+
+  useEffect(() => {
+    initializingRef.current = false
+  })
 
   const createMut = useMutation({
     mutationFn: (data: { code: string; warehouseId: string; zoneId?: string; rackId?: string; shelfId?: string }) =>
@@ -175,6 +189,7 @@ export function BinLocations() {
 
   const openEdit = (bin: BinLocation) => {
     setEditing(bin)
+    initializingRef.current = true
     setForm({
       code: bin.code,
       zoneId: bin.zoneId || '',
@@ -188,10 +203,18 @@ export function BinLocations() {
   const handleSubmit = () => {
     if (!form.code.trim()) { toast.error('Bin code is required'); return }
     if (!form.warehouseId) { toast.error('Warehouse is required'); return }
+    // '' (or the '__none__' sentinel, already mapped back to '') must reach
+    // the API as undefined/null, never as an empty string.
+    const payload = {
+      code: form.code.trim(),
+      zoneId: form.zoneId || undefined,
+      rackId: form.rackId || undefined,
+      shelfId: form.shelfId || undefined,
+    }
     if (editing) {
-      updateMut.mutate({ id: editing.id, warehouseId: editing.warehouseId, data: form })
+      updateMut.mutate({ id: editing.id, warehouseId: editing.warehouseId, data: payload })
     } else {
-      createMut.mutate(form)
+      createMut.mutate({ ...payload, warehouseId: form.warehouseId })
     }
   }
 
@@ -215,8 +238,9 @@ export function BinLocations() {
       <Main className='flex flex-col gap-6'>
         <div className='flex items-center justify-between'>
           <div>
-            <h1 className='text-2xl font-bold tracking-tight'>Bin Locations</h1>
-            <p className='text-muted-foreground'>Manage warehouse storage hierarchy (Zone → Rack → Shelf → Bin).</p>
+            <div className='flex items-center gap-1.5'>
+              <h1 className='text-2xl font-bold tracking-tight'>Bin Locations</h1>
+            </div>
           </div>
           <Button onClick={openCreate}>
             <Plus className='mr-2 h-4 w-4' /> Add Bin
@@ -322,10 +346,13 @@ export function BinLocations() {
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Zone</Label>
-                <Select value={form.zoneId} onValueChange={(v) => setForm(f => ({ ...f, zoneId: v }))}>
+                <Select
+                  value={form.zoneId || '__none__'}
+                  onValueChange={(v) => setForm(f => ({ ...f, zoneId: v === '__none__' ? '' : v, rackId: '', shelfId: '' }))}
+                >
                   <SelectTrigger><SelectValue placeholder="Zone" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {zones?.map(z => (
                       <SelectItem key={z.id} value={z.id}>{z.name}</SelectItem>
                     ))}
@@ -334,10 +361,14 @@ export function BinLocations() {
               </div>
               <div className="space-y-2">
                 <Label>Rack</Label>
-                <Select value={form.rackId} onValueChange={(v) => setForm(f => ({ ...f, rackId: v }))} disabled={!form.zoneId}>
+                <Select
+                  value={form.rackId || '__none__'}
+                  onValueChange={(v) => setForm(f => ({ ...f, rackId: v === '__none__' ? '' : v, shelfId: '' }))}
+                  disabled={!form.zoneId}
+                >
                   <SelectTrigger><SelectValue placeholder="Rack" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {racks.map(r => (
                       <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
                     ))}
@@ -346,10 +377,14 @@ export function BinLocations() {
               </div>
               <div className="space-y-2">
                 <Label>Shelf</Label>
-                <Select value={form.shelfId} onValueChange={(v) => setForm(f => ({ ...f, shelfId: v }))} disabled={!form.rackId}>
+                <Select
+                  value={form.shelfId || '__none__'}
+                  onValueChange={(v) => setForm(f => ({ ...f, shelfId: v === '__none__' ? '' : v }))}
+                  disabled={!form.rackId}
+                >
                   <SelectTrigger><SelectValue placeholder="Shelf" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {shelves.map(s => (
                       <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                     ))}

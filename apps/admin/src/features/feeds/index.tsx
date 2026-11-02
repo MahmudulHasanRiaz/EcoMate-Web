@@ -28,6 +28,12 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { feedsApi } from './api';
+import { Header } from '@/components/layout/header';
+import { Main } from '@/components/layout/main';
+import { GlobalSearchBar } from '@/components/global-search-bar';
+import { ThemeSwitch } from '@/components/theme-switch';
+import { ProfileDropdown } from '@/components/profile-dropdown';
+import { PageInfo } from '@/components/page-info';
 
 const PLATFORM_LABELS: Record<string, string> = {
   meta: 'Meta (Facebook)',
@@ -163,12 +169,18 @@ export function FeedsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
+    <>
+      <Header fixed>
+        <GlobalSearchBar className="me-auto" />
+        <ThemeSwitch />
+        <ProfileDropdown />
+      </Header>
+      {/* Same missing-<Main> fix as Courier Settlement (2026-11-02): the
+          shell gives pages no padding, so this page also sat edge-flush. */}
+      <Main className="flex flex-col gap-4 sm:gap-6">
+      <div className="flex items-center gap-1.5">
         <h2 className="text-2xl font-semibold tracking-tight">Product Catalogs</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Auto-generated product feeds for Meta, Google Merchant, and TikTok
-        </p>
+        <PageInfo text="Auto-generated product feeds for Meta, Google Merchant, and TikTok" />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -533,6 +545,7 @@ export function FeedsPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+      </Main>
+    </>
   );
 }
