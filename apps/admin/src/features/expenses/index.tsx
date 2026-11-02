@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
+import { PageInfo } from '@/components/page-info'
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'BDT', minimumFractionDigits: 2 }).format(amount)
@@ -173,10 +174,9 @@ export function Expenses() {
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Expenses</h2>
-            <p className='text-muted-foreground'>Track and manage business expenses.</p>
-          </div>
+            </div>
           <Button size='sm' onClick={openCreate}>
             <Plus className='h-4 w-4 mr-1' /> Add Expense
           </Button>

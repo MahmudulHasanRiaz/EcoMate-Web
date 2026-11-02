@@ -19,6 +19,7 @@ import { DataTablePagination } from '@/components/data-table-pagination'
 import { formatDhakaDate } from '@/lib/dhaka-time'
 import { payrollApi, type PayslipResponse } from './api'
 import { PayrollSummaryBar } from './components/payroll-summary-bar'
+import { PageInfo } from '@/components/page-info'
 
 const statusVariant: Record<string, 'secondary' | 'default' | 'outline' | 'destructive'> = {
   draft: 'secondary',
@@ -63,10 +64,9 @@ export function Payroll() {
       </Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Payroll</h2>
-            <p className='text-muted-foreground'>Manage employee payslips and salary structures.</p>
-          </div>
+            </div>
         </div>
 
         {isLoading ? (

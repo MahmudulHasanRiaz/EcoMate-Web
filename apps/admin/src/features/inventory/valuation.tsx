@@ -10,12 +10,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, DollarSign, Package, HelpCircle, Loader2, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Package, HelpCircle, Loader2, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
+import { PageInfo } from '@/components/page-info'
 
 interface PhysicalValuationItem {
   id: string
@@ -85,11 +86,8 @@ export function InventoryValuation() {
       </Header>
 
       <Main className='flex flex-1 flex-col gap-6'>
-        <div>
+        <div className='flex items-center gap-1.5'>
           <h2 className='text-2xl font-bold tracking-tight'>Inventory Valuation</h2>
-          <p className='text-muted-foreground text-sm'>
-            Financial value of inventory based on cost layers.
-          </p>
         </div>
 
         <Tabs defaultValue="physical" className="w-full">
@@ -108,7 +106,7 @@ export function InventoryValuation() {
               <Card className="bg-primary/5 border-primary/20">
                 <CardHeader className='flex flex-row items-center justify-between pb-2'>
                   <CardTitle className='text-sm font-medium text-primary'>Total Inventory Value</CardTitle>
-                  <DollarSign className='h-4 w-4 text-primary' />
+                  <span className='text-base font-bold leading-none text-primary'>৳</span>
                 </CardHeader>
                 <CardContent>
                   <div className='text-3xl font-bold text-primary'>
@@ -235,7 +233,7 @@ export function InventoryValuation() {
               <Card>
                 <CardHeader className='flex flex-row items-center justify-between pb-2'>
                   <CardTitle className='text-sm font-medium text-muted-foreground'>Total Managed Stock Value</CardTitle>
-                  <DollarSign className='h-4 w-4 text-muted-foreground' />
+                  <span className='text-base font-bold leading-none text-muted-foreground'>৳</span>
                 </CardHeader>
                 <CardContent>
                   <div className='text-3xl font-bold'>

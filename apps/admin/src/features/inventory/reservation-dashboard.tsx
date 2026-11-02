@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Search, Loader2, CalendarDays, XCircle } from 'lucide-react'
+import { PageInfo } from '@/components/page-info'
 
 interface Reservation {
   id: string
@@ -100,8 +101,9 @@ export function ReservationDashboard() {
       <Main className='flex flex-col gap-6'>
         <div className='flex items-center justify-between'>
           <div>
-            <h1 className='text-2xl font-bold tracking-tight'>Reservations</h1>
-            <p className='text-muted-foreground'>Active stock reservations across warehouses.</p>
+            <div className='flex items-center gap-1.5'>
+              <h1 className='text-2xl font-bold tracking-tight'>Reservations</h1>
+            </div>
           </div>
           <div className='flex items-center gap-2 text-sm text-muted-foreground'>
             <CalendarDays className='h-4 w-4' />

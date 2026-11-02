@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
+import { PageInfo } from '@/components/page-info'
 
 const STATUS_BADGE: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
@@ -119,10 +120,9 @@ function TemplatesTab() {
   return (
     <>
       <div className='flex items-end justify-between'>
-        <div>
+        <div className='flex items-center gap-1.5'>
           <h2 className='text-2xl font-bold tracking-tight'>Email Templates</h2>
-          <p className='text-muted-foreground'>Manage email templates for campaigns.</p>
-        </div>
+          </div>
         <Button size='sm' onClick={openCreate}>
           <Plus className='h-4 w-4 mr-1' /> Add Template
         </Button>
@@ -356,10 +356,9 @@ function CampaignsTab() {
   return (
     <>
       <div className='flex flex-wrap items-end justify-between gap-2'>
-        <div>
+        <div className='flex items-center gap-1.5'>
           <h2 className='text-2xl font-bold tracking-tight'>Campaigns</h2>
-          <p className='text-muted-foreground'>Create and send email campaigns.</p>
-        </div>
+          </div>
         <Button size='sm' onClick={openCreate}>
           <Plus className='h-4 w-4 mr-1' /> Create Campaign
         </Button>

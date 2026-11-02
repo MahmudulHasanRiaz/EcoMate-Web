@@ -160,6 +160,10 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
       toast.error('Please select or enter a reason')
       return
     }
+    if (!warehouseId) {
+      toast.error('Select a warehouse')
+      return
+    }
     const payload = {
       productId,
       variantId,

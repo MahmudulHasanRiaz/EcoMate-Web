@@ -111,7 +111,15 @@ export class WarehousesService {
     if (shelfId) where.shelfId = shelfId;
     return this.prisma.binLocation.findMany({
       where,
-      include: { warehouse: { select: { id: true, name: true } } },
+      // Hierarchy relations included (2026-11-02 audit): both bin UIs
+      // render zone/rack/shelf names from the payload — without the
+      // relations those columns were permanently "-".
+      include: {
+        warehouse: { select: { id: true, name: true } },
+        zone: { select: { id: true, name: true } },
+        rack: { select: { id: true, name: true } },
+        shelf: { select: { id: true, name: true } },
+      },
       orderBy: { code: 'asc' },
     });
   }
@@ -119,6 +127,11 @@ export class WarehousesService {
   async listBinLocations(warehouseId: string) {
     return this.prisma.binLocation.findMany({
       where: { warehouseId },
+      include: {
+        zone: { select: { id: true, name: true } },
+        rack: { select: { id: true, name: true } },
+        shelf: { select: { id: true, name: true } },
+      },
       orderBy: { code: 'asc' },
     });
   }
@@ -140,9 +153,10 @@ export class WarehousesService {
       data: {
         code: dto.code,
         warehouseId,
-        zoneId: dto.zoneId ?? null,
-        rackId: dto.rackId ?? null,
-        shelfId: dto.shelfId ?? null,
+        // '' from form selects means "none" — never write it as an FK.
+        zoneId: dto.zoneId || null,
+        rackId: dto.rackId || null,
+        shelfId: dto.shelfId || null,
       },
     });
   }
@@ -160,9 +174,12 @@ export class WarehousesService {
       });
       if (dup) throw new ConflictException('Bin code already in use');
     }
-    let zoneId = dto.zoneId !== undefined ? dto.zoneId : bin.zoneId;
-    let rackId = dto.rackId !== undefined ? dto.rackId : bin.rackId;
-    let shelfId = dto.shelfId !== undefined ? dto.shelfId : bin.shelfId;
+    // '' from form selects means "clear this level" — normalize to null
+    // before it can reach a Prisma FK field (2026-11-02 audit: the admin
+    // edit path sent raw '' values the create path already mapped away).
+    let zoneId = dto.zoneId !== undefined ? dto.zoneId || null : bin.zoneId;
+    let rackId = dto.rackId !== undefined ? dto.rackId || null : bin.rackId;
+    let shelfId = dto.shelfId !== undefined ? dto.shelfId || null : bin.shelfId;
     if (shelfId && !rackId) {
       throw new ConflictException('shelfId requires rackId');
     }

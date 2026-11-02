@@ -14,6 +14,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { combosApi, type ComboResponse } from './api'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { PageInfo } from '@/components/page-info'
 
 export function Combos() {
   const queryClient = useQueryClient()
@@ -39,10 +40,9 @@ export function Combos() {
       </Header>
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Combos</h2>
-            <p className='text-muted-foreground'>Manage product bundles and combo deals.</p>
-          </div>
+            </div>
           <Button onClick={() => { setFormMode('add'); setEditRow(undefined); setFormOpen(true); }}>
             <Plus className='h-4 w-4 mr-1' /> Add Combo
           </Button>

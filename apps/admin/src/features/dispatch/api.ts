@@ -94,5 +94,8 @@ export const dispatchApi = {
   // Assign an UNMATCHED dispatch to an order (auto-connect, 2026-11-01).
   assign: (id: string, orderId: string) =>
     apiClient.post<DispatchResponse>(`/dispatch/${id}/assign`, { orderId }),
-  getMetrics: () => apiClient.get<DispatchMetricsResponse>('/dispatch/metrics'),
+  // Filter-aware overview: pass the same params as the list so the figures
+  // describe the filtered set, not the global totals.
+  getMetrics: (params?: any) =>
+    apiClient.get<DispatchMetricsResponse>('/dispatch/metrics', { params }),
 }

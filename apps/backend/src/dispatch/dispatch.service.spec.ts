@@ -148,6 +148,27 @@ describe('DispatchService', () => {
     }
   });
 
+  it('unmatched=true filters the list to orderId NULL rows (auto-connect, 2026-11-01)', async () => {
+    await service.findAll({ unmatched: 'true' });
+    const findCall = prisma.dispatch.findMany.mock.calls[0][0];
+    expect(findCall.where.orderId).toBeNull();
+    const countCall = prisma.dispatch.count.mock.calls[0][0];
+    expect(countCall.where.orderId).toBeNull();
+  });
+
+  it('getMetrics applies the same filters as the list (2026-11-02)', async () => {
+    prisma.dispatch.groupBy.mockResolvedValue([]);
+    prisma.dispatch.count.mockResolvedValue(0);
+    await service.getMetrics({ courier: 'pathao', unmatched: 'true' });
+    for (const call of prisma.dispatch.groupBy.mock.calls) {
+      expect(call[0].where.courier).toBe('pathao');
+      expect(call[0].where.orderId).toBeNull();
+    }
+    const countCall = prisma.dispatch.count.mock.calls.at(-1)[0];
+    expect(countCall.where.courier).toBe('pathao');
+    expect(countCall.where.orderId).toBeNull();
+  });
+
   it('should throw on not found', async () => {
     await expect(service.findOne('nonexistent')).rejects.toThrow();
   });

@@ -283,6 +283,15 @@ export function ExchangeScopeDialog({
               onConfirmed={setPaidConfirmedChecked}
             />
 
+            {!isPaidConfirmValid(paid, recordedPaid, paidReason, paidConfirmedChecked) &&
+              returning.length > 0 &&
+              rows.length > 0 && (
+                <p className='text-[11px] font-medium text-amber-600 dark:text-amber-400 text-right -mb-1'>
+                  {!paidConfirmedChecked
+                    ? 'Tick “I confirm the customer paid…” above to enable this button.'
+                    : 'Enter the adjustment reason above to enable this button.'}
+                </p>
+              )}
             <div className='flex justify-between gap-2'>
               <Button variant='ghost' onClick={() => setStep('ask')}>Back</Button>
               <div className='flex gap-2'>

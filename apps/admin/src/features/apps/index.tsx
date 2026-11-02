@@ -17,6 +17,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { GlobalSearchBar } from '@/components/global-search-bar'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { apps } from './data/apps'
+import { PageInfo } from '@/components/page-info'
 
 const route = getRouteApi('/_authenticated/op/apps/')
 
@@ -89,12 +90,11 @@ export function Apps() {
       {/* ===== Content ===== */}
       <Main fixed>
         <div>
-          <h1 className='text-2xl font-bold tracking-tight'>
+          <div className='flex items-center gap-1.5'>
+            <h1 className='text-2xl font-bold tracking-tight'>
             App Integrations
           </h1>
-          <p className='text-muted-foreground'>
-            Here&apos;s a list of your apps for the integration!
-          </p>
+          </div>
         </div>
         <div className='my-4 flex items-end justify-between sm:my-0 sm:items-center'>
           <div className='flex flex-col gap-4 sm:my-4 sm:flex-row'>

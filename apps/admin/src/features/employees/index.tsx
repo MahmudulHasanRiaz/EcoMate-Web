@@ -20,6 +20,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@
 import { useDepartmentsQuery } from '@/features/departments/hooks'
 import { useDesignationsQuery } from '@/features/designations/hooks'
 import { EditEmployeeDialog } from './components/edit-employee-dialog'
+import { PageInfo } from '@/components/page-info'
 
 const STATUS_BADGE: Record<EmployeeStatus, string> = {
   active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
@@ -130,10 +131,9 @@ export function Employees() {
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Employees</h2>
-            <p className='text-muted-foreground'>Manage organization employees.</p>
-          </div>
+            </div>
           <Button size='sm' onClick={() => navigate({ to: '/op/employees/create' })}>
             <Plus className='h-4 w-4 mr-1' /> Add Employee
           </Button>

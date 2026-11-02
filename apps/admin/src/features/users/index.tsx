@@ -12,6 +12,7 @@ import { UsersProvider } from './components/users-provider'
 import { UsersTable } from './components/users-table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { USER_ROLES } from './constants'
+import { PageInfo } from '@/components/page-info'
 
 export function Users() {
   const [pagination, setPagination] = useState<PaginationState>({
@@ -41,12 +42,9 @@ export function Users() {
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>User List</h2>
-            <p className='text-muted-foreground'>
-              Manage your users and their roles here.
-            </p>
-          </div>
+            </div>
           <UsersPrimaryButtons />
         </div>
 

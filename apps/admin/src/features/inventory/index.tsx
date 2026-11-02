@@ -13,14 +13,14 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Package, MoreHorizontal, ArrowLeftRight, Edit3, Filter, HelpCircle, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { Package, MoreHorizontal, ArrowLeftRight, Edit3, Filter, HelpCircle, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { InventoryDetailDrawer } from './components/inventory-detail-drawer'
 import { AdjustStockModal } from './components/adjust-stock-modal'
 import { useInventoryManagement } from './hooks/use-inventory-management'
 import { dedupePhysicalVariants } from './utils/dedupe-physical-variants'
-import { Link } from '@tanstack/react-router'
+import { Link, useSearch } from '@tanstack/react-router'
 
 interface StockOverviewItem {
   id: string
@@ -84,11 +84,27 @@ export function Inventory() {
     setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }))
   }
 
+  // Server-side sort for the On Hand column — the only quantity column the
+  // stock-overview endpoint can order by (sortBy 'stock' maps to
+  // managedStockQuantity). Available/Reserved are computed post-query
+  // server-side, so they have no sort field; their headers stay tooltip-only.
+  const [stockSort, setStockSort] = useState<'asc' | 'desc' | null>(null)
+  const toggleStockSort = () => {
+    setStockSort((prev) => (prev === null ? 'desc' : prev === 'desc' ? 'asc' : null))
+    setPage(1)
+  }
+
   const { data: stockData, isLoading: isStockLoading, isError: isStockError } = useQuery<StockOverviewResponse>({
-    queryKey: ['inventory-stock-overview', search, page],
+    queryKey: ['inventory-stock-overview', search, page, stockSort],
     queryFn: () =>
       apiClient.get('/inventory/stock-overview', {
-        params: { search: search || undefined, page, perPage },
+        params: {
+          search: search || undefined,
+          page,
+          perPage,
+          sortBy: stockSort ? 'stock' : undefined,
+          sortOrder: stockSort ?? undefined,
+        },
       }).then((r) => r.data),
     enabled: true,
   })
@@ -97,6 +113,28 @@ export function Inventory() {
   const [selectedBin, setSelectedBin] = useState('all_bins')
   const [selectedStatus, setSelectedStatus] = useState('all_status')
   const [inventoryStatus, setInventoryStatus] = useState<'all' | 'in_stock' | 'low' | 'out_of_stock'>('all')
+
+  // Deep links into this page: the Overview "View all low stock" link
+  // (?filter=low_stock) and the warehouse drawer's "View Filtered Stock"
+  // link (?warehouse=<id>). Without reading them those links landed on an
+  // unfiltered list.
+  const routeSearch = useSearch({ strict: false }) as {
+    filter?: string
+    warehouse?: string
+  }
+  const routeFilter = routeSearch?.filter
+  const routeWarehouse = routeSearch?.warehouse
+  useEffect(() => {
+    if (routeFilter === 'low_stock') {
+      setInventoryStatus('low')
+    }
+    if (routeWarehouse) {
+      setSelectedWarehouse(routeWarehouse)
+      setSelectedBin('all_bins')
+      setViewMode('PHYSICAL')
+      setPage(1)
+    }
+  }, [routeFilter, routeWarehouse])
 
   const { data: warehouses } = useQuery<any[]>({
     queryKey: ['warehouses'],
@@ -129,7 +167,7 @@ export function Inventory() {
     if (selectedBin === 'unassigned') {
       data = data.filter((p: any) => !p.binLocationId)
     } else if (selectedBin !== 'all_bins') {
-      data = data.filter((p: any) => !p.binLocationId)
+      data = data.filter((p: any) => p.binLocationId === selectedBin)
     }
 
     // Search Filter
@@ -207,6 +245,15 @@ export function Inventory() {
         items = items.filter((i) => i.status === 'low' || i.status === 'negative')
       } else if (inventoryStatus === 'out_of_stock') {
         items = items.filter((i) => i.available != null && i.available <= 0)
+      }
+
+      // Apply stock status filter (low/negative). The row `status` already
+      // encodes the threshold rule (negative when available < 0; low when
+      // available <= lowStockQty, using the product's own threshold).
+      if (selectedStatus === 'low') {
+        items = items.filter((i) => i.status === 'low')
+      } else if (selectedStatus === 'negative') {
+        items = items.filter((i) => i.available != null && i.available < 0)
       }
 
       return items
@@ -323,11 +370,16 @@ export function Inventory() {
         }
       })
 
-      // Apply physical stock filter
+      // Apply physical stock filter. 'low' and 'out_of_stock' are distinct:
+      // out_of_stock = no physical stock records at all; low = has physical
+      // stock whose available quantity is at/below the product threshold
+      // (the row `status` is 'optimal' whenever there is no physical stock).
       if (inventoryStatus === 'in_stock') {
         items = items.filter((i: any) => i._hasPhysicalStock)
-      } else if (inventoryStatus === 'out_of_stock' || inventoryStatus === 'low') {
+      } else if (inventoryStatus === 'out_of_stock') {
         items = items.filter((i: any) => !i._hasPhysicalStock)
+      } else if (inventoryStatus === 'low') {
+        items = items.filter((i: any) => i.status === 'low')
       }
 
       // Apply stock status filter (low/negative)
@@ -435,7 +487,7 @@ export function Inventory() {
                 <SelectItem value="all_bins">All Bins</SelectItem>
                 <SelectItem value="unassigned">Unassigned</SelectItem>
                 {binLocations.map((b: any) => (
-                  <SelectItem key={b.id} value={b.id}>{b.code}{b.zone ? ` (${b.zone})` : ''}</SelectItem>
+                  <SelectItem key={b.id} value={b.id}>{b.code}{b.zone?.name ? ` (${b.zone.name})` : ''}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -472,10 +524,24 @@ export function Inventory() {
                       </Tooltip>
                     </TableHead>
                     <TableHead className='text-right'>
-                      <Tooltip>
-                        <TooltipTrigger className="flex items-center justify-end w-full gap-1">On Hand <HelpCircle className="h-3 w-3 text-muted-foreground"/></TooltipTrigger>
-                        <TooltipContent>Total physical stock physically present in warehouse</TooltipContent>
-                      </Tooltip>
+                      <div className="flex items-center justify-end w-full gap-1">
+                        <button
+                          type="button"
+                          onClick={toggleStockSort}
+                          className="flex items-center gap-0.5 hover:text-foreground"
+                          title="Sort by on-hand quantity"
+                        >
+                          On Hand
+                          {stockSort === 'desc' && <ChevronDown className="h-3 w-3" />}
+                          {stockSort === 'asc' && <ChevronUp className="h-3 w-3" />}
+                        </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent>Total physical stock physically present in warehouse</TooltipContent>
+                        </Tooltip>
+                      </div>
                     </TableHead>
                   </TooltipProvider>
                   <TableHead>Last Updated</TableHead>

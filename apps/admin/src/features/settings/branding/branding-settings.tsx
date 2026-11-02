@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator'
 import { MediaPicker } from '@/components/media-picker'
 import { mediaUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
+import { PageInfo } from '@/components/page-info'
 
 export function BrandingSettings() {
   const queryClient = useQueryClient()
@@ -76,11 +77,8 @@ export function BrandingSettings() {
 
   return (
     <div className='space-y-6 w-full pb-8'>
-      <div className='space-y-0.5'>
+      <div className='flex items-center gap-1.5'>
         <h2 className='text-2xl font-bold tracking-tight'>Branding</h2>
-        <p className='text-muted-foreground'>
-          Control the visual identity, title, and favicon for both the admin panel and the storefront. All changes apply on next page load.
-        </p>
       </div>
       <Separator className='my-6' />
 

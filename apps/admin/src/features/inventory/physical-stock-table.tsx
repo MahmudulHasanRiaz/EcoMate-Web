@@ -13,6 +13,7 @@ import { Search, Loader2, Warehouse, Eye, Plus, Package } from 'lucide-react'
 import { useInventoryManagement } from './hooks/use-inventory-management'
 import { PhysicalAdjustDialog } from './components/physical-adjust-dialog'
 import { InventoryDetailDrawer } from './components/inventory-detail-drawer'
+import { PageInfo } from '@/components/page-info'
 
 interface PhysicalStock {
   id: string
@@ -85,8 +86,9 @@ export function PhysicalStockTable() {
         <Main className='flex flex-col gap-6'>
           <div className='flex items-center justify-between'>
             <div>
-              <h1 className='text-2xl font-bold tracking-tight'>Physical Stock</h1>
-              <p className='text-muted-foreground'>Warehouse-level inventory managed by physical counting.</p>
+              <div className='flex items-center gap-1.5'>
+                <h1 className='text-2xl font-bold tracking-tight'>Physical Stock</h1>
+              </div>
             </div>
             <Button onClick={() => setAdjustOpen(true)}>
               <Plus className='mr-2 h-4 w-4' /> Adjust Stock

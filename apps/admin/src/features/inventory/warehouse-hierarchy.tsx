@@ -80,10 +80,12 @@ export function WarehouseHierarchy() {
   }
 
   const createMut = useMutation({
-    mutationFn: ({ type, parentId, name }: { type: EntityType; parentId: string | null; name: string }) => {
-      if (type === 'zone') return apiClient.post(`/warehouses/${warehouseId}/zones`, { name })
-      if (type === 'rack') return apiClient.post(`/warehouses/${warehouseId}/zones/${parentId}/racks`, { name })
-      return apiClient.post(`/warehouses/${warehouseId}/zones/${selectedZoneId}/racks/${parentId}/shelves`, { name })
+    mutationFn: ({ type, parentId, name, isActive }: { type: EntityType; parentId: string | null; name: string; isActive: boolean }) => {
+      // Create DTOs for zones/racks/shelves all accept optional isActive —
+      // send the dialog's checkbox state instead of silently creating active.
+      if (type === 'zone') return apiClient.post(`/warehouses/${warehouseId}/zones`, { name, isActive })
+      if (type === 'rack') return apiClient.post(`/warehouses/${warehouseId}/zones/${parentId}/racks`, { name, isActive })
+      return apiClient.post(`/warehouses/${warehouseId}/zones/${selectedZoneId}/racks/${parentId}/shelves`, { name, isActive })
     },
     onSuccess: () => { invalidate(); setDialog(emptyDialog()); toast.success('Created') },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error creating'),
@@ -120,7 +122,7 @@ export function WarehouseHierarchy() {
   const handleDialogSubmit = () => {
     if (!dialog.name.trim()) { toast.error('Name is required'); return }
     if (dialog.mode === 'create') {
-      createMut.mutate({ type: dialog.type, parentId: dialog.parentId, name: dialog.name.trim() })
+      createMut.mutate({ type: dialog.type, parentId: dialog.parentId, name: dialog.name.trim(), isActive: dialog.isActive })
     } else if (dialog.mode === 'edit' && dialog.id) {
       updateMut.mutate({ type: dialog.type, id: dialog.id, name: dialog.name.trim(), isActive: dialog.isActive })
     }

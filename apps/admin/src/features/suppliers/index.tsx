@@ -17,6 +17,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { PaymentGatewayAccountSelect } from '@/features/payments/components/payment-gateway-account-select'
+import { PageInfo } from '@/components/page-info'
 
 function fmt(v: number | string) {
   return Number(v).toFixed(2)
@@ -95,10 +96,9 @@ export function Suppliers() {
       </Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Suppliers</h2>
-            <p className='text-muted-foreground'>Manage product suppliers.</p>
-          </div>
+            </div>
           <Button size='sm' onClick={() => setShowCreate(true)}><Plus className='h-4 w-4' /> Add Supplier</Button>
         </div>
 

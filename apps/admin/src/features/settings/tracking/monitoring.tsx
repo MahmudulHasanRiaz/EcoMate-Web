@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Separator } from '@/components/ui/separator'
 import { monitoringApi, type DispatchFunnel, type DateRangeParams } from './monitoring-api'
 import { TrackingTabs } from './tracking-nav'
+import { PageInfo } from '@/components/page-info'
 
 const FUNNEL_COLUMNS: { key: keyof DispatchFunnel; label: string }[] = [
   { key: 'pending', label: 'Pending' },
@@ -133,11 +134,8 @@ export function TrackingMonitoring() {
   return (
     <div className='space-y-6 w-full pb-8'>
       <div className='flex items-start justify-between gap-4'>
-        <div className='space-y-0.5'>
+        <div className='flex items-center gap-1.5'>
           <h2 className='text-2xl font-bold tracking-tight'>Tracking Monitoring</h2>
-          <p className='text-muted-foreground'>
-            Aggregate views over the CAPI tracking pipeline.
-          </p>
         </div>
       </div>
 

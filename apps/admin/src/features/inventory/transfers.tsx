@@ -16,9 +16,10 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, ArrowRight, Truck, Search, Eye, AlertCircle, Loader2, Check, X, Send } from 'lucide-react'
+import { Plus, ArrowRight, Truck, Search, Eye, AlertCircle, Loader2, Check, X, Send, ChevronLeft, ChevronRight } from 'lucide-react'
 import { UserBadge } from '@/components/user-badge'
 import { ProductSkuCombobox, type LookupRow } from './components/product-sku-combobox'
+import { PageInfo } from '@/components/page-info'
 
 interface Warehouse {
   id: string
@@ -116,16 +117,17 @@ export function Transfers() {
   const [historySearchInput, setHistorySearchInput] = useState('')
   const [historySearch, setHistorySearch] = useState('')
   const [historyStatus, setHistoryStatus] = useState('all')
+  const [historyPage, setHistoryPage] = useState(1)
   const [viewTransfer, setViewTransfer] = useState<HistoryTransfer | null>(null)
 
   const { data: historyRes, isLoading: historyLoading, isError: historyError, error: historyErrorObj } =
     useQuery<HistoryTransfersResponse>({
-      queryKey: ['inventory-transfers', historySearch, historyStatus],
+      queryKey: ['inventory-transfers', historySearch, historyStatus, historyPage],
       queryFn: () =>
         apiClient
           .get('/inventory/transfers', {
             params: {
-              page: 1,
+              page: historyPage,
               perPage: 50,
               ...(historySearch ? { search: historySearch } : {}),
               ...(historyStatus !== 'all' ? { status: historyStatus } : {}),
@@ -137,7 +139,10 @@ export function Transfers() {
 
   // Debounce so typing doesn't fire a query per keystroke.
   useEffect(() => {
-    const t = setTimeout(() => setHistorySearch(historySearchInput.trim()), 300)
+    const t = setTimeout(() => {
+      setHistorySearch(historySearchInput.trim())
+      setHistoryPage(1)
+    }, 300)
     return () => clearTimeout(t)
   }, [historySearchInput])
 
@@ -199,14 +204,22 @@ export function Transfers() {
   const [decision, setDecision] = useState<{ mode: 'approve' | 'reject'; request: TransferRequest } | null>(null)
   const [rejectReason, setRejectReason] = useState('')
 
+  const [requestsPage, setRequestsPage] = useState(1)
+
   const {
     data: requestsRes,
     isLoading: requestsLoading,
     isError: requestsError,
     error: requestsLoadError,
-  } = useQuery<{ data: TransferRequest[] } | TransferRequest[]>({
-    queryKey: ['inventory-transfer-requests'],
-    queryFn: () => apiClient.get('/inventory/transfer-requests').then(r => r.data),
+  } = useQuery<
+    | { data: TransferRequest[]; meta?: { total: number; page: number; perPage: number; totalPages: number } }
+    | TransferRequest[]
+  >({
+    queryKey: ['inventory-transfer-requests', requestsPage],
+    queryFn: () =>
+      apiClient
+        .get('/inventory/transfer-requests', { params: { page: requestsPage, perPage: 50 } })
+        .then(r => r.data),
     refetchInterval: 30_000,
   })
 
@@ -218,6 +231,9 @@ export function Transfers() {
     : Array.isArray((requestsRes as any)?.data)
       ? (requestsRes as any).data
       : []
+  const requestsMeta = !Array.isArray(requestsRes)
+    ? (requestsRes as any)?.meta
+    : undefined
 
   const pendingRequests = requests.filter(r => r.status === 'REQUESTED').length
 
@@ -293,8 +309,9 @@ export function Transfers() {
       <Main className='flex flex-col gap-6'>
         <div className='flex items-center justify-between'>
           <div>
-            <h1 className='text-2xl font-bold tracking-tight'>Stock Transfers</h1>
-            <p className='text-muted-foreground'>Move inventory between physical warehouses.</p>
+            <div className='flex items-center gap-1.5'>
+              <h1 className='text-2xl font-bold tracking-tight'>Stock Transfers</h1>
+            </div>
           </div>
           <Button onClick={() => setNewTransferOpen(true)}>
             <Plus className='mr-2 h-4 w-4' /> New Transfer
@@ -418,6 +435,32 @@ export function Transfers() {
                 </TableBody>
               </Table>
             </div>
+
+            {requestsMeta && requestsMeta.totalPages > 1 && (
+              <div className='flex items-center justify-between'>
+                <p className='text-sm text-muted-foreground'>
+                  Page {requestsMeta.page} of {requestsMeta.totalPages} ({requestsMeta.total} total)
+                </p>
+                <div className='flex gap-2'>
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    disabled={requestsPage <= 1}
+                    onClick={() => setRequestsPage(p => Math.max(1, p - 1))}
+                  >
+                    <ChevronLeft className='h-4 w-4 mr-1' /> Previous
+                  </Button>
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    disabled={requestsPage >= requestsMeta.totalPages}
+                    onClick={() => setRequestsPage(p => p + 1)}
+                  >
+                    Next <ChevronRight className='h-4 w-4 ml-1' />
+                  </Button>
+                </div>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value='history' className='flex flex-col gap-4'>
@@ -431,7 +474,7 @@ export function Transfers() {
                   onChange={(e) => setHistorySearchInput(e.target.value)}
                 />
               </div>
-              <Select value={historyStatus} onValueChange={setHistoryStatus}>
+              <Select value={historyStatus} onValueChange={(v) => { setHistoryStatus(v); setHistoryPage(1) }}>
                 <SelectTrigger className="w-[180px] bg-background">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
@@ -439,6 +482,7 @@ export function Transfers() {
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="transit">In Transit</SelectItem>
+                  <SelectItem value="partial">Partial failure</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -527,6 +571,32 @@ export function Transfers() {
                 </TableBody>
               </Table>
             </div>
+
+            {historyRes?.meta && historyRes.meta.totalPages > 1 && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Page {historyRes.meta.page} of {historyRes.meta.totalPages} ({historyRes.meta.total} total)
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={historyPage <= 1}
+                    onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={historyPage >= historyRes.meta.totalPages}
+                    onClick={() => setHistoryPage(p => p + 1)}
+                  >
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
 
@@ -694,7 +764,7 @@ export function Transfers() {
                     <SelectContent>
                       <SelectItem value="auto">Auto (LRU oldest bin)</SelectItem>
                       {sourceBins.map((b: any) => (
-                        <SelectItem key={b.id} value={b.id}>{b.code}{b.zone ? ` (${b.zone})` : ''}</SelectItem>
+                        <SelectItem key={b.id} value={b.id}>{b.code}{b.zone?.name ? ` (${b.zone.name})` : ''}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -718,7 +788,7 @@ export function Transfers() {
                     <SelectContent>
                       <SelectItem value="none">Unassigned</SelectItem>
                       {destBins.map((b: any) => (
-                        <SelectItem key={b.id} value={b.id}>{b.code}{b.zone ? ` (${b.zone})` : ''}</SelectItem>
+                        <SelectItem key={b.id} value={b.id}>{b.code}{b.zone?.name ? ` (${b.zone.name})` : ''}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -795,7 +865,7 @@ export function Transfers() {
                 )}
                 <div className="flex items-start gap-2 mt-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 p-2 rounded">
                   <AlertCircle className="h-4 w-4 shrink-0" />
-                  <p>Stock deducted from source immediately, but not available at destination until transfer is <strong>Received</strong>.</p>
+                  <p>Stock moves <strong>immediately</strong>: the quantity is deducted from the source and added at the destination in a single transaction — there is no separate receive step.</p>
                 </div>
               </div>
             </div>

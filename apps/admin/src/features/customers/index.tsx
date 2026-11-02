@@ -32,6 +32,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { useCustomersQuery, useCustomerOrderSummary } from './hooks'
 import { type CustomerResponse } from './api'
+import { PageInfo } from '@/components/page-info'
 
 function makeColumns(navigate: ReturnType<typeof useNavigate>): ColumnDef<CustomerResponse>[] {
   return [
@@ -310,12 +311,9 @@ export function Customers() {
       </Header>
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
-        <div>
+        <div className='flex items-center gap-1.5'>
           <h2 className='text-2xl font-bold tracking-tight'>Customers</h2>
-          <p className='text-muted-foreground'>
-            View customer details and order history.
-          </p>
-        </div>
+          </div>
 
         <div className='flex flex-1 flex-col gap-4'>
           <div className='overflow-hidden rounded-md border'>

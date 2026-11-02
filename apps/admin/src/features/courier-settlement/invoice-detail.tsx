@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
+import { Main } from '@/components/layout/main'
 import { ArrowLeft, BadgeDollarSign } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -654,6 +655,7 @@ export function InvoiceDetailPage({ id }: { id: string }) {
 
   if (isLoading)
     return (
+      <Main className="flex flex-col gap-4 sm:gap-6">
       <div className="space-y-4">
         <div className="space-y-2">
           <Skeleton className="h-4 w-28" />
@@ -668,12 +670,15 @@ export function InvoiceDetailPage({ id }: { id: string }) {
         <Skeleton className="h-9 w-[28rem] max-w-full rounded-md" />
         <Skeleton className="h-72 rounded-md" />
       </div>
+      </Main>
     )
   if (isError || !data)
     return (
-      <div className="rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
-        Invoice not found or you lack permission.
-      </div>
+      <Main className="flex flex-col gap-4 sm:gap-6">
+        <div className="rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
+          Invoice not found or you lack permission.
+        </div>
+      </Main>
     )
 
   const { invoice, historical, effective, divergence } = data
@@ -705,6 +710,7 @@ export function InvoiceDetailPage({ id }: { id: string }) {
   } | null
 
   return (
+    <Main className="flex flex-col gap-4 sm:gap-6">
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
@@ -955,5 +961,6 @@ export function InvoiceDetailPage({ id }: { id: string }) {
         </TabsContent>
       </Tabs>
     </div>
+    </Main>
   )
 }

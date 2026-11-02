@@ -37,6 +37,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useQuery } from '@tanstack/react-query'
 import { employeesApi, type EmployeeResponse } from '@/features/employees/api'
 import type { LeaveRequest, LeaveStatus, LeaveType } from './api'
+import { PageInfo } from '@/components/page-info'
 
 const TYPE_PAID_BADGE = 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
 
@@ -382,11 +383,8 @@ export function LeavePage() {
       </Header>
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
-        <div>
+        <div className='flex items-center gap-1.5'>
           <h2 className='text-2xl font-bold tracking-tight'>Leave Management</h2>
-          <p className='mt-1 text-sm text-muted-foreground'>
-            Configure leave types, process requests, and track balances.
-          </p>
         </div>
 
         <Tabs defaultValue='types'>

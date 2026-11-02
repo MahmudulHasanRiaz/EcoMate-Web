@@ -13,6 +13,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { SafeImage } from '@/components/safe-image'
 import { Loader2, Star, Trash2, Check, MessageSquareText, EyeOff } from 'lucide-react'
+import { PageInfo } from '@/components/page-info'
 
 const reviewsApi = {
   // GET /reviews returns the paginated envelope `{ data, meta }` — the same
@@ -109,10 +110,9 @@ export function Reviews() {
       </Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-end justify-between'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Reviews</h2>
-            <p className='text-muted-foreground'>Manage customer product reviews.</p>
-          </div>
+            </div>
         </div>
 
         <div className='flex gap-2 items-center'>

@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Loader2, Printer, Save } from 'lucide-react'
+import { PageInfo } from '@/components/page-info'
 
 const DEFAULT_WIDTH = 50
 const DEFAULT_HEIGHT = 30
@@ -52,9 +53,8 @@ export function PriceLabelSettings() {
 
   return (
     <div className='space-y-6 w-full pb-8'>
-      <div className='space-y-0.5'>
+      <div className='flex items-center gap-1.5'>
         <h2 className='text-2xl font-bold tracking-tight'>Price Label</h2>
-        <p className='text-muted-foreground'>Configure thermal price label sticker dimensions.</p>
       </div>
       <Separator className='my-6' />
       <Card>

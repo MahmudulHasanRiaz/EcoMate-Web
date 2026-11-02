@@ -22,6 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTablePagination } from '@/components/data-table'
 import { type PaginationState, getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { PageInfo } from '@/components/page-info'
 
 const channelOptions = [
   { value: 'email', label: 'Email' },
@@ -157,10 +158,9 @@ export function Notifications() {
 
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Notifications</h2>
-            <p className='text-muted-foreground'>Manage notification settings, send notifications, and view logs.</p>
-          </div>
+            </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>

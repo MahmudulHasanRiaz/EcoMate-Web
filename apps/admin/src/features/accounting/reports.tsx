@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PageInfo } from '@/components/page-info'
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'BDT', currencyDisplay: 'narrowSymbol' }).format(amount)
@@ -457,10 +458,9 @@ export function Reports() {
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Accounting Reports</h2>
-            <p className='text-muted-foreground'>View trial balance, profit & loss, balance sheet, and account ledger.</p>
-          </div>
+            </div>
         </div>
 
         <div className='flex items-center gap-2'>

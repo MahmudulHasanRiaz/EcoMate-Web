@@ -56,6 +56,7 @@ export class ManagedStockLedgerService {
   async find(params: {
     productId?: string;
     variantId?: string;
+    type?: string;
     referenceType?: ReferenceEntity;
     referenceId?: string;
     page?: number;
@@ -66,6 +67,7 @@ export class ManagedStockLedgerService {
     const where: Prisma.ManagedStockLedgerWhereInput = {};
     if (params.productId) where.productId = params.productId;
     if (params.variantId) where.variantId = params.variantId;
+    if (params.type) where.type = params.type as any;
     if (params.referenceType) where.referenceType = params.referenceType;
     if (params.referenceId) where.referenceId = params.referenceId;
 

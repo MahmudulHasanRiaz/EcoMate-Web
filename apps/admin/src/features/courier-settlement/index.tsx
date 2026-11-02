@@ -2,6 +2,12 @@ import { useState } from 'react'
 import { Wallet } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { Header } from '@/components/layout/header'
+import { Main } from '@/components/layout/main'
+import { GlobalSearchBar } from '@/components/global-search-bar'
+import { ThemeSwitch } from '@/components/theme-switch'
+import { ProfileDropdown } from '@/components/profile-dropdown'
+import { PageInfo } from '@/components/page-info'
 import { OverviewPanel } from './overview-panel'
 import { InvoicesTable } from './invoices-table'
 import { ReconciliationPanel } from './reconciliation-panel'
@@ -24,19 +30,25 @@ export function CourierSettlementPage() {
   const [resumeDraftId, setResumeDraftId] = useState<string | null>(null)
 
   return (
-    <div className="space-y-4">
+    <>
+      <Header fixed>
+        <GlobalSearchBar className="me-auto" />
+        <ThemeSwitch />
+        <ProfileDropdown />
+      </Header>
+      {/* This page used to render a bare div with no <Main> — the app shell
+          gives pages no padding of its own, so every card sat flush
+          against the viewport edges (owner report, 2026-11-02). */}
+      <Main className="flex flex-col gap-4 sm:gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="chart-card-header-icon bg-success-soft text-success border border-success/25">
             <Wallet className="size-5" aria-hidden />
           </span>
-          <div>
+          <div className="flex items-center gap-1.5">
             <h1 className="text-2xl font-semibold tracking-tight">
               Courier Settlement
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Import courier invoices, resolve exceptions, finalize and reconcile COD &amp; charges.
-            </p>
           </div>
         </div>
         <Button
@@ -90,6 +102,7 @@ export function CourierSettlementPage() {
         onOpenChange={setImportOpen}
         initialDraftId={resumeDraftId}
       />
-    </div>
+      </Main>
+    </>
   )
 }

@@ -7,6 +7,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { PageInfo } from '@/components/page-info'
 import { useDispatchList, useDispatchMutations, useDispatchSync } from './hooks'
 import { DispatchMetrics } from './dispatch-metrics'
 import { DispatchTable } from './dispatch-table'
@@ -59,6 +60,14 @@ export function DispatchPage() {
   const activeFilterCount =
     (statusFilter ? 1 : 0) + (courierFilter ? 1 : 0) + (unmatchedOnly ? 1 : 0)
 
+  // The overview strip follows the exact same filters as the list.
+  const filterParams = {
+    search: debouncedSearch || undefined,
+    status: statusFilter || undefined,
+    courier: courierFilter || undefined,
+    unmatched: unmatchedOnly ? 'true' : undefined,
+  }
+
   const resetFilters = () => {
     setStatusFilter('')
     setCourierFilter('')
@@ -74,19 +83,19 @@ export function DispatchPage() {
       </Header>
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
-        <div className='flex flex-wrap items-end justify-between gap-2'>
-          <div>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Dispatch</h2>
-            <p className='text-muted-foreground'>
-              Manage order dispatches and courier handoffs.
-            </p>
           </div>
           <Button className='space-x-1' onClick={() => setCreateOpen(true)}>
             <span>Create</span> <Plus size={18} />
           </Button>
         </div>
 
-        <DispatchMetrics />
+        <DispatchMetrics
+          params={filterParams}
+          filtered={activeFilterCount > 0 || !!debouncedSearch}
+        />
 
         <DispatchTable
           data={data?.data || []}
@@ -106,7 +115,9 @@ export function DispatchPage() {
           isLoading={isLoading}
           isSyncing={syncMutation.isPending}
           onDelete={(id) => setDeleteId(id)}
-          onSyncSelected={(ids) => syncMutation.mutate(ids)}
+          onSyncSelected={(entries) => syncMutation.mutate(entries)}
+          syncProgress={syncMutation.progress}
+          onCancelSync={syncMutation.cancel}
           onConfirmPanelCancel={(id) => confirmPanelCancel.mutate(id)}
           confirmingId={
             confirmPanelCancel.isPending

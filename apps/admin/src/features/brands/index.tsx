@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { MediaPicker } from '@/components/media-picker'
 import { mediaUrl } from '@/lib/utils'
 import { SafeImage } from '@/components/safe-image'
+import { PageInfo } from '@/components/page-info'
 
 export function Brands() {
   const queryClient = useQueryClient()
@@ -83,10 +84,9 @@ export function Brands() {
       </Header>
       <Main className='flex flex-1 flex-col gap-6'>
         <div className='flex items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Brands</h2>
-            <p className='text-muted-foreground'>Manage product brands.</p>
-          </div>
+            </div>
           <Button size='sm' onClick={() => setShowCreate(true)}><Plus className='h-4 w-4' /> Add Brand</Button>
         </div>
 

@@ -23,6 +23,7 @@ import {
   Store,
   Save,
 } from 'lucide-react';
+import { PageInfo } from '@/components/page-info'
 
 interface ReadyStatus {
   ready: boolean;
@@ -176,10 +177,9 @@ export function MobileSettings() {
   if (!isLicensed) {
     return (
       <div className='space-y-6 w-full'>
-        <div>
+        <div className='flex items-center gap-1.5'>
           <h2 className='text-2xl font-bold tracking-tight'>Publish Mobile App</h2>
-          <p className='text-muted-foreground'>Generate native mobile applications for storefront, admin panel, and POS.</p>
-        </div>
+          </div>
         <Separator />
         <Card>
           <CardContent className='flex flex-col items-center justify-center py-12 text-center'>
@@ -196,10 +196,9 @@ export function MobileSettings() {
 
   return (
     <div className='space-y-6 w-full'>
-      <div>
+      <div className='flex items-center gap-1.5'>
         <h2 className='text-2xl font-bold tracking-tight'>Publish Mobile App</h2>
-        <p className='text-muted-foreground'>Generate native mobile apps for your storefront, admin panel, and POS terminal.</p>
-      </div>
+        </div>
       <Separator />
 
       {/* Pre-flight Checklist */}

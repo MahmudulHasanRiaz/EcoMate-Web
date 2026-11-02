@@ -1941,6 +1941,18 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                         hideSummary
                       />
                     )}
+                    {/* Gate hint lives HERE too (2026-11-02): the submit
+                        CTAs are viewport-dependent (desktop block, mobile
+                        sticky bar, header) — the card is where staff are
+                        looking when they tick the box, so the reason the
+                        button is disabled must be stated here as well. */}
+                    {editOrder && !paidValid && (
+                      <p className='text-[11px] font-medium text-amber-600 dark:text-amber-400'>
+                        {!paidConfirmedChecked
+                          ? 'Tick “I confirm the customer paid…” above to enable the Create Exchange Order button.'
+                          : 'Enter the adjustment reason above to enable the Create Exchange Order button.'}
+                      </p>
+                    )}
                     {exMoney && exMoney.dueAfterCredit > 0.005 && (
                       <>
                         <div>

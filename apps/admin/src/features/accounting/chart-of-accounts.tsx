@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { PageInfo } from '@/components/page-info'
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
@@ -265,10 +266,9 @@ export function ChartOfAccounts() {
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-2'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Chart of Accounts</h2>
-            <p className='text-muted-foreground'>Manage your chart of accounts and financial periods.</p>
-          </div>
+            </div>
           <div className='flex gap-2'>
             <Button size='sm' onClick={openCreateAccount}>
               <Plus className='h-4 w-4 mr-1' /> Add Account

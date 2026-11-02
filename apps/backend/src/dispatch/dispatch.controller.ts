@@ -32,8 +32,8 @@ export class DispatchController {
 
   @Roles('superadmin', 'admin', 'employee')
   @Get('metrics')
-  getMetrics() {
-    return this.dispatchService.getMetrics();
+  getMetrics(@Query() query: DispatchQueryDto) {
+    return this.dispatchService.getMetrics(query);
   }
 
   @Roles('superadmin', 'admin', 'employee')

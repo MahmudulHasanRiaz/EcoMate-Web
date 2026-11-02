@@ -16,6 +16,7 @@ import { SettingsTab } from './components/settings-tab'
 import { AddDayAction } from './components/add-day'
 import { AttendanceSummaryTab } from '@/features/hr-performance/components/attendance-summary-tab'
 import { dhakaTodayDate, type AttendanceStatus } from './api'
+import { PageInfo } from '@/components/page-info'
 
 const SUB_TABS = [
   { value: 'today', label: 'Today' },
@@ -52,11 +53,8 @@ export function AttendancePage({ initialTab }: { initialTab?: string }) {
 
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-center justify-between gap-3'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Attendance Management</h2>
-            <p className='mt-1 text-sm text-muted-foreground'>
-              Live check-in state, daily records, adjustments, devices, and mode settings.
-            </p>
           </div>
           <AddDayAction canAdd={canAdjustDays} />
         </div>

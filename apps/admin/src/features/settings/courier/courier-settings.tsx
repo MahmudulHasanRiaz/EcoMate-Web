@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, Save, CheckCircle2, XCircle, ExternalLink, Webhook, Copy, RefreshCw, Eye, EyeOff, AlertCircle, AlertTriangle, FileText, ChevronDown, ChevronUp } from 'lucide-react'
+import { PageInfo } from '@/components/page-info'
 
 const webhookBase = (() => {
   const apiUrl = import.meta.env.VITE_API_URL
@@ -298,9 +299,8 @@ export function CourierSettings() {
     return (
       <div>
         <div className='flex items-center justify-between mb-6'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Courier Integrations</h2>
-            <p className='text-sm text-muted-foreground mt-1'>Configure API credentials for courier services.</p>
           </div>
         </div>
         <div className='flex flex-col items-center justify-center p-8 border border-dashed rounded-lg bg-red-50/50 border-red-200 text-center max-w-lg mx-auto mt-8'>
@@ -321,9 +321,8 @@ export function CourierSettings() {
     return (
       <div>
         <div className='flex items-center justify-between mb-6'>
-          <div>
+          <div className='flex items-center gap-1.5'>
             <h2 className='text-2xl font-bold tracking-tight'>Courier Integrations</h2>
-            <p className='text-sm text-muted-foreground mt-1'>Configure API credentials for courier services.</p>
           </div>
         </div>
         <div className='flex flex-col items-center justify-center p-8 border border-dashed rounded-lg bg-muted/30 text-center max-w-lg mx-auto mt-8'>
@@ -357,9 +356,8 @@ export function CourierSettings() {
   return (
     <div>
       <div className='flex items-center justify-between mb-6'>
-        <div>
+        <div className='flex items-center gap-1.5'>
           <h2 className='text-2xl font-bold tracking-tight'>Courier Integrations</h2>
-          <p className='text-sm text-muted-foreground mt-1'>Configure API credentials for courier services.</p>
         </div>
       </div>
 
