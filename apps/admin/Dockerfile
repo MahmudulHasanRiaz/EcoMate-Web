@@ -6,6 +6,7 @@ ENV VITE_BASE=${VITE_BASE}
 WORKDIR /app
 COPY package*.json ./
 COPY packages/shared-types packages/shared-types
+COPY packages/deepmerge packages/deepmerge
 COPY apps/admin/package.json apps/admin/package.json
 RUN --mount=type=cache,target=/root/.npm npm install
 RUN npx tsc -p packages/shared-types/tsconfig.json

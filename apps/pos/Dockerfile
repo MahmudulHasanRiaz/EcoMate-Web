@@ -4,6 +4,7 @@ ENV VITE_API_URL=${VITE_API_URL}
 WORKDIR /app
 COPY package*.json ./
 COPY apps/pos/package.json apps/pos/package.json
+COPY packages/deepmerge packages/deepmerge
 RUN --mount=type=cache,target=/root/.npm npm install
 COPY apps/pos apps/pos
 WORKDIR /app/apps/pos
