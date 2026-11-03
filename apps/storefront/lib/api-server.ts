@@ -15,12 +15,33 @@ function isRetryableError(err: unknown): boolean {
 
 export async function serverFetch<T = unknown>(
   path: string,
-  options?: RequestInit & { revalidate?: number; timeout?: number; maxRetries?: number }
+  options?: RequestInit & {
+    revalidate?: number;
+    // Cache tags for on-demand revalidation (`POST /api/revalidate`,
+    // Speed Plan P4). Merged with any `next` option the caller passes.
+    tags?: string[];
+    timeout?: number;
+    maxRetries?: number;
+  }
 ): Promise<T> {
-  const { revalidate, timeout: customTimeout, maxRetries: customMaxRetries, ...fetchOptions } = options || {};
+  const { revalidate, tags, timeout: customTimeout, maxRetries: customMaxRetries, ...fetchOptions } = options || {};
   const MAX_RETRIES = customMaxRetries ?? 3;
   const BASE_DELAY = 500;
   const TIMEOUT = customTimeout || 15000;
+
+  // Merge the Next fetch-cache options from every supported spelling:
+  // the convenience top-level `revalidate`/`tags` and a caller's own
+  // `next: { revalidate, tags }` (which previously just rode along in
+  // fetchOptions and won by spread order). Explicit top-level values win.
+  const { next: callerNext, ...restFetchOptions } = fetchOptions as RequestInit & {
+    next?: { revalidate?: number | false; tags?: string[] };
+  };
+  const nextOptions = {
+    ...callerNext,
+    ...(revalidate !== undefined ? { revalidate } : {}),
+    ...(tags ? { tags } : {}),
+  };
+  const hasNextOptions = Object.keys(nextOptions).length > 0;
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -37,9 +58,9 @@ export async function serverFetch<T = unknown>(
           "Content-Type": "application/json",
           ...(internalSecret ? { "x-internal-secret": internalSecret } : {}),
         },
-        ...(revalidate !== undefined ? { next: { revalidate } } : {}),
+        ...(hasNextOptions ? { next: nextOptions } : {}),
         signal: controller.signal,
-        ...fetchOptions,
+        ...restFetchOptions,
       });
       if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
       const text = await res.text();

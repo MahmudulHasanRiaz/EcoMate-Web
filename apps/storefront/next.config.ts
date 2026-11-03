@@ -37,31 +37,59 @@ export default async function (phase: string) {
   return {
     ...nextConfig,
     async headers() {
-      // Short shared-cache TTL for anonymous public pages (spike absorber).
+      // Short shared-cache TTLs for anonymous public pages (spike absorber).
       // Browsers ignore s-maxage; a CDN (Cloudflare, 5.2) serves HITs from it.
-      // Private routes (/checkout, /cart, /orders, /wishlist, /account, /api,
-      // /landing) intentionally get NO Cache-Control — never cache those.
-      const edgeCache = [{ key: 'Cache-Control', value: 'public, s-maxage=60, stale-while-revalidate=300' }];
+      //
+      // Per-route TTLs (Speed Plan P4): home is the most volatile public
+      // page; archive/listing pages change slower; a PDP changes slowest.
+      const homeCache = [{ key: 'Cache-Control', value: 'public, s-maxage=60, stale-while-revalidate=300' }];
+      const listingCache = [{ key: 'Cache-Control', value: 'public, s-maxage=120, stale-while-revalidate=600' }];
+      const pdpCache = [{ key: 'Cache-Control', value: 'public, s-maxage=300, stale-while-revalidate=900' }];
+      // Private routes must NEVER be shared-cached. This is not optional
+      // decoration: a route with no explicit Cache-Control of its own does
+      // NOT stay uncached — Next.js derives one from the route's revalidate
+      // behaviour. /cart, /checkout, /account, /wishlist and /orders are
+      // client-rendered shells whose only server fetch is the root layout's
+      // storefront-config fetch (`next: { revalidate: 60 }`); the lowest
+      // fetch revalidate in the layout chain sets the whole route's
+      // revalidation frequency, so Next served these private shells as ISR
+      // with `s-maxage=60, stale-while-revalidate=31535940` (1 year − 60s —
+      // Next's default ISR expire window), and the CDN in front then
+      // presented them as `public`. An explicit `private, no-store` here is
+      // the guaranteed override: headers() values replace Next's own
+      // per-route Cache-Control (the same mechanism that already lets the
+      // public rules below override the dynamic home/PLP routes), and the
+      // private rules are listed LAST so they also win over every other
+      // matching rule in this array (Next applies the last matching key).
+      const privateCache = [{ key: 'Cache-Control', value: 'private, no-store' }];
       return [
         {
           source: '/',
-          headers: edgeCache,
+          headers: homeCache,
         },
         {
           source: '/products/:path*',
-          headers: edgeCache,
+          headers: listingCache,
+        },
+        {
+          // PDP is a single segment under /products. Listed AFTER the
+          // broader listing rule so it wins for /products/<slug> (last
+          // matching Cache-Control key wins); multi-segment paths such as
+          // /products/tags/<slug> keep the listing TTL.
+          source: '/products/:slug',
+          headers: pdpCache,
         },
         {
           source: '/category/:path*',
-          headers: edgeCache,
+          headers: listingCache,
         },
         {
           source: '/brand/:path*',
-          headers: edgeCache,
+          headers: listingCache,
         },
         {
           source: '/combos/:path*',
-          headers: edgeCache,
+          headers: listingCache,
         },
         {
           source: '/:path*',
@@ -84,6 +112,36 @@ export default async function (phase: string) {
             { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
             { key: 'X-DNS-Prefetch-Control', value: 'on' },
           ],
+        },
+        // Private route groups — LAST on purpose (see privateCache above):
+        // these override Next's derived ISR Cache-Control for the
+        // client-rendered private shells and any earlier matching rule.
+        // `:path*` also matches the bare prefix (e.g. `/cart` itself).
+        // `/api/:path*` mirrors the backend's own policy (its
+        // NoStoreMiddleware marks every API response no-store).
+        {
+          source: '/cart/:path*',
+          headers: privateCache,
+        },
+        {
+          source: '/checkout/:path*',
+          headers: privateCache,
+        },
+        {
+          source: '/account/:path*',
+          headers: privateCache,
+        },
+        {
+          source: '/wishlist/:path*',
+          headers: privateCache,
+        },
+        {
+          source: '/orders/:path*',
+          headers: privateCache,
+        },
+        {
+          source: '/api/:path*',
+          headers: privateCache,
         },
       ];
     },

@@ -15,6 +15,7 @@
     { "name": "JWT_REFRESH_SECRET", "label": "⭐ JWT Refresh Secret (different from JWT_SECRET)", "default": "" },
     { "name": "BETTER_AUTH_SECRET", "label": "⭐ Better-Auth Secret", "default": "" },
     { "name": "INTERNAL_SHARED_SECRET", "label": "Internal service secret (optional — same value on backend + storefront exempts internal calls from rate limiting)", "default": "" },
+    { "name": "REVALIDATION_SECRET", "label": "Storefront revalidation secret (optional — enables POST /api/revalidate on-demand cache invalidation; empty = endpoint disabled)", "default": "" },
     { "name": "ADMIN_EMAIL", "label": "First admin email (seed)", "default": "" },
     { "name": "ADMIN_PASSWORD", "label": "First admin password (seed)", "default": "" },
     { "name": "RUN_SEED", "label": "Run seeding on startup? (true/false)", "default": "false" },

@@ -50,7 +50,8 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
   let config: StorefrontConfig;
   try {
     config = await serverFetch<StorefrontConfig>("/system-settings/storefront", {
-      next: { revalidate: 60 },
+      // On-demand invalidation (P4): POST /api/revalidate {tags:['config']}
+      next: { revalidate: 60, tags: ["config"] },
       timeout: 30000,
     });
   } catch (err) {
@@ -69,7 +70,7 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
   const [categories, licenseStatus] = await Promise.all([
     getCategoriesServer(),
     fetch(`${API_URL}/license/status`, {
-      next: { revalidate: 300 },
+      next: { revalidate: 300, tags: ["config"] },
       // F2 internal identity (server-only env; see lib/api-server.ts).
       ...(process.env.INTERNAL_SHARED_SECRET
         ? { headers: { 'x-internal-secret': process.env.INTERNAL_SHARED_SECRET } }
