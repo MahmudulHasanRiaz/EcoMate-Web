@@ -3,6 +3,17 @@ import { PHASE_PRODUCTION_SERVER, PHASE_PRODUCTION_BUILD } from "next/constants"
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  experimental: {
+    // P5 (JS diet): per Next 16.4 bundled docs this key is still
+    // `experimental.*`. lucide-react is already in Next's default-optimized
+    // list, so it needs no entry; `motion` (barrel `motion/react`) is not.
+    optimizePackageImports: ['motion'],
+  },
+  compiler: {
+    // Docs (nextjs-compiler.md): removes console.* in app code, keeping
+    // console.error so production failures stay visible in logs.
+    removeConsole: { exclude: ['error'] },
+  },
   allowedDevOrigins: ['mac.riaz.com.bd'],
   // P2: client-router cache lifetimes. Verified against the bundled
   // Next 16.4.1 docs (node_modules/next/dist/docs/.../staleTimes.md):
