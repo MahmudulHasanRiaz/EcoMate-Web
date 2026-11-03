@@ -15,6 +15,12 @@
  *   docker exec -it <backend-container> sh -c \
  *     "cd /app && npx tsx prisma/scripts/seed-scale-catalog.ts --apply"
  *
+ * It NEVER runs automatically — nothing in startup, seed, or any redeploy
+ * path invokes it. And it refuses to write unless BOTH production guards
+ * pass (see PROD_DOMAINS / assertSeedAllowed below): the stack must not
+ * be a known client production domain, and ALLOW_SCALE_SEED=1 must be set
+ * in the stack env (staging only, added deliberately via Portainer).
+ *
  * LOCAL STORAGE ONLY: originals are written to <cwd>/uploads, mirroring
  * StorageService.uploadToLocal (`<uuid><ext>`, url `/uploads/<name>`).
  * On an R2 tenant the queue processor would not find the originals and
@@ -46,6 +52,54 @@ import { join, resolve } from 'node:path';
 
 const ALT_TAG = 'SCALE-SEED';
 const SLUG_PREFIX = 'scale-seed-';
+
+/**
+ * Production safety guards (owner requirement, 2026-11-04). This script
+ * ships inside every backend image, so a manual run on the WRONG stack
+ * must be impossible, not just unlikely:
+ *
+ *   Guard A — known client production domains (keep in sync with
+ *   .github/clients.json): seeding is refused unconditionally, even if
+ *   the opt-in flag were set there by mistake.
+ *   Guard B — explicit opt-in: ALLOW_SCALE_SEED=1 must be present in the
+ *   environment. No stack sets it by default; it has to be added to the
+ *   staging stack's env on purpose before this script will write.
+ *
+ * Cleanup is guarded by A only (it can solely delete scale-seed
+ * artefacts, which should never exist on a client).
+ */
+const PROD_DOMAINS = ['fixedplus.com.bd', 'avelto.bd'];
+
+function currentHosts(): string[] {
+  const hosts = new Set<string>();
+  const domain = (process.env.CLIENT_DOMAIN || '').toLowerCase().trim();
+  if (domain) hosts.add(domain.replace(/^www\./, ''));
+  try {
+    const h = new URL(process.env.BETTER_AUTH_URL || '').hostname.toLowerCase();
+    if (h) hosts.add(h.replace(/^www\./, ''));
+  } catch {
+    /* BETTER_AUTH_URL unset/malformed — CLIENT_DOMAIN is the signal */
+  }
+  return [...hosts];
+}
+
+function assertNotProduction(): void {
+  const hit = currentHosts().find((h) => PROD_DOMAINS.includes(h));
+  if (hit) {
+    throw new Error(
+      `REFUSED: this stack is a known PRODUCTION client (${hit}). The scale seeder never runs there.`,
+    );
+  }
+}
+
+function assertSeedAllowed(): void {
+  assertNotProduction();
+  if (process.env.ALLOW_SCALE_SEED !== '1') {
+    throw new Error(
+      'REFUSED: ALLOW_SCALE_SEED=1 is not set. Add it to the STAGING stack env (Portainer) to enable the scale seeder there — never on a client stack.',
+    );
+  }
+}
 
 function arg(name: string, fallback: number): number {
   const raw = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -161,9 +215,11 @@ async function main(): Promise<void> {
   const prisma = new PrismaClient();
   try {
     if (CLEANUP) {
+      assertNotProduction();
       await cleanup(prisma);
       return;
     }
+    assertSeedAllowed();
 
     const existing = await prisma.product.count({
       where: { slug: { startsWith: SLUG_PREFIX } },
