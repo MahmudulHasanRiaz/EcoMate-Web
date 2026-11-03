@@ -33,7 +33,9 @@
  *   route JS (worst, gzip)    <= 250 KiB    250     320 *   ~304 KiB (checkout 311,306 B)
  *   root JS (gzip)            —             140     160     ~128.5 KiB (131,585 B)
  *   largest chunk (gzip)      —             80      100     ~71 KiB (73,004 B)
- *   HTML (largest page)       —             64      80      ~72 KiB (/careers 73,932 B)
+ *   HTML (largest page)       —             64      96      83 KiB (/careers, CI on merged main 2026-11-03; the
+ *                                                            earlier 72 KiB local sibling-build figure used
+ *                                                            different CMS fallback data — CI is the reference)
  *   * RATCHET: the plan target is NOT met by current code, so error is set at
  *     a freeze/growth ceiling instead of the target — a gate set at the target
  *     today would be red on every PR, including unrelated ones, and would be
@@ -69,7 +71,7 @@ const DEFAULTS = {
   routeJsGzipKiB: { warn: 250, error: 320, env: 'PERF_BUDGET_ROUTE_JS_GZIP_KIB_MAX' },
   rootJsGzipKiB: { warn: 140, error: 160, env: 'PERF_BUDGET_ROOT_JS_GZIP_KIB_MAX' },
   chunkGzipKiB: { warn: 80, error: 100, env: 'PERF_BUDGET_CHUNK_GZIP_KIB_MAX' },
-  htmlKiB: { warn: 64, error: 80, env: 'PERF_BUDGET_HTML_KIB_MAX' },
+  htmlKiB: { warn: 64, error: 96, env: 'PERF_BUDGET_HTML_KIB_MAX' },
 };
 
 function threshold(cfg) {
@@ -219,7 +221,7 @@ function main() {
 
     const maxFonts = Math.max(...measured.map((m) => m.fontPreloads));
     addRow('font preloads (max over prerendered pages)', maxFonts, 'count', DEFAULTS.fontPreloads,
-      'plan target <=2; ratchet freeze at current 10 — see header TODO');
+      'plan target <=2; error tightened to target 2026-11-03 (P1 landed, 1 preload)');
 
     const keyRoutes = ['/', '/checkout', '/cart', '/products'];
     for (const r of keyRoutes) {
