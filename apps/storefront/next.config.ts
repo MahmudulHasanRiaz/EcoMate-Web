@@ -3,12 +3,6 @@ import { PHASE_PRODUCTION_SERVER, PHASE_PRODUCTION_BUILD } from "next/constants"
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  experimental: {
-    // P5 (JS diet): per Next 16.4 bundled docs this key is still
-    // `experimental.*`. lucide-react is already in Next's default-optimized
-    // list, so it needs no entry; `motion` (barrel `motion/react`) is not.
-    optimizePackageImports: ['motion'],
-  },
   compiler: {
     // Docs (nextjs-compiler.md): removes console.* in app code, keeping
     // console.error so production failures stay visible in logs.
@@ -23,6 +17,10 @@ const nextConfig: NextConfig = {
   // of refetching on every navigation; static: 180 trims the default
   // 5-minute reuse for static segments to 3 minutes.
   experimental: {
+    // P5 (JS diet): per Next 16.4 bundled docs this key is still
+    // `experimental.*`. lucide-react is already in Next's default-optimized
+    // list, so it needs no entry; `motion` (barrel `motion/react`) is not.
+    optimizePackageImports: ['motion'],
     staleTimes: {
       dynamic: 30,
       static: 180,
