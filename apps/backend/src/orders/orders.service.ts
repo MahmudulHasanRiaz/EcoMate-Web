@@ -1979,6 +1979,21 @@ export class OrdersService {
           : [];
       const comboMap = new Map(combos.map((c) => [c.id, c]));
 
+      // Managed availability is asserted against the CUMULATIVE demand per
+      // product/variant across the WHOLE payload (direct lines + combo
+      // components): asserting each line on its own lets duplicate lines
+      // for the same product each pass against the same available pool
+      // while their sum oversells it (live-proven on staging 2026-11-03
+      // via order Edit Items). No reserves happen during this validation
+      // loop, so checking the running total against the snapshot counters
+      // is exact.
+      const managedDemand = new Map<string, number>();
+      const cumulativeManagedQty = (key: string, qty: number): number => {
+        const total = (managedDemand.get(key) ?? 0) + qty;
+        managedDemand.set(key, total);
+        return total;
+      };
+
       for (const item of dto.items) {
         if (item.comboId) {
           const combo = comboMap.get(item.comboId);
@@ -2026,7 +2041,7 @@ export class OrdersService {
                 availabilityMode: sub.product.availabilityMode,
                 managedStockQuantity: compVariant?.managedStockQuantity ?? 0,
                 reservedStock: compVariant?.reservedStock ?? 0,
-                quantity: compQty,
+                quantity: cumulativeManagedQty(`v:${compVariantId}`, compQty),
               });
             } else {
               this.assertManagedAvailability({
@@ -2034,7 +2049,7 @@ export class OrdersService {
                 availabilityMode: sub.product?.availabilityMode,
                 managedStockQuantity: sub.product?.managedStockQuantity ?? 0,
                 reservedStock: sub.product?.reservedStock ?? 0,
-                quantity: compQty,
+                quantity: cumulativeManagedQty(`p:${sub.productId}`, compQty),
               });
             }
           }
@@ -2073,7 +2088,7 @@ export class OrdersService {
             availabilityMode: parentProduct.availabilityMode,
             managedStockQuantity: variant.managedStockQuantity ?? 0,
             reservedStock: variant.reservedStock ?? 0,
-            quantity: item.quantity,
+            quantity: cumulativeManagedQty(`v:${item.variantId}`, item.quantity),
           });
           item.price = Number(
             variant.salePrice ??
@@ -2102,7 +2117,7 @@ export class OrdersService {
             availabilityMode: product.availabilityMode,
             managedStockQuantity: product.managedStockQuantity ?? 0,
             reservedStock: product.reservedStock ?? 0,
-            quantity: item.quantity,
+            quantity: cumulativeManagedQty(`p:${item.productId}`, item.quantity),
           });
           item.price = Number(product.salePrice ?? product.basePrice);
         } else {
@@ -3618,40 +3633,64 @@ export class OrdersService {
           const newProductMap = new Map(
             newProducts.map((p) => [p.id, p]),
           );
+          // Cumulative per product/variant, like create: duplicate lines
+          // for the same product must be judged on their SUM — per-line
+          // checks each pass against the same pool while the sum oversells
+          // (live-proven on staging 2026-11-03). The old lines were already
+          // released above, so the counters are the right baseline.
+          const managedDemand = new Map<string, number>();
           for (const item of dto.items) {
             if (item.comboId) continue;
             const p = newProductMap.get(item.productId ?? '');
             if (!p) continue;
             if (item.variantId) {
               const v = newVariantMap.get(item.variantId);
+              const total =
+                (managedDemand.get(`v:${item.variantId}`) ?? 0) + item.quantity;
+              managedDemand.set(`v:${item.variantId}`, total);
               this.assertManagedAvailability({
                 name: p.name,
                 availabilityMode: p.availabilityMode,
                 managedStockQuantity: v?.managedStockQuantity ?? 0,
                 reservedStock: v?.reservedStock ?? 0,
-                quantity: item.quantity,
+                quantity: total,
               });
             } else {
+              const total =
+                (managedDemand.get(`p:${item.productId}`) ?? 0) + item.quantity;
+              managedDemand.set(`p:${item.productId}`, total);
               this.assertManagedAvailability({
                 name: p.name,
                 availabilityMode: p.availabilityMode,
                 managedStockQuantity: p.managedStockQuantity ?? 0,
                 reservedStock: p.reservedStock ?? 0,
-                quantity: item.quantity,
+                quantity: total,
               });
             }
           }
         }
 
-        // Reserve stock for new items via router
+        // Reserve stock for new items via router. Each submitted line is
+        // paired with a DISTINCT recreated row (queue per product/variant/
+        // combo key): a plain find() returns the first match every time, so
+        // duplicate lines used to share one row's id — the second line's
+        // reserve was swallowed by the orderItemId-keyed reservation while
+        // a later release (which iterates the real rows) released both,
+        // drifting the reserved counter (live-proven 2026-11-03).
+        const newItemQueues = new Map<string, typeof newItems>();
+        for (const ni of newItems) {
+          const key = ni.comboId
+            ? `c:${ni.comboId}`
+            : `p:${ni.productId}|${ni.variantId ?? ''}`;
+          const queue = newItemQueues.get(key);
+          if (queue) queue.push(ni);
+          else newItemQueues.set(key, [ni]);
+        }
         for (const item of dto.items) {
-          const newItem = newItems.find((ni) => {
-            if (item.comboId) return ni.comboId === item.comboId;
-            return (
-              ni.productId === item.productId &&
-              (ni.variantId ?? undefined) === item.variantId
-            );
-          });
+          const key = item.comboId
+            ? `c:${item.comboId}`
+            : `p:${item.productId}|${item.variantId ?? ''}`;
+          const newItem = newItemQueues.get(key)?.shift();
 
           if (item.comboId && newItem) {
             const combo = await tx.combo.findUnique({

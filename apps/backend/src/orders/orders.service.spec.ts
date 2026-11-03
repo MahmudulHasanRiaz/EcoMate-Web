@@ -1739,6 +1739,34 @@ describe('OrdersService', () => {
         );
       });
 
+      it('blocks duplicate lines whose SUM exceeds the available stock', async () => {
+        runTx();
+        (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
+          {
+            id: 'variant-1',
+            price: 1000,
+            isActive: true,
+            productId: 'prod-1',
+            managedStockQuantity: 5,
+            reservedStock: 0,
+          },
+        ]);
+
+        // Each line alone (3) fits the pool of 5; together (6) they oversell.
+        // The gate must judge the cumulative demand, not each line in
+        // isolation (live-proven hole on staging 2026-11-03).
+        const dupDto = {
+          ...createOrderDto,
+          items: [
+            { productId: 'prod-1', variantId: 'variant-1', quantity: 3, price: 1000 },
+            { productId: 'prod-1', variantId: 'variant-1', quantity: 3, price: 1000 },
+          ],
+        };
+        await expect(service.create(dupDto)).rejects.toThrow(
+          'Only 5 unit(s) of "Prod 1" are in stock (requested 6)',
+        );
+      });
+
       it('blocks a MANAGED_STOCK simple product with zero stock', async () => {
         runTx();
         (prisma.product.findMany as jest.Mock).mockImplementation(
@@ -4287,6 +4315,43 @@ describe('OrdersService', () => {
           ],
         } as any),
       ).rejects.toMatchObject({ response: { code: 'ORDER_CUSTOMIZATION_LOCKED' } });
+    });
+
+    it('blocks an items edit whose duplicate lines SUM past the available managed stock', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: { id: 'status-pending', name: 'Pending', nextStatuses: [] },
+        items: [
+          {
+            id: 'item-1', productId: 'prod-1', variantId: null, comboId: null,
+            quantity: 1, price: 500, managedStockDeducted: false,
+            product: { id: 'prod-1', name: 'Prod 1', availabilityMode: 'MANAGED_STOCK' },
+          },
+        ],
+      });
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'prod-1', name: 'Prod 1', availabilityMode: 'MANAGED_STOCK',
+          type: 'simple', isActive: true, customizations: null,
+          managedStockQuantity: 5, reservedStock: 0,
+        },
+      ]);
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) => cb({ ...prisma }),
+      );
+
+      // The old line (1 unit) is released first, so the pool is 5. Each
+      // duplicate line alone (3) fits; their sum (6) oversells — the gate
+      // must judge the cumulative demand (live-proven 2026-11-03: two
+      // 1-unit Widget lines were added against 1 available on staging).
+      await expect(
+        service.updateOrder('order-id-1', {
+          items: [
+            { productId: 'prod-1', quantity: 3, price: 500 },
+            { productId: 'prod-1', quantity: 3, price: 500 },
+          ],
+        } as any),
+      ).rejects.toThrow('Only 5 unit(s) of "Prod 1" are in stock (requested 6)');
     });
 
     it('Q19: an unchanged customization round-trip on a Packed order is NOT blocked by the customization gate', async () => {
