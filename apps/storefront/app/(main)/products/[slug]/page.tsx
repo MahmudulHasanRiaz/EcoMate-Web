@@ -104,6 +104,8 @@ function ProductNotFound() {
   );
 }
 
+
+
 function ProductUnavailable() {
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
@@ -138,7 +140,18 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
     if (!product) {
       // Outage ≠ 404: only show "Not Found" when the backend is reachable.
       const backendUp = await getBackendStatusServer();
-      return backendUp ? <ProductNotFound /> : <ProductUnavailable />;
+      if (backendUp) return <ProductNotFound />;
+      // Backend unreachable (e.g. mid-redeploy, while the backend container
+      // is still running migrations): do NOT return a normal render here.
+      // This page is ISR-cached (revalidate=60), so a rendered "something
+      // went wrong" page would be CACHED and keep serving the error for
+      // minutes after the backend recovers — exactly the post-redeploy PDP
+      // outage owners reported on 2026-11-03. Throwing fails the render
+      // without caching it: Next keeps serving the last-good stale copy
+      // when one exists, and an uncached slug heals on the first visit
+      // after recovery. The (main)/error.tsx boundary covers the visitor
+      // in the meantime, with a working Try Again (reset).
+      throw new Error(`PDP render aborted — backend unreachable (slug: ${slug})`);
     }
     // Related items + reviews + size-chart presence resolve server-side in
     // parallel: zero browser `/api/*` calls on PDP load.
@@ -227,7 +240,14 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
         <ProductDetailClient product={product} initialRelatedItems={relatedItems} initialReviews={initialReviews} sanitizedDescription={sanitizedDescription} sanitizedSpecifications={sanitizedSpecifications} sizeGuideAvailable={hasSizeChart} customizationEnabled={customizationEnabled} />
       </>
     );
-  } catch {
+  } catch (err) {
+    // Same ISR-poisoning guard as the outage branch above: if the backend
+    // is unreachable, this failure must NOT be returned as a renderable
+    // page (it would be cached) — rethrow so Next discards the attempt.
+    // Genuine per-product render errors (backend up) keep the friendly
+    // unavailable page.
+    const backendUp = await getBackendStatusServer();
+    if (!backendUp) throw err;
     return <ProductUnavailable />;
   }
 }

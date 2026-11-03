@@ -14,6 +14,7 @@ import { MapPin, Phone, Mail } from 'lucide-react';
 import EcoMateAttribution from "./EcoMateAttribution";
 import FooterAppLinks from "./FooterAppLinks";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
+import { resolveDerivativeUrl } from "@/lib/image-derivative";
 import Link from 'next/link';
 
 function FooterBrand({ config }: { config: StorefrontConfig }) {
@@ -22,7 +23,8 @@ function FooterBrand({ config }: { config: StorefrontConfig }) {
   if (display === 'logo') {
     return config.branding.storeLogo ? (
       <img
-        src={config.branding.storeLogo}
+        // Small derivative, not the raw original — see StoreBrand.
+        src={resolveDerivativeUrl(config._mediaMeta, config.branding.storeLogo, 'small')}
         alt={config.store.name}
         className="h-8 w-auto object-contain"
       />
@@ -35,7 +37,7 @@ function FooterBrand({ config }: { config: StorefrontConfig }) {
     return (
       <div className="flex items-center gap-2">
         {config.branding.storefrontFavicon ? (
-          <img src={config.branding.storefrontFavicon} alt="" className="w-8 h-8 rounded object-contain" />
+          <img src={resolveDerivativeUrl(config._mediaMeta, config.branding.storefrontFavicon, 'thumbnail')} alt="" className="w-8 h-8 rounded object-contain" />
         ) : null}
         <span className="text-xl font-black text-brand-blue tracking-tight">{config.store.name}</span>
       </div>

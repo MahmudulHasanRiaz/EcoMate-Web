@@ -33,6 +33,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useCart, getItemKey, VariantAttribute } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
+import { resolveDerivativeUrl } from '@/lib/image-derivative';
 import { createOrder } from '@/lib/api/orders';
 import { useAutoDiscounts } from '@/hooks/useAutoDiscounts';
 import { resolveDeliveryCharge } from '@/lib/shipping-charge';
@@ -1172,7 +1173,7 @@ export default function CheckoutPage() {
         <div className="max-w-screen-xl mx-auto px-4 flex justify-between items-center">
           <Link href="/" className="hover:text-brand-blue transition-colors flex items-center">
             {config.branding?.storeLogo ? (
-              <img src={config.branding.storeLogo} alt={config.store?.name || 'Store'} className="h-6 w-auto object-contain" />
+              <img src={resolveDerivativeUrl(config._mediaMeta, config.branding.storeLogo, 'small')} alt={config.store?.name || 'Store'} className="h-6 w-auto object-contain" />
             ) : (
               <span className="text-base font-black tracking-tight text-gray-805">
                 {config.store?.name || 'Store'}
@@ -1241,7 +1242,7 @@ export default function CheckoutPage() {
             <div className="hidden lg:flex justify-between items-baseline border-b border-gray-100 pb-4 mb-2">
               <Link href="/" className="hover:text-brand-blue transition-colors flex items-center">
                 {config.branding?.storeLogo ? (
-                  <img src={config.branding.storeLogo} alt={config.store?.name || 'Store'} className="h-8 w-auto object-contain" />
+                  <img src={resolveDerivativeUrl(config._mediaMeta, config.branding.storeLogo, 'small')} alt={config.store?.name || 'Store'} className="h-8 w-auto object-contain" />
                 ) : (
                   <span className="text-xl font-black tracking-tight text-gray-800">
                     {config.store?.name || 'Store'}
