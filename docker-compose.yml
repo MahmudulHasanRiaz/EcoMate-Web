@@ -123,6 +123,11 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       SEED_DUMMY_DATA: ${SEED_DUMMY_DATA:-false}
       RUN_SEED: ${RUN_SEED:-false}
+      # Scale-test seeder opt-in (staging only — never set on a client
+      # stack). Empty default = off. startup.sh + the script itself both
+      # gate on ALLOW_SCALE_SEED=1, and the script also refuses known
+      # client production domains unconditionally.
+      ALLOW_SCALE_SEED: ${ALLOW_SCALE_SEED:-}
       # NOTE: STOCK_RECONCILE_ON_BOOT was REMOVED 2026-10-30 — boot-time
       # auto-heal no longer exists; reconciliation is explicit-only
       # (reconcile-stock.ts / admin Inventory → Reconciliation page).
