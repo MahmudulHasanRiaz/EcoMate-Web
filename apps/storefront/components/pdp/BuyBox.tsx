@@ -257,7 +257,7 @@ export function BuyBox(props: BuyBoxProps) {
         ) : (
           <>
             <button onClick={onBuyNow}
-              className="w-full h-10 min-[901px]:h-11 rounded-[3px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] min-[901px]:text-[15px] tracking-wide animate-[bump_1.5s_ease-in-out_infinite]">
+              className="w-full h-10 min-[901px]:h-11 rounded-[3px] bg-brand-blue hover:bg-brand-blue-dark text-white font-bold flex items-center justify-center gap-2 transition-colors text-[14px] min-[901px]:text-[15px] tracking-wide animate-[bump_1.5s_ease-in-out_1]">
               ORDER NOW
             </button>
             <button onClick={onAddToCart}

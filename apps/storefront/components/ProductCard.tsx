@@ -29,6 +29,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   const { isWishlisted, toggle } = useWishlist();
   const { user } = useAuth();
   const [retryKey, setRetryKey] = React.useState(0);
+  const [imageLoaded, setImageLoaded] = React.useState(false);
   const [imageFailed, setImageFailed] = React.useState(false);
   const retriesRef = React.useRef(0);
 
@@ -37,6 +38,7 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   React.useEffect(() => {
     retriesRef.current = 0;
     setRetryKey(0);
+    setImageLoaded(false);
     setImageFailed(false);
   }, [derivativeUrl, product.id]);
 
@@ -133,7 +135,7 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
   const aspect = getAspectStyle(config.catalogImageRatio);
 
   return (
-    <div className="bg-white rounded-[3px] overflow-hidden flex flex-col h-full border border-gray-200 relative group transition-all select-none">
+    <div className="bg-white rounded-[3px] overflow-hidden flex flex-col h-full border border-gray-200 relative group transition-shadow duration-[var(--duration-med)] ease-out hover:shadow-[0_12px_30px_-12px_rgba(0,0,0,0.18)] select-none">
       {(product.saveAmount && product.originalPrice) && (
         <div className="absolute top-2 right-2 bg-brand-success-dark text-white text-[10px] md:text-[11px] px-2 py-0.5 rounded-sm z-10 font-bold shadow-sm">
           Save {Math.round((product.saveAmount / product.originalPrice) * 100)}%
@@ -173,7 +175,8 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
             decoding="async"
             placeholder="blur"
             blurDataURL={PRODUCT_BLUR_DATA_URL}
-            className={`object-contain transition-transform duration-500 group-hover:scale-105 pointer-events-none ${imageFailed ? 'opacity-60' : ''}`}
+            className={`object-contain img-fade-in group-hover:scale-[1.03] pointer-events-none ${imageFailed ? 'opacity-60' : imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+            onLoad={() => setImageLoaded(true)}
             onError={handleImageError}
           />
         )}

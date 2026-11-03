@@ -31,9 +31,22 @@ import dynamic from "next/dynamic";
 // load on first open (ssr:false — they need browser APIs anyway). The
 // trigger buttons render immediately; only the sheet content is deferred.
 function SheetLoading() {
+  // Mirror SheetShell's geometry (dimmed backdrop + sheet-shaped panel)
+  // so the deferred sheet doesn't pop in over a bare transparent spinner.
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center min-[901px]:items-center" aria-hidden="true">
-      <div className="w-8 h-8 m-auto border-2 border-gray-200 border-t-brand-blue rounded-full animate-spin" />
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 min-[901px]:items-center min-[901px]:p-4" aria-hidden="true">
+      <div className="w-full max-w-[560px] bg-white rounded-t-[6px] min-[901px]:rounded-[4px] px-[18px] py-4 animate-pulse">
+        <div className="flex items-center justify-between pb-3 border-b border-brand-border">
+          <div className="h-5 w-40 bg-gray-200 rounded" />
+          <div className="h-8 w-8 bg-gray-100 rounded-full" />
+        </div>
+        <div className="pt-4 space-y-3">
+          <div className="h-4 w-full bg-gray-200 rounded" />
+          <div className="h-4 w-2/3 bg-gray-200 rounded" />
+          <div className="h-11 w-full bg-gray-100 rounded-[3px]" />
+          <div className="h-11 w-full bg-gray-200 rounded-[3px]" />
+        </div>
+      </div>
     </div>
   );
 }

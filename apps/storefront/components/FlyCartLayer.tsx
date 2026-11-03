@@ -3,6 +3,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { prefersReducedMotion } from "@/hooks/useReducedMotion";
+
+/** P7: fly-to-cart flight time — capped at 500ms (was 850ms). */
+const FLY_DURATION_MS = 500;
 
 interface FlyingItem {
   id: number;
@@ -66,6 +70,7 @@ function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: (id: nu
       });
     });
 
+    // Reduced motion: skip the flight entirely and complete at once.
     const timer = setTimeout(() => {
         // Only scale/filter here: #floating-cart already owns its `translate`
         // via Tailwind utilities, and a second translate class on the same
@@ -76,7 +81,7 @@ function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: (id: nu
           target?.classList.remove('scale-[1.15]', 'brightness-110');
         }, 300);
         onComplete(item.id);
-    }, 850);
+    }, prefersReducedMotion() ? 0 : FLY_DURATION_MS);
 
     return () => {
       cancelAnimationFrame(raf);
@@ -91,7 +96,7 @@ function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: (id: nu
         left: item.x,
         top: item.y,
         transform: isActive ? `translate(${targetPos.x - item.x}px, 0)` : 'translate(0px, 0px)',
-        transition: 'transform 0.85s cubic-bezier(0.2, 0.8, 0.2, 1)',
+        transition: 'transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)',
         zIndex: 999999
       }}
     >
@@ -101,7 +106,7 @@ function FlyingDot({ item, onComplete }: { item: FlyingItem, onComplete: (id: nu
           transform: isActive
             ? `translate(-50%, calc(${targetPos.y - item.y}px - 50%)) scale(0.1) rotate(720deg)`
             : 'translate(-50%, -50%) scale(1) rotate(-45deg)',
-          transition: 'transform 0.85s cubic-bezier(0.5, -0.6, 0.5, 1.3), opacity 0.85s ease-in',
+          transition: 'transform 0.5s cubic-bezier(0.5, -0.6, 0.5, 1.3), opacity 0.5s ease-in',
           opacity: isActive ? 0.3 : 1,
         }}
       >

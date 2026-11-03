@@ -19,6 +19,28 @@
   --color-brand-border: var(--color-brand-border);
 }
 
+/* ── P7 motion tokens (separate @theme block so font/theme merges stay
+      clean). --duration-* are the spec names, consumed via the official
+      v4 arbitrary form duration-[var(--duration-*)] / var() in custom
+      CSS; --transition-duration-* additionally register duration-fast|
+      med|drawer with Tailwind's transition-duration theme keys;
+      --ease-standard is the standard ease-out curve (same curve as
+      Tailwind's built-in --ease-out) exposed as the ease-standard
+      utility via the official --ease-* namespace.
+      `static` (Tailwind v4 theme docs): always emit these variables —
+      they are referenced by var() from custom CSS and arbitrary values,
+      not only by namespace utilities, so used-only emission is not
+      relied on. */
+@theme static {
+  --duration-fast: 150ms;
+  --duration-med: 200ms;
+  --duration-drawer: 300ms;
+  --transition-duration-fast: 150ms;
+  --transition-duration-med: 200ms;
+  --transition-duration-drawer: 300ms;
+  --ease-standard: cubic-bezier(0, 0, 0.2, 1);
+}
+
 :root {
   --color-brand-blue: #0089CD;
   --color-brand-blue-dark: #006da3;
@@ -162,6 +184,106 @@ body {
 
 .payment-pop-in {
   animation: paymentPopIn 180ms cubic-bezier(0.21, 1.02, 0.73, 1) both;
+}
+
+/* ── P7: local `animate-in` utilities ──────────────────────────────────
+   `animate-in fade-in …` classes came from tailwindcss-animate, which
+   is NOT installed, so they generated zero CSS and the elements
+   silently never animated. Docs checked 2026-11-03: tailwindcss-
+   animate was deprecated 2025-03-19 (shadcn/ui Tailwind v4 docs) in
+   favour of tw-animate-css (v1.4.0), the current maintained v4-native
+   successor. The original P7 spec mandates the local route (no new
+   dependency — also keeps this wave's shared lockfile untouched), so
+   the subset this codebase actually uses is defined locally in
+   globals.css, structurally mirroring tw-animate-css 1.4.0's own
+   implementation (verified against its published dist CSS):
+   @property registrations give the --tw-enter-* variables
+   non-inheriting per-element defaults, the modifiers are @utility
+   definitions (the v4-native custom-utility form), `animate-in`
+   plays the `enter` keyframes, and the element's own duration-*
+   utility supplies --tw-duration exactly as upstream honours it
+   (animation-duration: var(--tw-duration, .15s)). Timing function is
+   the spec's standard ease-out instead of upstream's `ease` default.
+   Swapping to the package later is one @import line. */
+@property --tw-enter-opacity {
+  syntax: "*";
+  inherits: false;
+  initial-value: 1;
+}
+@property --tw-enter-scale {
+  syntax: "*";
+  inherits: false;
+  initial-value: 1;
+}
+@property --tw-enter-translate-x {
+  syntax: "*";
+  inherits: false;
+  initial-value: 0;
+}
+@property --tw-enter-translate-y {
+  syntax: "*";
+  inherits: false;
+  initial-value: 0;
+}
+
+/* Keyframes outside @theme are always included in the generated CSS
+   (Tailwind v4 theme docs) — required here because `enter` is driven
+   by the @utility below, not by an --animate-* theme variable. */
+@keyframes enter {
+  from {
+    opacity: var(--tw-enter-opacity, 1);
+    transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0)
+      scale3d(var(--tw-enter-scale, 1), var(--tw-enter-scale, 1), var(--tw-enter-scale, 1));
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@utility animate-in {
+  animation-name: enter;
+  animation-duration: var(--tw-duration, 150ms);
+  animation-timing-function: var(--ease-standard);
+  animation-fill-mode: both;
+}
+@utility fade-in {
+  --tw-enter-opacity: 0;
+}
+@utility zoom-in-95 {
+  --tw-enter-scale: 0.95;
+}
+@utility slide-in-from-bottom-2 {
+  /* upstream: calc(2 * var(--spacing)) = 0.5rem */
+  --tw-enter-translate-y: 0.5rem;
+}
+
+/* ── P7: image fade-in on load ─────────────────────────────────────────
+   Opacity (150–200ms) + transform share one property-specific
+   transition so a card image can fade in AND keep its hover scale
+   without transition-all. The component flips opacity-0 → opacity-100
+   from the image's onLoad. */
+@utility img-fade-in {
+  transition-property: opacity, transform;
+  transition-duration: var(--duration-med);
+  transition-timing-function: var(--ease-standard);
+}
+
+/* ── P7: prefers-reduced-motion baseline ───────────────────────────────
+   Standard pattern: animations/transitions collapse to near-zero and
+   smooth scrolling is off for users who ask for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 

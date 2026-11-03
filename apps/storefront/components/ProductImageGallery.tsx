@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, Pause, Play, ZoomIn, ZoomOut } from 'lucide-react';
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { prefersReducedMotion } from "@/hooks/useReducedMotion";
 import type { MediaMeta } from "@/lib/types";
 
 interface Props {
@@ -43,6 +44,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
     .filter((img: any) => img !== '');
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const [imgLoaded, setImgLoaded] = useState<Record<number, boolean>>({});
   const [imgErrors, setImgErrors] = useState<Record<number, boolean>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -97,7 +99,8 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
   }, []);
 
   useEffect(() => {
-    if (isAutoPlaying && hasMultiple && !lightboxOpen) {
+    // Reduced motion: never autoplay the gallery.
+    if (isAutoPlaying && hasMultiple && !lightboxOpen && !prefersReducedMotion()) {
       startAutoPlay();
     } else {
       stopAutoPlay();
@@ -272,7 +275,8 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                     alt={`${productName} ${i + 1}`}
                     fill
                     sizes="(max-width: 900px) 100vw, 50vw"
-                    className="object-contain transition-transform duration-300"
+                    className={`object-contain img-fade-in ${imgLoaded[i] ? 'opacity-100' : 'opacity-0'}`}
+                    onLoad={() => setImgLoaded(prev => ({ ...prev, [i]: true }))}
                     onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
                     draggable={false}
                     priority={i === 0}
@@ -347,7 +351,8 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                   fill
                   priority={i === 0}
                   sizes="(max-width: 900px) 100vw, 50vw"
-                  className="object-contain"
+                  className={`object-contain img-fade-in ${imgLoaded[i] ? 'opacity-100' : 'opacity-0'}`}
+                  onLoad={() => setImgLoaded(prev => ({ ...prev, [i]: true }))}
                   onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
                   draggable={false}
                 />

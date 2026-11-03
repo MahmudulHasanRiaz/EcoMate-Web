@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Star, ChevronLeft, ChevronRight } from "lucide-react";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { usePrefersReducedMotion } from "@/hooks/useReducedMotion";
 
 interface ReviewItem {
   id: string;
@@ -25,6 +26,7 @@ export default function TestimonialsCarousel({ reviews }: { reviews: ReviewItem[
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
   const [current, setCurrent] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const reducedMotion = usePrefersReducedMotion();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const items = reviews.slice(0, 6);
@@ -38,12 +40,16 @@ export default function TestimonialsCarousel({ reviews }: { reviews: ReviewItem[
   }, [items.length]);
 
   useEffect(() => {
-    if (isPaused || items.length < 2) return;
-    timerRef.current = setInterval(next, AUTO_SLIDE_INTERVAL);
+    // No autoplay under reduced motion; pause while the tab is hidden.
+    if (isPaused || reducedMotion || items.length < 2) return;
+    timerRef.current = setInterval(() => {
+      if (document.hidden) return;
+      next();
+    }, AUTO_SLIDE_INTERVAL);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isPaused, items.length, next]);
+  }, [isPaused, reducedMotion, items.length, next]);
 
   if (items.length === 0) return null;
 
