@@ -12,7 +12,6 @@ import { trackAddToCart, trackViewContent } from "@/lib/tracking";
 import { resolveCatalogId } from '@/lib/catalog-id';
 import { resolveVariantImage, parentImage } from '@/lib/variant-image';
 import { useAuth } from "@/context/AuthContext";
-import RelatedProducts from "./RelatedProducts";
 import apiClient from "@/lib/api-client";
 import type { SizeChartData } from "./SizeChartModal";
 import { toast } from 'sonner';
@@ -62,6 +61,11 @@ const ReviewModal = dynamic(
   () => import("./pdp/ReviewModal").then((m) => m.ReviewModal),
   { ssr: false, loading: SheetLoading },
 );
+// Below-the-fold section: split out of the PDP client's initial chunk using
+// the same dynamic-import pattern as the sheets above. SSR stays on, so the
+// server-rendered HTML (and therefore the visuals) are unchanged — only the
+// client JS for the section is parsed/executed as its own chunk.
+const RelatedProducts = dynamic(() => import("./RelatedProducts"));
 
 function cartItemKey(productId: string, variantId?: string) {
   return variantId ? `${productId}::${variantId}` : productId;
@@ -454,18 +458,30 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
 
   // Sticky bar appears only once the buy-box CTAs scroll out of view
   // (mockup mbar) — never as a duplicate while the CTAs are visible.
+  // P6: the check is rAF-throttled and only sets state when the value
+  // actually flips — previously every scroll event ran a DOM query +
+  // layout read and a setState on this 800-line client component.
   useEffect(() => {
+    let raf = 0;
+    let prev = false;
     function check() {
+      raf = 0;
       const cta = document.querySelector('[data-testid="buy-box"] [data-cta]');
-      if (!cta) {
-        setShowStickyBar(false);
-        return;
+      const show = cta ? cta.getBoundingClientRect().bottom < 0 : false;
+      if (show !== prev) {
+        prev = show;
+        setShowStickyBar(show);
       }
-      setShowStickyBar(cta.getBoundingClientRect().bottom < 0);
+    }
+    function onScroll() {
+      if (!raf) raf = requestAnimationFrame(check);
     }
     check();
-    window.addEventListener('scroll', check, { passive: true });
-    return () => window.removeEventListener('scroll', check);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, []);
 
   function handleSheetAdd() {

@@ -263,3 +263,129 @@ describe('ArchivePageClient — ViewContent strict semantics (passive grids fire
     expect(viewContentMirrors()).toHaveLength(0);
   });
 });
+describe('ArchivePageClient — refetch bug regression (param change without remount)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setConsent(false, true);
+    window.fbq = vi.fn();
+    pushMock.mockClear();
+    searchParamsMock.mockClear();
+    searchParamsMock.mockImplementation(() => new URLSearchParams());
+    getProductsMock.mockReset();
+    getProductsMock.mockResolvedValue({
+      data: [],
+      meta: { total: 0, page: 2, perPage: 24, totalPages: 0, nextCursor: null, hasMore: false },
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+  });
+
+  const productWatch = {
+    id: 'p3', sku: 'SKU-3', slug: 'watch-c', name: 'Watch C', price: 3000, image: null, images: null,
+  } as any;
+  const productAccessory = {
+    id: 'p4', sku: 'SKU-4', slug: 'strap-d', name: 'Strap D', price: 500, image: null, images: null,
+  } as any;
+
+  const element = (
+    filters: ArchivePageClientProps['filters'],
+    opts: { total?: number; items?: any[]; categories?: any[] } = {},
+  ) => (
+    <StorefrontConfigProvider initialConfig={CONFIG}>
+      <CartProvider>
+        <WishlistProvider>
+          <AuthProvider>
+            <ArchivePageClient
+              initialItems={opts.items ?? [productA, productB]}
+              initialCursor="c1"
+              initialHasMore
+              initialTotal={opts.total ?? 2}
+              categories={opts.categories ?? []}
+              filters={filters}
+            />
+          </AuthProvider>
+        </WishlistProvider>
+      </CartProvider>
+    </StorefrontConfigProvider>
+  );
+
+  it('search A → search B: new props drive the rendered list, heading and search box', () => {
+    const view = render(element({ search: 'shoes' }, { items: [productA], total: 1 }));
+    expect(screen.getByText('Shoes A')).toBeInTheDocument();
+
+    // Same component instance (no key/remount) — the same-route navigation path.
+    view.rerender(element({ search: 'watch' }, { items: [productWatch], total: 1 }));
+
+    expect(screen.getByText('Watch C')).toBeInTheDocument();
+    expect(screen.queryByText('Shoes A')).not.toBeInTheDocument();
+    expect(screen.getByText(/Search results for .watch./)).toBeInTheDocument();
+    for (const box of screen.getAllByLabelText('Search products')) {
+      expect((box as HTMLInputElement).value).toBe('watch');
+    }
+  });
+
+  it('category param change: list is replaced and the category checkbox shows selected', () => {
+    const categories = [
+      { id: 'c9', slug: 'accessories', name: 'Accessories', parentId: null, children: [], _count: { products: 1 } },
+    ];
+    const view = render(element({}, { categories }));
+    expect(screen.getByText('Shoes A')).toBeInTheDocument();
+
+    view.rerender(element({ category: 'accessories' }, { items: [productAccessory], categories, total: 1 }));
+
+    expect(screen.getByText('Strap D')).toBeInTheDocument();
+    expect(screen.queryByText('Shoes A')).not.toBeInTheDocument();
+    // The category name span carries the selected styling only when
+    // selectedCategorySlug was re-synced from the new filters.
+    const nameSpan = screen
+      .getAllByText('Accessories')
+      .find((el) => el.tagName === 'SPAN');
+    expect(nameSpan?.className).toContain('text-brand-blue');
+  });
+
+  it('clearing search: stale heading/results are replaced by the full catalog', () => {
+    const view = render(element({ search: 'watch' }, { items: [productWatch], total: 1 }));
+    expect(screen.getByText(/Search results for .watch./)).toBeInTheDocument();
+
+    view.rerender(element({}, { items: [productA, productB], total: 2 }));
+
+    expect(screen.queryByText(/Search results for/)).not.toBeInTheDocument();
+    expect(screen.getByText('Shoes A')).toBeInTheDocument();
+    expect(screen.queryByText('Watch C')).not.toBeInTheDocument();
+    for (const box of screen.getAllByLabelText('Search products')) {
+      expect((box as HTMLInputElement).value).toBe('');
+    }
+  });
+
+  it('sort param change drives load-more fetches with the NEW sort (not the mount-time sort)', async () => {
+    const view = render(element({}));
+    view.rerender(element({ sort: 'price-low' }));
+
+    const observers = (globalThis.IntersectionObserver as any).instances;
+    expect(observers.length).toBeGreaterThan(0);
+    for (const o of observers) act(() => o.trigger(true));
+
+    await vi.waitFor(() => expect(getProductsMock).toHaveBeenCalled());
+    expect(getProductsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: 'basePrice', order: 'asc', search: undefined }),
+    );
+  });
+
+  it('a no-op filter navigation never leaves a stuck "Updating…" overlay', () => {
+    render(element({}));
+    // Price Apply with empty min/max pushes the unchanged URL (the old code
+    // set a manual navigating flag that only a filters-prop change cleared).
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(pushMock).toHaveBeenCalled();
+    expect(screen.queryByText('Updating…')).not.toBeInTheDocument();
+  });
+
+  it('grid cards are wrapped for content-visibility (long-list rendering cost)', () => {
+    render(element({}));
+    const wrappers = document.querySelectorAll('[data-plp-card]');
+    expect(wrappers.length).toBe(2);
+    for (const w of wrappers) {
+      expect(w.className).toContain('[content-visibility:auto]');
+      expect(w.className).toContain('[contain-intrinsic-size:');
+    }
+  });
+});
