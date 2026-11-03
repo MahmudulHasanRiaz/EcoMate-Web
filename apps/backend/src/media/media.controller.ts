@@ -116,6 +116,16 @@ export class MediaController {
     return this.svc.backfillAvif(dto ?? {});
   }
 
+  /** Queue derivative generation for READY media with no manifest at all
+   *  (legacy rows the AVIF backfill deliberately skips). */
+  @Post('backfill-derivatives')
+  @Permissions('maintain_media')
+  backfillMissingDerivatives(
+    @Body() dto: { batchSize?: number; max?: number; dryRun?: boolean },
+  ) {
+    return this.svc.backfillMissingDerivatives(dto ?? {});
+  }
+
   @Post('recover-stuck')
   @Permissions('maintain_media')
   recoverStuck(@Body() dto: { sinceMinutes?: number }) {

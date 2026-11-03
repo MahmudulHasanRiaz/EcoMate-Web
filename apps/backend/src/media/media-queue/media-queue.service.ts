@@ -4,7 +4,10 @@ import { Queue } from 'bullmq';
 import { CacheService } from '../../cache/cache.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
-import { manifestMissingAvif } from './derivatives';
+import {
+  manifestHasUsableDerivative,
+  manifestMissingAvif,
+} from './derivatives';
 
 const BACKUP_MAINTENANCE_CACHE_KEY = 'system:backup-maintenance';
 
@@ -85,6 +88,37 @@ export class MediaQueueService implements OnModuleInit {
       },
     );
     this.logger.log('Registered periodic recovery job (every 5 minutes)');
+    if (!maintenance && !durableOwner) {
+      this.scheduleBootBackfill();
+    }
+  }
+
+  /**
+   * Self-heal pass shortly after boot: queue derivative generation for
+   * media rows that have none (legacy rows the manual backfills skip) and
+   * AVIF generation for pre-P3 manifests. Delayed and fire-and-forget so
+   * startup is never blocked; the queue drains at its own concurrency.
+   * Disable with MEDIA_BACKFILL_ON_BOOT=0.
+   */
+  private scheduleBootBackfill(): void {
+    if (process.env.MEDIA_BACKFILL_ON_BOOT === '0') return;
+    if (process.env.NODE_ENV === 'test') return;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const missing = await this.backfillMissingDerivatives();
+          const avif = await this.backfillAvif();
+          this.logger.log(
+            `Boot media backfill: missingDerivatives queued=${missing.queued}/${missing.missing}, avif queued=${avif.queued}/${avif.missing}`,
+          );
+        } catch (err) {
+          this.logger.warn(
+            `Boot media backfill failed: ${(err as Error).message}`,
+          );
+        }
+      })();
+    }, 30_000);
+    timer.unref?.();
   }
 
   async pauseAndDrain(timeoutMs = 60_000): Promise<void> {
@@ -268,6 +302,60 @@ export class MediaQueueService implements OnModuleInit {
 
     this.logger.log(
       `AVIF backfill: scanned=${scanned} missing=${missing} queued=${queued} dryRun=${!!opts.dryRun}`,
+    );
+    return { queued, scanned, missing };
+  }
+
+  /**
+   * Queue derivative generation for READY image media with NO usable
+   * derivative manifest at all (null or empty). These are legacy rows
+   * that predate the derivative pipeline (or were cloned without their
+   * manifest): the storefront resolver finds no manifest for them and
+   * serves the raw original file, however large. backfillAvif
+   * deliberately skips them (it only upgrades WebP manifests), and
+   * backfill() only covers UPLOADED rows, so without this pass they
+   * would stay originals forever. The 'process' job regenerates the
+   * full WebP set + AVIF siblings + blur, so the pass is idempotent
+   * and safe to re-run.
+   */
+  async backfillMissingDerivatives(
+    opts: { batchSize?: number; max?: number; dryRun?: boolean } = {},
+  ): Promise<{ queued: number; scanned: number; missing: number }> {
+    const batchSize = Math.min(opts.batchSize ?? 50, 100);
+    const maxEnqueue = opts.max ?? 10_000;
+    let cursor: string | undefined;
+    let queued = 0;
+    let scanned = 0;
+    let missing = 0;
+
+    for (;;) {
+      const batch = await this.prisma.media.findMany({
+        where: { processingStatus: 'READY', mimeType: { startsWith: 'image/' } },
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        take: batchSize,
+        orderBy: { id: 'asc' },
+        select: { id: true, derivativeManifest: true },
+      });
+      if (batch.length === 0) break;
+      scanned += batch.length;
+      cursor = batch[batch.length - 1].id;
+
+      for (const media of batch) {
+        const manifest = media.derivativeManifest as
+          | Record<string, unknown>
+          | null;
+        if (manifestHasUsableDerivative(manifest)) continue;
+        missing++;
+        if (!opts.dryRun && queued < maxEnqueue) {
+          await this.schedule(media.id, { priority: 100 });
+          queued++;
+        }
+      }
+      if (!opts.dryRun && queued >= maxEnqueue) break;
+    }
+
+    this.logger.log(
+      `Missing-derivatives backfill: scanned=${scanned} missing=${missing} queued=${queued} dryRun=${!!opts.dryRun}`,
     );
     return { queued, scanned, missing };
   }
