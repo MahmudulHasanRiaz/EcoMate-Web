@@ -85,6 +85,10 @@ services:
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
       LICENSE_ENCRYPTION_KEY: ${LICENSE_ENCRYPTION_KEY:-}
       INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:-}
+      # Shared secret for storefront on-demand revalidation (P4). The backend
+      # will present it to POST /api/revalidate after product/config mutations
+      # (hookup pending); the storefront endpoint stays disabled until set.
+      REVALIDATION_SECRET: ${REVALIDATION_SECRET:-}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       PORT: 4000
@@ -178,6 +182,9 @@ services:
       NODE_ENV: production
       API_URL: ${API_URL:-http://backend:4000/api}
       INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:-}
+      # Guards POST /api/revalidate (on-demand cache invalidation, P4).
+      # Leave empty to keep the endpoint disabled (401 for every call).
+      REVALIDATION_SECRET: ${REVALIDATION_SECRET:-}
       NEXT_PUBLIC_API_URL: ${STORE_NEXT_PUBLIC_API_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}/api}
       NEXT_PUBLIC_STOREFRONT_URL: ${STORE_NEXT_PUBLIC_STOREFRONT_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       NEXT_PUBLIC_GA_MEASUREMENT_ID: ${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}

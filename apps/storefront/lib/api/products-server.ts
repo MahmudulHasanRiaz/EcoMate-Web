@@ -68,6 +68,8 @@ export const fetchProductsServer = cache(async function fetchProductsServer(
     // Surge-safe: at most 1 retry with a short timeout on this hot path.
     const data = await serverFetch<any>(url, {
       revalidate: 60,
+      // On-demand invalidation (P4): POST /api/revalidate {tags:['products']}
+      tags: ["products"],
       maxRetries: 1,
       timeout: 5000,
     });
@@ -96,7 +98,7 @@ export const fetchProductsServer = cache(async function fetchProductsServer(
 
 export async function getCategoriesServer(): Promise<Category[]> {
   try {
-    const data = await serverFetch<any>("/categories", { revalidate: 300 });
+    const data = await serverFetch<any>("/categories", { revalidate: 300, tags: ["products"] });
     return Array.isArray(data) ? data : data.data || [];
   } catch (err) {
     console.error("Failed to fetch categories from backend:", err);
@@ -106,7 +108,7 @@ export async function getCategoriesServer(): Promise<Category[]> {
 
 export async function getBrandsServer(): Promise<any[]> {
   try {
-    const data = await serverFetch<any>("/brands?activeOnly=true", { revalidate: 300 });
+    const data = await serverFetch<any>("/brands?activeOnly=true", { revalidate: 300, tags: ["products"] });
     return Array.isArray(data) ? data : data.data || [];
   } catch (err) {
     console.error("Failed to fetch brands from backend:", err);
@@ -159,6 +161,7 @@ export const getProductBySlugServer = cache(async function getProductBySlugServe
     // Surge-safe: at most 1 retry with a short timeout on this hot path.
     const data = await serverFetch<any>(`/products/slug/${encodeURIComponent(slug)}`, {
       revalidate: 60,
+      tags: ["products"],
       maxRetries: 1,
       timeout: 5000,
     });

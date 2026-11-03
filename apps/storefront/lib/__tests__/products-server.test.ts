@@ -49,6 +49,12 @@ describe('products-server request memoization (P0-2)', () => {
       expect.stringContaining('/products/slug/y'),
       expect.objectContaining({ revalidate: 60, maxRetries: 1, timeout: 5000 }),
     );
+    // P4: the PDP fetch carries the `products` cache tag so
+    // POST /api/revalidate can invalidate it on demand.
+    expect(mocked).toHaveBeenCalledWith(
+      expect.stringContaining('/products/slug/y'),
+      expect.objectContaining({ tags: ['products'] }),
+    );
   });
 
   it('getRelatedProductsServer mirrors the client logic on the server (excludes self, tag-first, max 8)', async () => {
