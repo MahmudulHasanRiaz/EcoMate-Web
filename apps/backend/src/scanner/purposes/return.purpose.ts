@@ -15,9 +15,14 @@ import {
   ScanPurposeHandler,
   ScanResult,
 } from '../scanner.types';
-import { loadLinkedReturnCandidates } from './linked-return-candidates';
+import {
+  loadLinkedReturnCandidates,
+  loadReturnCandidatesForScannedOrder,
+} from './linked-return-candidates';
 
-const ORDER_NUMBER = /^(ORD|RTN)-\d{6}-\d{4}$/;
+// Aligned with scanner-resolver's ORDER_NUMBER: exchange orders scan as
+// `Ex-…` too, and a return scan may name ANY of the three order kinds.
+const ORDER_NUMBER = /^(ORD|RTN|EX)-\d{6}-\d{4}$/;
 const RETURN_NUMBER = /^RTN-\d{6}-\d{4}$/;
 
 /**
@@ -47,11 +52,13 @@ function dedupeDispatches(dispatches: DispatchPreview[]): DispatchPreview[] {
  * Purpose 2 — Process return (merged task).
  *
  * Resolve accepts EVERY return identifier: a courier dispatch id / tracking
- * code, an order number / QR, or an RTN display id (staff-created returns AND
- * exchange returns). Candidates of BOTH kinds may match one order — the picker
- * then lists every one of them, and the operator's choice is staged; nothing
- * is ever executed by a scan. Staged rows keep their internal purpose so
- * Process executes through the correct existing path.
+ * code, an order number / QR (original, exchange Ex-…, or return order), or
+ * an RTN display id (staff-created returns AND exchange returns). Candidates
+ * are Return rows and returnable dispatches ONLY — a linked order is never
+ * a candidate (2026-11-04). Several DISTINCT returns may match one order —
+ * the picker then lists every one of them, and the operator's choice is
+ * staged; nothing is ever executed by a scan. Staged rows keep their
+ * internal purpose so Process executes through the correct existing path.
  *
  * Execute delegates ALL domain logic to RtnService.finalizeDispatchReturn:
  *  - full return:    original Return Pending → Returned + restoreForOrder
@@ -95,10 +102,25 @@ export class ReturnPurpose implements ScanPurposeHandler {
       return { ...outcome, linked: outcome.linked ?? [] };
     }
 
-    const orderId = outcome.order?.id ?? outcome.dispatches[0]?.orderId ?? null;
-    const linked = orderId
-      ? await loadLinkedReturnCandidates(this.prisma, orderId)
-      : [];
+    const scannedOrderId =
+      outcome.order?.id ?? outcome.dispatches[0]?.orderId ?? null;
+    // Scan-alias normalization (2026-11-04): the scan may name the original
+    // order, one of its exchange orders (Ex-…), or its return order (RTN-…)
+    // — the candidates are always the RETURN(s) those orders belong to,
+    // resolved through the shared scoped loader.
+    const scope = scannedOrderId
+      ? await loadReturnCandidatesForScannedOrder(this.prisma, scannedOrderId)
+      : null;
+    // Owner rule (2026-11-04, GENERAL — every order, not just exchanges):
+    // Process-return candidates are RETURNS and returnable dispatches,
+    // NOTHING else. A linked order — the scanned order itself, an exchange
+    // order, any other order — is never a return option. The loader already
+    // drops an exchange face whose return leg exists; this filter drops
+    // every remaining info-only exchange face (lone legacy exchanges) so no
+    // code path can ever offer a non-return as a return again.
+    const linked = (scope?.candidates ?? []).filter(
+      (c) => c.kind === 'return',
+    );
     // Picker hygiene (2026-10-28): a dispatch and a Return row for the same
     // order are two faces of ONE return, and offering both is not just
     // confusing — it can restore the same goods twice. Dispatch finalize
@@ -109,23 +131,42 @@ export class ReturnPurpose implements ScanPurposeHandler {
     // double-restores in either order. When a Return row already records the
     // order's return, the leg path owns it (manual receive recording WHO +
     // WHEN, with damage split) and the dispatch option is suppressed. A
-    // dispatch stays a candidate only when no Return row covers the order's
-    // return. Exchange-only children (info-only, no Return row) do NOT
-    // suppress: they are not a recorded return.
-    const dedupedDispatches = dedupeDispatches(outcome.dispatches);
-    outcome.dispatches = linked.some((c) => c.kind === 'return')
-      ? []
-      : dedupedDispatches;
+    // dispatch stays a candidate only when no Return row covers the return.
+    let dispatches =
+      linked.length > 0 ? [] : dedupeDispatches(outcome.dispatches);
+    // Child-order scan (Ex-/RTN-order) that found no return leg and carries
+    // no dispatch of its own: the parcel that carries the PARENT's return
+    // rides on the parent's dispatch — offer the parent's dispatches, never
+    // a substitute option invented from the child order itself.
+    if (
+      dispatches.length === 0 &&
+      linked.length === 0 &&
+      scope?.parentOrderId &&
+      scope.parentDisplayId
+    ) {
+      const parentOutcome = await resolveScanIdentifier(
+        this.prisma,
+        scope.parentDisplayId,
+      );
+      if (parentOutcome.dispatches.length > 0) {
+        dispatches = dedupeDispatches(parentOutcome.dispatches);
+      }
+    }
+    outcome.dispatches = dispatches;
     await this.enrichDispatches(outcome);
 
     const total = outcome.dispatches.length + linked.length;
     if (total === 0) {
+      const exchangeNote =
+        scope && scope.exchangeDisplayIds.length > 0
+          ? ` This order is linked to exchange ${scope.exchangeDisplayIds.join(', ')}, but no return was created for it — there is nothing to receive.`
+          : '';
       return {
         ...outcome,
         status: 'not_found',
         dispatches: outcome.dispatches,
         linked,
-        message: 'No active return/exchange or returnable dispatch was found for this order.',
+        message: `No active return or returnable dispatch was found for this order.${exchangeNote}`,
       };
     }
     if (total > 1) {
@@ -135,7 +176,7 @@ export class ReturnPurpose implements ScanPurposeHandler {
         dispatches: outcome.dispatches,
         linked,
         message:
-          'Multiple return options are linked to this order. Select the dispatch, return, or exchange to continue.',
+          'Multiple returns are linked to this order. Select the return to continue.',
       };
     }
     const only = linked[0];

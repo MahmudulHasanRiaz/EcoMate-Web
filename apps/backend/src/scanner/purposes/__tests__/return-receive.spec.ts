@@ -126,6 +126,62 @@ describe('ReturnReceivePurpose — return/exchange scan resolution (hardening 3)
     expect(outcome.message).toBe('No active return/exchange for this order.');
   });
 
+  it('an exchange order with a return leg resolves to the LEG ONLY — never two candidates for one return (2026-11-04)', async () => {
+    await build({
+      returns: [
+        activeReturn({
+          id: 'ret-ex',
+          displayId: 'RTN-261104-0001',
+          type: 'EXCHANGE',
+          exchangeOrderId: 'ex-1',
+        }),
+      ],
+      exchanges: [
+        { id: 'ex-1', displayId: 'Ex-261104-0003', status: { name: 'Delivered' }, items: [] },
+      ],
+    });
+    const outcome = await purpose.resolve('ORD-260930-0001');
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.linked).toHaveLength(1);
+    expect(outcome.linked?.[0]).toMatchObject({
+      kind: 'return',
+      displayId: 'RTN-261104-0001',
+      exchangeDisplayId: 'Ex-261104-0003',
+    });
+  });
+
+  it('execute accepts the return’s own EXCHANGE order id as the scan identifier (Ex- scan → Process works)', async () => {
+    await build({
+      returns: [
+        activeReturn({
+          id: 'ret-ex',
+          displayId: 'RTN-261104-0001',
+          type: 'EXCHANGE',
+          exchangeOrderId: 'ex-1',
+        }),
+      ],
+    });
+    // The generic resolver resolves the Ex- barcode to the exchange order.
+    (prisma.order.findFirst as any) = async () => ({
+      id: 'ex-1',
+      displayId: 'Ex-261104-0003',
+      kind: 'EXCHANGE',
+      exchangeOfOrderId: 'order-1',
+      status: { id: 'st-del', name: 'Delivered', nextStatuses: [] },
+      trashedAt: null,
+      dispatches: [],
+    });
+    const res = await purpose.execute(
+      { identifier: 'Ex-261104-0003', returnId: 'ret-ex' },
+      actor,
+    );
+    expect(res.status).toBe('success');
+    expect(returns.restoreStockForReturn).toHaveBeenCalledWith(
+      'ret-ex',
+      expect.objectContaining({ performedBy: 'staff@ecomate.com' }),
+    );
+  });
+
   it('execute with a return id receives it without touching the order', async () => {
     await build({ returns: [activeReturn()] });
     const res = await purpose.execute({ identifier: 'ORD-260930-0001', returnId: 'ret-1' }, actor);

@@ -387,7 +387,12 @@ describe('ReturnPurpose — DISPATCH_RETURN stage-time truth', () => {
     expect(outcome.linked).toHaveLength(0);
   });
 
-  it('exchange child alone does NOT suppress the dispatch (no Return row)', async () => {
+  it('a lone exchange child is NOT a Process-return candidate — the dispatch auto-stages (owner rule 2026-11-04)', async () => {
+    // Supersedes the pre-2026-11-04 expectation (picker with the exchange
+    // face listed): an exchange ORDER is not a return, so it can never be
+    // offered as a return option — in any order, in any case. With no
+    // Return row covering the order, the returnable dispatch is the single
+    // candidate and stages without a picker.
     mockedResolve.mockResolvedValue({
       status: 'resolved',
       identifier: 'ORD-260930-0001',
@@ -412,13 +417,221 @@ describe('ReturnPurpose — DISPATCH_RETURN stage-time truth', () => {
 
     const outcome = await purpose.resolve('ORD-260930-0001');
 
-    expect(outcome.status).toBe('selection_required');
+    expect(outcome.status).toBe('resolved');
     expect(outcome.dispatches).toHaveLength(1);
+    expect(outcome.linked).toHaveLength(0);
+  });
+
+  // ── Owner rule 2026-11-04: one exchange = ONE return option ─────────────
+
+  const exchangeLeg = (over: any = {}) => ({
+    id: 'ret-ex1',
+    displayId: 'RTN-261104-0001',
+    orderId: 'o1',
+    type: 'EXCHANGE',
+    status: 'REQUESTED',
+    stockReconciled: false,
+    exchangeOrderId: 'o1-ex',
+    createdAt: new Date('2026-11-04T00:00:00Z'),
+    items: [],
+    ...over,
+  });
+
+  const exchangeChild = (over: any = {}) => ({
+    id: 'o1-ex',
+    displayId: 'Ex-261104-0003',
+    status: { name: 'Delivered' },
+    items: [],
+    ...over,
+  });
+
+  function mockExchangeWorld(opts: { returns?: any[]; scannedId?: string } = {}) {
+    const returns = opts.returns ?? [exchangeLeg()];
+    prisma.return.findMany.mockImplementation(async ({ where }: any) =>
+      returns.filter((r: any) => !where?.orderId || r.orderId === where.orderId),
+    );
+    prisma.order.findMany.mockImplementation(async ({ where }: any) => {
+      if (where.returnOfOrderId) return [];
+      if (where.exchangeOfOrderId) {
+        return where.exchangeOfOrderId === 'o1' ? [exchangeChild()] : [];
+      }
+      return [order()];
+    });
+    prisma.order.findUnique.mockImplementation(async ({ where }: any) => {
+      if (where.id === 'o1') return order();
+      if (where.id === 'o1-ex') {
+        return {
+          id: 'o1-ex',
+          displayId: 'Ex-261104-0003',
+          exchangeOfOrderId: 'o1',
+          items: [],
+          status: { name: 'Delivered' },
+        };
+      }
+      return null;
+    });
+  }
+
+  it("the owner's exact case: original scan with an exchange return shows ONE option — the RTN leg, never the Ex- order", async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-261030-0017',
+      dispatches: [],
+      order: orderPreview({ displayId: 'ORD-261030-0017' }) as any,
+    });
+    mockExchangeWorld();
+
+    const outcome = await purpose.resolve('ORD-261030-0017');
+
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.dispatches).toHaveLength(0);
     expect(outcome.linked).toHaveLength(1);
     expect(outcome.linked?.[0]).toMatchObject({
-      kind: 'exchange',
-      displayId: 'ORD-260930-0009',
+      kind: 'return',
+      labelKind: 'exchange',
+      displayId: 'RTN-261104-0001',
+      exchangeDisplayId: 'Ex-261104-0003',
     });
+  });
+
+  it('scanning the EXCHANGE order number finds that exchange’s return leg (scan-alias normalization)', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'EX-261104-0003',
+      dispatches: [],
+      order: orderPreview({ id: 'o1-ex', displayId: 'Ex-261104-0003' }) as any,
+    });
+    mockExchangeWorld();
+
+    const outcome = await purpose.resolve('Ex-261104-0003');
+
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.linked).toHaveLength(1);
+    expect(outcome.linked?.[0]).toMatchObject({
+      kind: 'return',
+      displayId: 'RTN-261104-0001',
+    });
+  });
+
+  it('an exchange scan does NOT widen to the original’s other returns', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'EX-261104-0003',
+      dispatches: [],
+      order: orderPreview({ id: 'o1-ex', displayId: 'Ex-261104-0003' }) as any,
+    });
+    mockExchangeWorld({
+      returns: [
+        exchangeLeg(),
+        {
+          id: 'ret-staff',
+          displayId: 'RTN-261104-0002',
+          orderId: 'o1',
+          type: 'PARTIAL',
+          status: 'REQUESTED',
+          stockReconciled: false,
+          exchangeOrderId: null,
+          createdAt: new Date('2026-11-04T01:00:00Z'),
+          items: [],
+        },
+      ],
+    });
+
+    const outcome = await purpose.resolve('Ex-261104-0003');
+
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.linked).toHaveLength(1);
+    expect(outcome.linked?.[0]).toMatchObject({ id: 'ret-ex1' });
+  });
+
+  it('two distinct exchanges on one original → picker with the two RTN legs ONLY (no Ex- faces)', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [],
+      order: orderPreview() as any,
+    });
+    const leg2 = exchangeLeg({
+      id: 'ret-ex2',
+      displayId: 'RTN-261104-0005',
+      exchangeOrderId: 'o1-ex2',
+    });
+    prisma.return.findMany.mockResolvedValue([exchangeLeg(), leg2]);
+    prisma.order.findMany.mockImplementation(async ({ where }: any) => {
+      if (where.returnOfOrderId) return [];
+      if (where.exchangeOfOrderId) {
+        return [
+          exchangeChild(),
+          exchangeChild({ id: 'o1-ex2', displayId: 'Ex-261104-0007' }),
+        ];
+      }
+      return [order()];
+    });
+
+    const outcome = await purpose.resolve('ORD-260930-0001');
+
+    expect(outcome.status).toBe('selection_required');
+    expect(outcome.linked).toHaveLength(2);
+    expect(outcome.linked?.every((c: any) => c.kind === 'return')).toBe(true);
+    expect(outcome.linked?.map((c: any) => c.displayId).sort()).toEqual([
+      'RTN-261104-0001',
+      'RTN-261104-0005',
+    ]);
+  });
+
+  it('a lone exchange with no return leg and no dispatch → not_found that says no return was created', async () => {
+    mockedResolve.mockResolvedValue({
+      status: 'resolved',
+      identifier: 'ORD-260930-0001',
+      dispatches: [],
+      order: orderPreview() as any,
+    });
+    mockExchangeWorld({ returns: [] });
+
+    const outcome = await purpose.resolve('ORD-260930-0001');
+
+    expect(outcome.status).toBe('not_found');
+    expect(outcome.linked).toHaveLength(0);
+    expect(outcome.message).toMatch(/no return was created/i);
+  });
+
+  it('a return-order (RTN order) scan falls back to the parent original’s dispatch when nothing else matches', async () => {
+    mockedResolve.mockImplementation(async (_prisma: any, id: string) => {
+      if (String(id).toUpperCase().startsWith('ORD-')) {
+        return {
+          status: 'resolved',
+          identifier: id,
+          dispatches: [dispatch()] as any,
+          order: orderPreview() as any,
+        };
+      }
+      return {
+        status: 'resolved',
+        identifier: id,
+        dispatches: [] as any,
+        order: orderPreview({ id: 'o1-rtn', displayId: 'RTN-260930-0001' }) as any,
+      };
+    });
+    prisma.return.findMany.mockResolvedValue([]);
+    prisma.order.findUnique.mockImplementation(async ({ where }: any) => {
+      if (where.id === 'o1-rtn') {
+        return { id: 'o1-rtn', displayId: 'RTN-260930-0001', returnOfOrderId: 'o1' };
+      }
+      if (where.id === 'o1') return order();
+      return null;
+    });
+    prisma.order.findMany.mockImplementation(async ({ where }: any) => {
+      if (where.returnOfOrderId) return [];
+      if (where.exchangeOfOrderId) return [];
+      return [order()];
+    });
+
+    const outcome = await purpose.resolve('RTN-260930-0001');
+
+    expect(outcome.status).toBe('resolved');
+    expect(outcome.linked).toHaveLength(0);
+    expect(outcome.dispatches).toHaveLength(1);
+    expect(outcome.dispatches[0]).toMatchObject({ id: 'dsp-1' });
   });
 
   it('a staff Return RTN display id resolves to exactly that leg', async () => {

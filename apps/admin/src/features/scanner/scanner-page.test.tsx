@@ -557,7 +557,7 @@ describe('Scanner page', () => {
     await expect.element(page.getByText('RTN-1 — Staged')).toBeInTheDocument()
   })
 
-  it('RETURN_RECEIVE stages the picked leg from the picker (no execute)', async () => {
+  it('Process return picker NEVER offers an exchange ORDER as a return option — only the return leg (owner rule 2026-11-04)', async () => {
     mockPost.mockImplementation((url: string) => {
       if (url === '/scanner/resolve') {
         return Promise.resolve({
@@ -577,9 +577,10 @@ describe('Scanner page', () => {
     const page = await renderPage()
     await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
     await scanText(page, 'ORD-1')
-    // Picker lists both legs; no execute fired yet.
+    // Picker lists the RETURN leg only; the exchange order (ORD-EX-1) is
+    // not a return and is never offered — even when a payload carries it.
     await expect.element(page.getByText('RTN-1', { exact: true })).toBeInTheDocument()
-    await expect.element(page.getByText('ORD-EX-1', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('ORD-EX-1', { exact: true })).not.toBeInTheDocument()
     expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
     await userEvent.click(page.getByRole('button', { name: 'Select RTN-1' }))
     // Picked leg staged — still zero executions. The unpicked leg never stages.
@@ -760,7 +761,7 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
   it('process batch is sequential, removes settled rows, keeps failed rows with the live reason, and never scans attention rows', async () => {
     const legs: Record<string, Record<string, unknown>> = {
       'ORD-1': returnLeg({}),
-      'ORD-2': { kind: 'exchange', id: 'ex-2', displayId: 'ORD-EX-1', status: 'Shipping', orderDisplayId: 'ORD-2', processable: true, reason: null, items: [{ name: 'Red Cap', quantity: 1 }] },
+      'ORD-2': returnLeg({ id: 'ret-ex2', displayId: 'RTN-EX2', orderDisplayId: 'ORD-2', items: [{ name: 'Red Cap', quantity: 1 }] }),
       'ORD-3': returnLeg({ id: 'ret-2', displayId: 'RTN-2', orderDisplayId: 'ORD-3', items: [{ name: 'Wool Scarf', quantity: 1 }] }),
       'ORD-4': returnLeg({ id: 'ret-3', displayId: 'RTN-3', orderDisplayId: 'ORD-4', status: 'RESTOCKED', processable: false, reason: 'Already received — stock was restored earlier.' }),
     }
@@ -782,8 +783,8 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
         if (key === 'ret-1') {
           return Promise.resolve({ data: { status: 'success', identifier: 'ORD-1', title: 'RTN-1 — Received', message: 'Return received and restocked (idempotent per return).', details: { returnId: 'ret-1' } } })
         }
-        if (key === 'ex-2') {
-          return Promise.resolve({ data: { status: 'duplicate', identifier: 'ORD-2', title: 'ORD-EX-1 — Already handled', message: 'This exchange was already received.' } })
+        if (key === 'ret-ex2') {
+          return Promise.resolve({ data: { status: 'duplicate', identifier: 'ORD-2', title: 'RTN-EX2 — Already received', message: 'This return was already received.' } })
         }
         if (key === 'ret-2') {
           ret2Attempts += 1
@@ -802,23 +803,23 @@ describe('Scanner page — staged returns: persistence, attention rows, batch pr
     for (const id of ['ORD-1', 'ORD-2', 'ORD-3', 'ORD-4']) await scanText(page, id)
     await expect.element(page.getByText('Process returns (3 ready · 1 need attention)', { exact: false })).toBeInTheDocument()
     await userEvent.click(page.getByRole('button', { name: /Process returns/ }))
-    // Sequential — row order, per-row payload (identifier + returnId/exchangeId), attention row skipped.
+    // Sequential — row order, per-row payload (identifier + returnId), attention row skipped.
     const scanCalls = mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan').map((c) => c[1])
     // Processing follows the staged list order (top-down, newest scan first).
     expect(scanCalls).toEqual([
       expect.objectContaining({ purpose: 'RETURN_RECEIVE', identifier: 'ORD-3', returnId: 'ret-2' }),
-      expect.objectContaining({ purpose: 'RETURN_RECEIVE', identifier: 'ORD-2', exchangeId: 'ex-2' }),
+      expect.objectContaining({ purpose: 'RETURN_RECEIVE', identifier: 'ORD-2', returnId: 'ret-ex2' }),
       expect.objectContaining({ purpose: 'RETURN_RECEIVE', identifier: 'ORD-1', returnId: 'ret-1' }),
     ])
     expect(scanCalls.some((p) => (p as any).returnId === 'ret-3')).toBe(false)
     // Settled rows leave the list; the failed + attention rows stay.
     await expect.element(page.getByText('RTN-1', { exact: true })).not.toBeInTheDocument()
-    await expect.element(page.getByText('ORD-EX-1', { exact: true })).not.toBeInTheDocument()
+    await expect.element(page.getByText('RTN-EX2', { exact: true })).not.toBeInTheDocument()
     await expect.element(page.getByText('RTN-2', { exact: true })).toBeInTheDocument()
     await expect.element(page.getByText('RTN-3', { exact: true })).toBeInTheDocument()
     // Feed preserved each outcome.
     await expect.element(page.getByText('RTN-1 — Received')).toBeInTheDocument()
-    await expect.element(page.getByText('ORD-EX-1 — Already handled')).toBeInTheDocument()
+    await expect.element(page.getByText('RTN-EX2 — Already received')).toBeInTheDocument()
     // Failed row carries the live error reason; it counts as attention but is
     // retryable in place (Process stays enabled).
     await expect.element(page.getByText('Process returns (0 ready · 2 need attention)', { exact: false })).toBeInTheDocument()
@@ -1337,6 +1338,34 @@ describe('Scanner page — ONE merged Process return task (cross-kind resolve)',
       identifier: 'ORD-1',
       dispatchId: 'd-r1',
     }))
+  })
+
+  it('owner case 2026-11-04: a payload carrying BOTH an exchange RTN leg and its Ex- order stages the leg directly — no picker, no guess', async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/scanner/resolve') {
+        return Promise.resolve({
+          data: {
+            status: 'resolved', identifier: 'ORD-261030-0017', dispatches: [],
+            order: orderPreview('o1', 'ORD-261030-0017', [], 'Md. Rahim', '01700000001'),
+            linked: [
+              returnLeg({ id: 'ret-ex', displayId: 'RTN-261104-0001', labelKind: 'exchange', orderDisplayId: 'ORD-261030-0017', exchangeDisplayId: 'Ex-261104-0003' }),
+              { kind: 'exchange', id: 'o1-ex', displayId: 'Ex-261104-0003', status: 'Delivered', orderDisplayId: 'ORD-261030-0017', processable: true, reason: null, items: [{ name: 'Red Cap', quantity: 1 }] },
+            ],
+            message: 'Multiple return options are linked to this order.',
+          },
+        })
+      }
+      return Promise.resolve({ data: {} })
+    })
+    const page = await renderPage()
+    await userEvent.selectOptions(page.getByRole('combobox'), 'DISPATCH_RETURN')
+    await scanText(page, 'ORD-261030-0017')
+
+    // ONE return exists, so it stages directly: no picker is shown and the
+    // exchange order never appears as an option.
+    await expect.element(page.getByText('RTN-261104-0001 — Staged')).toBeInTheDocument()
+    await expect.element(page.getByText(/return options found/)).not.toBeInTheDocument()
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/scanner/scan')).toHaveLength(0)
   })
 
   it('exchange RTN scan stages with the receive path + damaged controls (labelled Exchange in the picker)', async () => {

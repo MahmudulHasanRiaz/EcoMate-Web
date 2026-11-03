@@ -126,6 +126,14 @@ export interface ScanLinkedCandidate {
   reason?: string | null;
   /** False when the courier left Return.items empty — staff confirm quantities now. */
   itemsConfirmed?: boolean;
+  /** Exchange order this return leg belongs to (Return.exchangeOrderId), when any. */
+  exchangeOrderId?: string | null;
+  /**
+   * That exchange order's display id (Ex-…) — picker CONTEXT on the return
+   * row only. An exchange order is never a candidate in its own right when
+   * its return leg exists (owner rule, 2026-11-04).
+   */
+  exchangeDisplayId?: string;
 }
 
 export type ScanResultStatus = 'success' | 'warning' | 'error' | 'duplicate';
