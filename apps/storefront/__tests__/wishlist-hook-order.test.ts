@@ -28,7 +28,7 @@ describe('WishlistPage — hook ordering', () => {
     expect(guardAt).toBeGreaterThan(-1)
 
     const hooks = [
-      'useState<Product[]>',
+      'useState<ProductCardData[]>',
       'useState<Record<string, boolean>>',
       'useState(true)',
       'useCatalogImageStyle',

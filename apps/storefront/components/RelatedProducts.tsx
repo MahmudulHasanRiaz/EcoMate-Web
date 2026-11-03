@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import type { Product } from "@/lib/types";
+import type { Product, ProductCardData } from "@/lib/types";
 import apiClient from "@/lib/api-client";
-import { transformBackendProduct } from "@/lib/api/products";
+import { transformBackendProductCard } from "@/lib/api/products";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import ProductCard from "./ProductCard";
 
@@ -20,13 +20,13 @@ interface Props {
   product: Product;
   // SSR-provided items (page.tsx fetches these in parallel with the product).
   // When present, the client fetch is skipped — no browser waterfall.
-  initialItems?: Product[];
+  initialItems?: ProductCardData[];
 }
 
 export default function RelatedProducts({ product, initialItems }: Props) {
   const { config } = useStorefrontConfig();
   const hideOos = config.features?.hideOosFromArchive === true;
-  const [products, setProducts] = useState<Product[]>(initialItems ?? []);
+  const [products, setProducts] = useState<ProductCardData[]>(initialItems ?? []);
   const [loading, setLoading] = useState(!initialItems);
 
   useEffect(() => {
@@ -44,10 +44,10 @@ export default function RelatedProducts({ product, initialItems }: Props) {
           category: product.categorySlug || product.category,
           hasStock: hideOos || undefined,
         };
-        const { data } = await apiClient.get('/products', { params });
-        let list: Product[] = (data.data || [])
+        const { data } = await apiClient.get('/products', { params: { ...params, fields: 'card' } });
+        let list: ProductCardData[] = (data.data || [])
           .filter((p: any) => p.id !== product.id)
-          .map(transformBackendProduct);
+          .map(transformBackendProductCard);
 
         const productTags = product.tags || [];
         if (productTags.length > 0) {
@@ -82,17 +82,16 @@ export default function RelatedProducts({ product, initialItems }: Props) {
     <div className="border-t border-gray-100 pt-8 mt-8 px-4 min-[901px]:px-6 max-w-screen-xl mx-auto">
       <h2 className="text-[19px] font-medium text-brand-dark m-0 mb-[14px]">You May Also Like</h2>
 
-      <div className="flex gap-3 overflow-x-auto hide-scrollbar min-[901px]:hidden pb-2 -mx-4 px-4">
+      {/* P2 DOM slimming: previously this list rendered TWICE — a mobile
+          scroll row AND a desktop grid, both fully in the DOM (CSS-hidden
+          duplicate). One responsive container now: horizontal scroll row
+          below 901px, 4-column grid at/above it — same visuals, half the
+          card DOM (each card subtree is ~40+ nodes). */}
+      <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-2 -mx-4 px-4 min-[901px]:grid min-[901px]:grid-cols-4 min-[901px]:gap-4 min-[901px]:overflow-visible min-[901px]:pb-0 min-[901px]:mx-0 min-[901px]:px-0">
         {products.map((p) => (
-          <div key={p.id} className="flex-shrink-0 w-[160px]">
+          <div key={p.id} className="flex-shrink-0 w-[160px] min-[901px]:w-auto">
             <ProductCard product={p} />
           </div>
-        ))}
-      </div>
-
-      <div className="hidden min-[901px]:grid min-[901px]:grid-cols-4 gap-4">
-        {products.map((p) => (
-          <ProductCard key={p.id} product={p} />
         ))}
       </div>
     </div>

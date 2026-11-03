@@ -268,6 +268,59 @@ describe('ProductsService', () => {
       expect((staff.data[0] as any).managedStockQuantity).toBe(25);
     });
 
+    it('fields=card returns the slim card projection; default keeps the full payload (P2 opt-in)', async () => {
+      const makeFull = () => ({
+        ...mockProduct,
+        description: '<p>heavy</p>',
+        descriptionSections: { tagline: 't' },
+        customizations: [{ id: 'g1' }],
+        detailRows: [{ label: 'a', value: 'b' }],
+        videoUrl: 'https://youtube.com/watch?v=x',
+        images: ['https://cdn.example.com/img1.jpg', 'https://cdn.example.com/img2.jpg'],
+        brand: { id: 'b1', name: 'Brand', slug: 'brand', logo: 'logo.png', createdAt: new Date(), updatedAt: new Date() },
+        variants: [
+          {
+            id: 'v-1', price: 1200, salePrice: 900, isActive: true, sku: 'V1',
+            image: 'variant-image.jpg', images: ['variant-image.jpg'],
+            attributeValues: [{ attributeValue: { id: 'av', value: 'Red', attribute: { id: 'a', name: 'Color' } } }],
+          },
+        ],
+      });
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([makeFull()]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(1);
+
+      const cardRes = await service.findAll({ page: 1, perPage: 10, fields: 'card' });
+      const row: any = cardRes.data[0];
+      expect(row.name).toBe('Test Product');
+      expect(row.basePrice).toBe(1000);
+      expect(row.description).toBeUndefined();
+      expect(row.descriptionSections).toBeUndefined();
+      expect(row.customizations).toBeUndefined();
+      expect(row.detailRows).toBeUndefined();
+      expect(row.videoUrl).toBeUndefined();
+      expect(row.images).toEqual(['https://cdn.example.com/img1.jpg']);
+      expect(row.brand).toEqual({ id: 'b1', name: 'Brand', slug: 'brand' });
+      // Variant stubs carry only what the storefront transform derives
+      // price range / stock from — no attribute tree, no images.
+      expect(row.variants).toHaveLength(1);
+      expect(row.variants[0]).toEqual(
+        expect.objectContaining({ id: 'v-1', price: 1200, salePrice: 900, isActive: true }),
+      );
+      expect(Object.keys(row.variants[0]).sort()).toEqual(
+        ['availableStock', 'id', 'isActive', 'price', 'salePrice'].sort(),
+      );
+      expect(row.variants[0].attributeValues).toBeUndefined();
+
+      // Default (no fields param) is byte-shape unchanged for the
+      // admin consumers sharing this endpoint.
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([makeFull()]);
+      const fullRes = await service.findAll({ page: 1, perPage: 10 });
+      const fullRow: any = fullRes.data[0];
+      expect(fullRow.description).toBe('<p>heavy</p>');
+      expect(fullRow.images).toHaveLength(2);
+      expect(fullRow.variants[0].attributeValues).toBeDefined();
+    });
+
     it('clamps an unbounded perPage so one page cannot dump the catalogue', async () => {
       (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.product.count as jest.Mock).mockResolvedValue(0);

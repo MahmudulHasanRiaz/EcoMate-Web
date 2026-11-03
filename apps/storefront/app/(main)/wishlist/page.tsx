@@ -5,8 +5,8 @@ import { Heart, ShoppingCart, Trash2, ArrowRight } from 'lucide-react';
 import Image from 'next/image';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
-import { getProducts } from '@/lib/api/products';
-import type { Product } from '@/lib/types';
+import { getProductCards } from '@/lib/api/products';
+import type { ProductCardData } from '@/lib/types';
 import { useRouter } from 'next/navigation';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
@@ -29,7 +29,7 @@ export default function WishlistPage() {
   // hook after that return changed the hook count between renders and threw
   // "Rendered more hooks than during the previous render" — the page crashed
   // on load for every plan whose licence lacked the wishlist flag.
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<ProductCardData[]>([]);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const aspect = useCatalogImageStyle('product');
@@ -40,7 +40,7 @@ export default function WishlistPage() {
       setLoading(false);
       return;
     }
-    getProducts({ ids: ids.join(','), perPage: 50 })
+    getProductCards({ ids: ids.join(','), perPage: 50 })
       .then(res => setProducts(res.data || []))
       .catch(() => setProducts([]))
       .finally(() => setLoading(false));
@@ -58,7 +58,7 @@ export default function WishlistPage() {
     );
   }
 
-  const handleAddToCart = (e: React.MouseEvent, product: Product) => {
+  const handleAddToCart = (e: React.MouseEvent, product: ProductCardData) => {
     e.stopPropagation();
     addToCart({ id: product.id, name: product.name, price: product.price, originalPrice: product.originalPrice, image: product.image, productImage: product.image, quantity: 1, catalogId: resolveCatalogId(product) });
     trackAddToCart({

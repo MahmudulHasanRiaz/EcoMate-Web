@@ -4,7 +4,7 @@ import React from 'react';
 import { ShoppingCart, Heart } from "lucide-react";
 import Image from "next/image";
 import Link from 'next/link';
-import type { Product } from "@/lib/types";
+import type { Product, ProductCardData } from "@/lib/types";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
@@ -14,9 +14,16 @@ import { getAspectStyle } from "@/lib/utils/image-ratio";
 import { VariantPickerModal } from '@/components/VariantPickerModal';
 import { useAuth } from '@/context/AuthContext';
 import { resolveCatalogId } from '@/lib/catalog-id';
+import { getProduct } from '@/lib/api/products';
 
 interface ProductCardProps {
-  product: Product;
+  /**
+   * Full product (PDP-adjacent callers) OR the slim card projection
+   * (list surfaces, P2). When only the projection is present, the
+   * variant picker lazy-fetches the full product on open — the card
+   * itself renders identically from the projection alone.
+   */
+  product: Product | ProductCardData;
   index?: number;
 }
 
@@ -51,7 +58,10 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
     }
   };
 
-const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0;
+const fullVariants = (product as Product).variants;
+const isVar = product.type === 'variable' && (
+  fullVariants ? fullVariants.length > 0 : (product as ProductCardData).hasVariants === true
+);
 
   // OOS logic based on availabilityMode:
   //   ALWAYS_OUT_OF_STOCK  → always OOS
@@ -73,7 +83,10 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
       case 'MANAGED_STOCK':
       default:
         if (isVar) {
-          return !(product.variants?.some(v => v.isActive && v.stock > 0));
+          // Full product: inspect variants. Card projection: the
+          // projection precomputed the same predicate (anyVariantInStock).
+          if (fullVariants) return !(fullVariants.some(v => v.isActive && v.stock > 0));
+          return !(product as ProductCardData).anyVariantInStock;
         }
         return product.stock != null && product.stock <= 0;
     }
@@ -86,12 +99,31 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
 
   const [variantPickerOpen, setVariantPickerOpen] = React.useState(false);
   const [flyTarget, setFlyTarget] = React.useState<{ x: number; y: number } | undefined>(undefined);
+  // Full product for the variant picker, lazy-fetched only when a
+  // card-projection product's picker is opened (list payloads no longer
+  // carry the variant tree — P2). Full-product callers skip the fetch.
+  const [pickerProduct, setPickerProduct] = React.useState<Product | null>(
+    fullVariants ? (product as Product) : null,
+  );
+  const pickerLoadingRef = React.useRef(false);
 
   const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (isVar) {
       const rect = e.currentTarget.getBoundingClientRect();
       setFlyTarget({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-      setVariantPickerOpen(true);
+      if (pickerProduct) {
+        setVariantPickerOpen(true);
+        return;
+      }
+      if (pickerLoadingRef.current) return;
+      pickerLoadingRef.current = true;
+      getProduct(product.id)
+        .then((full) => {
+          setPickerProduct(full);
+          setVariantPickerOpen(true);
+        })
+        .catch(() => {})
+        .finally(() => { pickerLoadingRef.current = false; });
       return;
     }
     const img = document.getElementById(`img-${product.id}`);
@@ -235,12 +267,14 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
           )}
         </div>
       </div>
-      <VariantPickerModal
-        product={product}
-        open={variantPickerOpen}
-        onClose={() => setVariantPickerOpen(false)}
-        flyTarget={flyTarget}
-      />
+      {pickerProduct && (
+        <VariantPickerModal
+          product={pickerProduct}
+          open={variantPickerOpen}
+          onClose={() => setVariantPickerOpen(false)}
+          flyTarget={flyTarget}
+        />
+      )}
     </div>
   );
 }

@@ -50,6 +50,10 @@ export class ProductsController {
     @Query('cursor') cursor?: string,
     @Query('hasStock') hasStock?: string,
     @Query('status') status?: 'active' | 'draft',
+    // P2 opt-in: `fields=card` returns the slim card projection (list
+    // surfaces only). Default (absent) keeps the full shared payload
+    // that admin consumers depend on.
+    @Query('fields') fields?: string,
   ) {
     const effectiveCategoryId =
       categoryId ||
@@ -83,6 +87,7 @@ export class ProductsController {
         ids: ids ? ids.split(',').filter(Boolean) : undefined,
         hasStock: parsedHasStock,
         status,
+        fields,
       }, { isStaff: this.isStaffUser(user) });
     }
     const parsedMinPrice = minPrice ? parseFloat(minPrice) : undefined;
@@ -104,6 +109,7 @@ export class ProductsController {
       order,
       hasStock: parsedHasStock,
       status,
+      fields,
     }, { isStaff: this.isStaffUser(user) });
   }
 

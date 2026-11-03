@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { getStorefrontConfig, StorefrontConfig } from "@/lib/api/storefront-config";
+import { mergeDeferredConfig } from "@/lib/api/storefront-config-split";
 
 const DEFAULT_CONFIG: StorefrontConfig = {
   store: { name: "Store", tagline: "", email: "", phone: "", address: "" },
@@ -57,11 +58,29 @@ const StorefrontConfigContext = createContext<StorefrontConfigContextType>({
   refresh: () => {},
 });
 
-export function StorefrontConfigProvider({ children, initialConfig }: { children: ReactNode; initialConfig?: StorefrontConfig }) {
+export function StorefrontConfigProvider({ children, initialConfig, needsDeferredConfig = false }: { children: ReactNode; initialConfig?: StorefrontConfig; needsDeferredConfig?: boolean }) {
   const [config, setConfig] = useState<StorefrontConfig>(
     initialConfig || getBootstrappedConfig() || DEFAULT_CONFIG
   );
   const [isLoading, setIsLoading] = useState(false);
+
+  // P2 config split: the layout now inlines only the first-paint subset
+  // (see lib/api/storefront-config-split.ts). Deferred fields (checkout
+  // shipping data, FAQ bodies, delivery info, …) are filled in once on
+  // mount via the existing cached client config fetch, and merged over
+  // the critical subset. First paint never waits on this; consumers of
+  // deferred fields are route-specific (checkout / PDP / thank-you)
+  // and render after mount.
+  useEffect(() => {
+    if (!needsDeferredConfig) return;
+    let cancelled = false;
+    getStorefrontConfig()
+      .then((full) => {
+        if (!cancelled) setConfig((prev) => mergeDeferredConfig(prev, full));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [needsDeferredConfig]);
 
   const refresh = useCallback(() => {
     setIsLoading(true);

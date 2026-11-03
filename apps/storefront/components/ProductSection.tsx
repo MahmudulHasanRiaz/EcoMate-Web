@@ -1,10 +1,10 @@
-import type { Product } from "@/lib/types";
+import type { ProductCardData } from "@/lib/types";
 import ProductCard from "./ProductCard";
 import Link from "next/link";
 
 interface ProductSectionProps {
   title: string;
-  products: Product[];
+  products: ProductCardData[];
   href?: string;
 }
 

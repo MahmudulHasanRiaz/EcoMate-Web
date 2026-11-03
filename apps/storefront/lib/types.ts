@@ -76,6 +76,58 @@ export interface Product {
   customizations?: import('./customization').PublicCustomizationGroup[];
 }
 
+/**
+ * P2 (speed plan §5): slim list-card projection of `Product`.
+ *
+ * List surfaces (homepage sections, PLP, related, search suggestions,
+ * wishlist, cart upsells) render ONLY these fields. The full `Product`
+ * carries description HTML, description sections, the sanitized
+ * customization tree, every gallery image and the complete variant tree
+ * for every row — on a 24-item list that was ~4.9 KB and 28 derivative
+ * URLs per product (measured 2026-11-03) serialized into the RSC/HTML
+ * payload, of which the card renders exactly one `small` derivative.
+ *
+ * Deliberately NOT here: description/shortDesc/descriptionSections,
+ * customizations, detailRows, videoUrl, images[] (gallery), variants[]
+ * (the variant picker lazy-fetches the full product on open — see
+ * ProductCard), reviews. PDP paths keep using the full `Product`.
+ *
+ * `mediaMeta` is narrowed to the primary image only, with a
+ * derivativeManifest carrying only the `small` entry the card renders.
+ */
+export interface ProductCardData {
+  id: string;
+  /** Narrowed media meta: primary image → { small } derivative only. */
+  mediaMeta?: MediaMeta;
+  name: string;
+  slug?: string;
+  price: number;
+  originalPrice?: number;
+  priceRange?: { min: number; max: number };
+  /** Primary image URL (=== images[0] on the full product). */
+  image: string;
+  category: string;
+  categoryId?: string;
+  categorySlug?: string;
+  brand?: { id: string; name: string; slug: string } | null;
+  badge?: string;
+  saveAmount?: number;
+  isFeatured?: boolean;
+  stock?: number;
+  sku?: string;
+  type?: string;
+  tags?: string[];
+  availabilityMode?: Product['availabilityMode'];
+  /** Variant presence for the card UI (picker / "From" price / OOS). */
+  hasVariants: boolean;
+  variantCount: number;
+  /** True when at least one active variant has stock > 0 (card OOS rule for variable products). */
+  anyVariantInStock: boolean;
+  rating?: number;
+  reviewCount?: number;
+  averageRating?: number;
+}
+
 export interface Category {
   id: string;
   mediaMeta?: MediaMeta;
