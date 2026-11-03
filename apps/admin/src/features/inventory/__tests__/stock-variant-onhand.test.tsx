@@ -9,6 +9,10 @@ vi.mock('@tanstack/react-router', () => ({
   // The Stock page now writes its filter state back into the route search
   // params (state preservation) — navigation is a no-op in these tests.
   useNavigate: () => () => {},
+  // The page resolves its navigate through the route-scoped API
+  // (getRouteApi(...).useNavigate) — the mock must provide it or the
+  // suite fails to import (CI Build #853).
+  getRouteApi: () => ({ useNavigate: () => () => {} }),
 }))
 vi.mock('@/components/layout/header', () => ({
   Header: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
