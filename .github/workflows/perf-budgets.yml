@@ -1,0 +1,109 @@
+name: Perf Budgets
+
+# Speed Plan P8 — performance guardrails.
+#
+# *** THIS FILE INTRODUCES THE REPO'S FIRST AUTOMATIC pull_request WORKFLOW ***
+# Every existing workflow in this repo is manual (workflow_dispatch) or
+# reusable (workflow_call). The `budget` job below runs automatically on PRs
+# that touch the storefront. It is deliberately narrow:
+#   - it builds ONLY the storefront and runs a deterministic budget script
+#     against that PR's own build output (no deployed site is measured);
+#   - it changes nothing about ci.yml / Build Images / Deploy Client.
+# The `lighthouse` job stays MANUAL (workflow_dispatch), because Lighthouse
+# against the staging URL measures already-deployed code — it cannot grade
+# a PR's own change, so it must never gate one. See .lighthouserc.js.
+on:
+  pull_request:
+    paths:
+      - 'apps/storefront/**'
+      - 'apps/storefront/scripts/check-perf-budget.mjs'
+      - '.github/workflows/perf-budgets.yml'
+  workflow_dispatch:
+    inputs:
+      lhci_mode:
+        description: 'What Lighthouse CI audits'
+        required: true
+        default: staging-url
+        type: choice
+        options:
+          - staging-url
+          - local-build
+      lhci_url:
+        description: 'URL for staging-url mode'
+        required: false
+        default: 'https://demo.ecomate.bd'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-budgets-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The real PR gate: build the PR's storefront, measure ITS build output.
+  budget:
+    name: storefront perf budget (PR build)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.22.1
+          cache: npm
+
+      # Same install recipe as ci.yml's guards/unit jobs.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build storefront
+        working-directory: apps/storefront
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: npm run build
+
+      - name: Check perf budgets
+        run: node apps/storefront/scripts/check-perf-budget.mjs
+
+  # Manual only. Audits deployed staging (default) or, in local-build mode,
+  # this branch's own build served by `next start` (no backend in CI — see
+  # the caveat in .lighthouserc.js). Never triggered by pull_request.
+  lighthouse:
+    name: Lighthouse CI (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.22.1
+          cache: npm
+
+      - name: Install dependencies
+        if: inputs.lhci_mode == 'local-build'
+        run: npm ci --ignore-scripts
+
+      - name: Build storefront (local-build mode)
+        if: inputs.lhci_mode == 'local-build'
+        working-directory: apps/storefront
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: npm run build
+
+      - name: Run Lighthouse CI
+        env:
+          # Pinned: @lhci/cli 0.16.0 bundles Lighthouse 13.6.0 (npm, 2026-11-03).
+          LHCI_URL: ${{ inputs.lhci_mode == 'local-build' && 'http://127.0.0.1:3000/' || inputs.lhci_url }}
+          LHCI_START_SERVER: ${{ inputs.lhci_mode == 'local-build' && 'npm run start --workspace=storefront' || '' }}
+        run: |
+          npm install -g @lhci/cli@0.16.0
+          lhci collect --config=.lighthouserc.js
+          lhci assert --config=.lighthouserc.js
