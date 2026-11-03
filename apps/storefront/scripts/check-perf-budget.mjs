@@ -1,1 +1,297 @@
-IyEvdXNyL2Jpbi9lbnYgbm9kZQovKioKICogY2hlY2stcGVyZi1idWRnZXQubWpzIOKAlCBzdG9yZWZyb250IHBlcmZvcm1hbmNlIGJ1ZGdldCBnYXRlIChTcGVlZCBQbGFuIFA4KS4KICoKICogVGhpcyBpcyB0aGUgUFIgZ2F0ZS4gSXQgbWVhc3VyZXMgT05MWSB0aGUgUFIncyBvd24gYnVpbGQgb3V0cHV0CiAqIChhcHBzL3N0b3JlZnJvbnQvLm5leHQpLCBuZXZlciBhIGRlcGxveWVkIHNpdGUsIHNvIGEgcmVkIHJlc3VsdCBpcyBhbHdheXMKICogYXR0cmlidXRhYmxlIHRvIHRoZSBjaGFuZ2UgdW5kZXIgcmV2aWV3LiAoTGlnaHRob3VzZSBDSSBsaXZlcyBpbgogKiAubGlnaHRob3VzZXJjLmpzIGF0IHRoZSByZXBvIHJvb3QgYW5kIGlzIGEgTUFOVUFMIHdvcmtmbG93X2Rpc3BhdGNoIGpvYjoKICogYWdhaW5zdCBzdGFnaW5nIGl0IG1lYXN1cmVzIGFscmVhZHktZGVwbG95ZWQgY29kZSwgc28gaXQgY2Fubm90IGdhdGUgYSBQUi4pCiAqCiAqIE1FVEhPRCAocmVwcm9kdWNpYmxlLCBubyBzZXJ2ZXIgLyBubyBiYWNrZW5kIG5lZWRlZCkKICogICBOZXh0LmpzIHByZXJlbmRlcnMgYSBzZXQgb2Ygcm91dGVzIGF0IGJ1aWxkIHRpbWU7IHRoZWlyIEhUTUwgaXMgd3JpdHRlbiB0bwogKiAgIC5uZXh0L3NlcnZlci9hcHAvKiouaHRtbC4gVGhhdCBIVE1MIGlzIHRoZSBzYW1lIGRvY3VtZW50IHRoZSBzZXJ2ZXIgc2VuZHMKICogICBmaXJzdCBmb3IgdGhvc2Ugcm91dGVzLCBzbyB3ZSBtZWFzdXJlIGl0IGRpcmVjdGx5OgogKiAgICAgLSBGb250IHByZWxvYWRzOiBkaXN0aW5jdCA8bGluayByZWw9InByZWxvYWQiIGFzPSJmb250Ij4gKG9yICoud29mZi93b2ZmMgogKiAgICAgICBwcmVsb2FkKSBocmVmcyBpbiB0aGUgcGFnZSBIVE1MLiBNYXggb3ZlciBhbGwgbWVhc3VyZWQgcGFnZXMuCiAqICAgICAtIEluaXRpYWwgSlMgcGVyIHJvdXRlOiBkaXN0aW5jdCAvX25leHQvc3RhdGljL2NodW5rcy8qLmpzIHJlZmVyZW5jZWQgYnkKICogICAgICAgdGhlIHBhZ2UgSFRNTCAoc2NyaXB0IHRhZ3MgKyBSU0MgZmxpZ2h0IGRhdGEg4oCUIHRoZSBzZXQgdGhlIGJyb3dzZXIKICogICAgICAgZG93bmxvYWRzIGZvciB0aGF0IHJvdXRlKSwgc3VtbWVkIGZyb20gdGhlIGNodW5rIGZpbGVzIG9uIGRpc2ssCiAqICAgICAgIHJhdyBhbmQgZ3ppcCAoemxpYiBsZXZlbCA5KS4gU2FtZSBtZXRob2QgUDUgdXNlZCBhZ2FpbnN0IGBuZXh0IHN0YXJ0YCwKICogICAgICAgYXBwbGllZCB0byB0aGUgcHJlcmVuZGVyZWQgZG9jdW1lbnQgaW5zdGVhZCBvZiBhIGxpdmUgcmVzcG9uc2UuCiAqICAgICAtIER5bmFtaWMgcm91dGVzIChob21lLCBQTFAsIFBEUCBvbiBjdXJyZW50IG1haW4pIGhhdmUgbm8gcHJlcmVuZGVyZWQKICogICAgICAgSFRNTDsgdGhleSBhcmUgYm91bmRlZCBieSB0d28gYnVpbGQtd2lkZSBtZXRyaWNzIHRoYXQgZXZlcnkgcm91dGUKICogICAgICAgbG9hZHM6IGJ1aWxkLW1hbmlmZXN0Lmpzb24gYHJvb3RNYWluRmlsZXNgIChnemlwKSBhbmQgdGhlIGxhcmdlc3QKICogICAgICAgc2luZ2xlIGNodW5rIGluIC5uZXh0L3N0YXRpYy9jaHVua3MgKGd6aXApLiBUaGUgd29yc3QgcHJlcmVuZGVyZWQKICogICAgICAgcm91dGUgKHRvZGF5OiBjaGVja291dCkgaXMgdGhlIHBlci1yb3V0ZSBjZWlsaW5nIHNhbXBsZS4KICogICAgIC0gSFRNTCBzaXplOiBsYXJnZXN0IHByZXJlbmRlcmVkIHBhZ2UgSFRNTCAoZXhjbC4gX25vdC1mb3VuZC9fZ2xvYmFsLWVycm9yKS4KICoKICogVEhSRVNIT0xEUyDigJQgcGxhbiB0YXJnZXRzIHZzIHRvZGF5J3MgbWVhc3VyZWQgcmVhbGl0eSAob3JpZ2luL21haW4gNjNhMmU4MywKICogbWVhc3VyZWQgMjAyNi0xMS0wMyBmcm9tIGEgc2libGluZyBidWlsZCBvZiB0aGUgc2FtZSBjb2RlKToKICogICBtZXRyaWMgICAgICAgICAgICAgICAgICAgIHBsYW4gdGFyZ2V0ICAgd2FybiAgICBlcnJvciAgIG1lYXN1cmVkIHRvZGF5CiAqICAgZm9udCBwcmVsb2FkcyAgICAgICAgICAgICA8PSAyICAgICAgICAgIDIgICAgICAgMiAgICAgMSAocG9zdC1QMTsgZXJyb3IgdGlnaHRlbmVkIDEwIC0+IDIgb24gMjAyNi0xMS0wMykKICogICByb3V0ZSBKUyAod29yc3QsIGd6aXApICAgIDw9IDI1MCBLaUIgICAgMjUwICAgICAzMjAgKiAgIH4zMDQgS2lCIChjaGVja291dCAzMTEsMzA2IEIpCiAqICAgcm9vdCBKUyAoZ3ppcCkgICAgICAgICAgICDigJQgICAgICAgICAgICAgMTQwICAgICAxNjAgICAgIH4xMjguNSBLaUIgKDEzMSw1ODUgQikKICogICBsYXJnZXN0IGNodW5rIChnemlwKSAgICAgIOKAlCAgICAgICAgICAgICA4MCAgICAgIDEwMCAgICAgfjcxIEtpQiAoNzMsMDA0IEIpCiAqICAgSFRNTCAobGFyZ2VzdCBwYWdlKSAgICAgICDigJQgICAgICAgICAgICAgNjQgICAgICA4MCAgICAgIH43MiBLaUIgKC9jYXJlZXJzIDczLDkzMiBCKQogKiAgICogUkFUQ0hFVDogdGhlIHBsYW4gdGFyZ2V0IGlzIE5PVCBtZXQgYnkgY3VycmVudCBjb2RlLCBzbyBlcnJvciBpcyBzZXQgYXQKICogICAgIGEgZnJlZXplL2dyb3d0aCBjZWlsaW5nIGluc3RlYWQgb2YgdGhlIHRhcmdldCDigJQgYSBnYXRlIHNldCBhdCB0aGUgdGFyZ2V0CiAqICAgICB0b2RheSB3b3VsZCBiZSByZWQgb24gZXZlcnkgUFIsIGluY2x1ZGluZyB1bnJlbGF0ZWQgb25lcywgYW5kIHdvdWxkIGJlCiAqICAgICBpZ25vcmVkIHdpdGhpbiBhIHdlZWsuIFRoZSBmcmVlemUgc3RpbGwgZ29lcyByZWQgb24gQU5ZIGdyb3d0aCBwYXN0IHRoZQogKiAgICAgY2VpbGluZywgd2hpY2ggaXMgdGhlIHBsYW4ncyBzdGF0ZWQgQ0kgcHVycG9zZS4gRm9udHMgdGlnaHRlbmVkIHRvIHRoZQogKiAgICAgcGxhbiB0YXJnZXQgKGVycm9yIDIpIG9uIDIwMjYtMTEtMDMgYWZ0ZXIgUDEgbGFuZGVkICgxIHByZWxvYWQpLiBSb3V0ZQogKiAgICAgSlMgc3RheXMgYXQgdGhlIDMyMCBLaUIgZnJlZXplIHVudGlsIGEgZnV0dXJlIGRpZXQgYnJpbmdzIHRoZSB3b3JzdAogKiAgICAgcm91dGUgdW5kZXIgdGhlIDI1MCBLaUIgdGFyZ2V0LgogKgogKiBFdmVyeSBlcnJvciB0aHJlc2hvbGQgY2FuIGJlIG92ZXJyaWRkZW4gdmlhIGVudiAodXNlZCBieSB0aGUgbmVnYXRpdmUKICogdGVzdHMsIGFuZCBmb3IgZnV0dXJlIHRpZ2h0ZW5pbmcgd2l0aG91dCB0b3VjaGluZyB0aGlzIGZpbGUpOgogKiAgIFBFUkZfQlVER0VUX0ZPTlRfUFJFTE9BRFNfTUFYLCBQRVJGX0JVREdFVF9ST1VURV9KU19HWklQX0tJQl9NQVgsCiAqICAgUEVSRl9CVURHRVRfUk9PVF9KU19HWklQX0tJQl9NQVgsIFBFUkZfQlVER0VUX0NIVU5LX0daSVBfS0lCX01BWCwKICogICBQRVJGX0JVREdFVF9IVE1MX0tJQl9NQVggICAgICAgICh3YXJuIGxldmVsczogc2FtZSBuYW1lICsgX1dBUk4pCiAqCiAqIFVTQUdFCiAqICAgbm9kZSBhcHBzL3N0b3JlZnJvbnQvc2NyaXB0cy9jaGVjay1wZXJmLWJ1ZGdldC5tanMgWy0tbmV4dC1kaXIgPHBhdGg+XSBbLS1qc29uXQogKiAgIG5vZGUgYXBwcy9zdG9yZWZyb250L3NjcmlwdHMvY2hlY2stcGVyZi1idWRnZXQubWpzIC0taHRtbCA8ZmlsZS5odG1sPiBbLS1uZXh0LWRpciA8cGF0aD5dCiAqICAgICAtLWh0bWwgbWVhc3VyZXMgb25lIHN0YW5kYWxvbmUgSFRNTCBmaWxlIChmaXh0dXJlIG1vZGU7IGNodW5rIHNpemVzIGFyZQogKiAgICAgcmVzb2x2ZWQgZnJvbSAtLW5leHQtZGlyIHdoZW4gZ2l2ZW4pLgogKgogKiBFWElUIENPREVTOiAwID0gcGFzcyAod2FybmluZ3MgYWxsb3dlZCksIDEgPSBhbiBlcnJvciB0aHJlc2hvbGQgd2FzCiAqIGJyZWFjaGVkLCAyID0gY291bGQgbm90IG1lYXN1cmUgKG1pc3NpbmcgYnVpbGQgb3V0cHV0IC8gYmFkIGFyZ3VtZW50cykuCiAqLwppbXBvcnQgeyBleGlzdHNTeW5jLCByZWFkRmlsZVN5bmMsIHJlYWRkaXJTeW5jLCBzdGF0U3luYyB9IGZyb20gJ25vZGU6ZnMnOwppbXBvcnQgeyBnemlwU3luYyB9IGZyb20gJ25vZGU6emxpYic7CmltcG9ydCBwYXRoIGZyb20gJ25vZGU6cGF0aCc7CmltcG9ydCB7IGZpbGVVUkxUb1BhdGggfSBmcm9tICdub2RlOnVybCc7Cgpjb25zdCBLaUIgPSAxMDI0Owpjb25zdCBERUZBVUxUUyA9IHsKICBmb250UHJlbG9hZHM6IHsgd2FybjogMiwgZXJyb3I6IDIsIGVudjogJ1BFUkZfQlVER0VUX0ZPTlRfUFJFTE9BRFNfTUFYJyB9LAogIHJvdXRlSnNHemlwS2lCOiB7IHdhcm46IDI1MCwgZXJyb3I6IDMyMCwgZW52OiAnUEVSRl9CVURHRVRfUk9VVEVfSlNfR1pJUF9LSUJfTUFYJyB9LAogIHJvb3RKc0d6aXBLaUI6IHsgd2FybjogMTQwLCBlcnJvcjogMTYwLCBlbnY6ICdQRVJGX0JVREdFVF9ST09UX0pTX0daSVBfS0lCX01BWCcgfSwKICBjaHVua0d6aXBLaUI6IHsgd2FybjogODAsIGVycm9yOiAxMDAsIGVudjogJ1BFUkZfQlVER0VUX0NIVU5LX0daSVBfS0lCX01BWCcgfSwKICBodG1sS2lCOiB7IHdhcm46IDY0LCBlcnJvcjogODAsIGVudjogJ1BFUkZfQlVER0VUX0hUTUxfS0lCX01BWCcgfSwKfTsKCmZ1bmN0aW9uIHRocmVzaG9sZChjZmcpIHsKICBjb25zdCBlcnIgPSBOdW1iZXIocHJvY2Vzcy5lbnZbY2ZnLmVudl0pOwogIGNvbnN0IHdhcm4gPSBOdW1iZXIocHJvY2Vzcy5lbnZbYCR7Y2ZnLmVudn1fV0FSTmBdKTsKICByZXR1cm4gewogICAgd2FybjogTnVtYmVyLmlzRmluaXRlKHdhcm4pICYmIHByb2Nlc3MuZW52W2Ake2NmZy5lbnZ9X1dBUk5gXSAhPT0gdW5kZWZpbmVkID8gd2FybiA6IGNmZy53YXJuLAogICAgZXJyb3I6IE51bWJlci5pc0Zpbml0ZShlcnIpICYmIHByb2Nlc3MuZW52W2NmZy5lbnZdICE9PSB1bmRlZmluZWQgPyBlcnIgOiBjZmcuZXJyb3IsCiAgfTsKfQoKZnVuY3Rpb24gcGFyc2VBcmdzKGFyZ3YpIHsKICBjb25zdCBhcmdzID0geyBqc29uOiBmYWxzZSwgbmV4dERpcjogbnVsbCwgaHRtbDogW10gfTsKICBmb3IgKGxldCBpID0gMjsgaSA8IGFyZ3YubGVuZ3RoOyBpICs9IDEpIHsKICAgIGNvbnN0IGEgPSBhcmd2W2ldOwogICAgaWYgKGEgPT09ICctLWpzb24nKSBhcmdzLmpzb24gPSB0cnVlOwogICAgZWxzZSBpZiAoYSA9PT0gJy0tbmV4dC1kaXInKSBhcmdzLm5leHREaXIgPSBhcmd2WysraV07CiAgICBlbHNlIGlmIChhID09PSAnLS1odG1sJykgYXJncy5odG1sLnB1c2goYXJndlsrK2ldKTsKICAgIGVsc2UgaWYgKGEgPT09ICctLWhlbHAnIHx8IGEgPT09ICctaCcpIGFyZ3MuaGVscCA9IHRydWU7CiAgICBlbHNlIHRocm93IG5ldyBFcnJvcihgdW5rbm93biBhcmd1bWVudDogJHthfWApOwogIH0KICByZXR1cm4gYXJnczsKfQoKY29uc3QgZ3ppcENhY2hlID0gbmV3IE1hcCgpOwpmdW5jdGlvbiBnemlwU2l6ZShmaWxlKSB7CiAgaWYgKCFnemlwQ2FjaGUuaGFzKGZpbGUpKSB7CiAgICBjb25zdCBidWYgPSByZWFkRmlsZVN5bmMoZmlsZSk7CiAgICBnemlwQ2FjaGUuc2V0KGZpbGUsIHsgcmF3OiBidWYubGVuZ3RoLCBnemlwOiBnemlwU3luYyhidWYsIHsgbGV2ZWw6IDkgfSkubGVuZ3RoIH0pOwogIH0KICByZXR1cm4gZ3ppcENhY2hlLmdldChmaWxlKTsKfQoKZnVuY3Rpb24gd2FsayhkaXIsIGV4dCwgb3V0ID0gW10pIHsKICBpZiAoIWV4aXN0c1N5bmMoZGlyKSkgcmV0dXJuIG91dDsKICBmb3IgKGNvbnN0IGVudHJ5IG9mIHJlYWRkaXJTeW5jKGRpciwgeyB3aXRoRmlsZVR5cGVzOiB0cnVlIH0pKSB7CiAgICBjb25zdCBwID0gcGF0aC5qb2luKGRpciwgZW50cnkubmFtZSk7CiAgICBpZiAoZW50cnkuaXNEaXJlY3RvcnkoKSkgd2FsayhwLCBleHQsIG91dCk7CiAgICBlbHNlIGlmIChlbnRyeS5uYW1lLmVuZHNXaXRoKGV4dCkpIG91dC5wdXNoKHApOwogIH0KICByZXR1cm4gb3V0Owp9CgovKiogRGlzdGluY3QgZm9udC1wcmVsb2FkIGhyZWZzIGluIG9uZSBIVE1MIGRvY3VtZW50LiAqLwpmdW5jdGlvbiBmb250UHJlbG9hZHMoaHRtbCkgewogIGNvbnN0IGhyZWZzID0gbmV3IFNldCgpOwogIGZvciAoY29uc3QgbSBvZiBodG1sLm1hdGNoQWxsKC88bGlua1xiW14+XSo+L2dpKSkgewogICAgY29uc3QgdGFnID0gbVswXTsKICAgIGlmICghL3JlbD0icHJlbG9hZCIvaS50ZXN0KHRhZykpIGNvbnRpbnVlOwogICAgaWYgKCEvYXM9ImZvbnQiL2kudGVzdCh0YWcpICYmICEvXC53b2ZmMj8oXD98InwkKS9pLnRlc3QodGFnKSkgY29udGludWU7CiAgICBjb25zdCBocmVmID0gL2hyZWY9IihbXiJdKykiL2kuZXhlYyh0YWcpPy5bMV07CiAgICBocmVmcy5hZGQoaHJlZiA/PyB0YWcpOwogIH0KICByZXR1cm4gaHJlZnM7Cn0KCi8qKiBEaXN0aW5jdCAvX25leHQvc3RhdGljL2NodW5rcy8qLmpzIHJlZmVyZW5jZWQgYW55d2hlcmUgaW4gdGhlIGRvY3VtZW50LiAqLwpmdW5jdGlvbiBjaHVua1JlZnMoaHRtbCkgewogIGNvbnN0IHJlZnMgPSBuZXcgU2V0KCk7CiAgZm9yIChjb25zdCBtIG9mIGh0bWwubWF0Y2hBbGwoL19uZXh0XC9zdGF0aWNcL2NodW5rc1wvW0EtWmEtejAtOV9cLS4vJV0rXC5qcy9nKSkgewogICAgcmVmcy5hZGQobVswXSk7CiAgfQogIHJldHVybiByZWZzOwp9CgpmdW5jdGlvbiByb3V0ZUxhYmVsKG5leHREaXIsIGh0bWxGaWxlKSB7CiAgY29uc3QgcmVsID0gcGF0aC5yZWxhdGl2ZShwYXRoLmpvaW4obmV4dERpciwgJ3NlcnZlcicsICdhcHAnKSwgaHRtbEZpbGUpLnJlcGxhY2UoL1xcL2csICcvJyk7CiAgbGV0IHJvdXRlID0gYC8ke3JlbC5yZXBsYWNlKC9cLmh0bWwkLywgJycpfWA7CiAgcm91dGUgPSByb3V0ZS5yZXBsYWNlKC9cLyhpbmRleHxwYWdlKSQvLCAnJykgfHwgJy8nOwogIHJvdXRlID0gcm91dGUucmVwbGFjZSgvXC9cKFteKV0rXCkvZywgJycpOyAvLyByb3V0ZSBncm91cHM6IChtYWluKSBldGMuCiAgcmV0dXJuIHJvdXRlID09PSAnJyA/ICcvJyA6IHJvdXRlOwp9CgpmdW5jdGlvbiBtZWFzdXJlSHRtbChodG1sRmlsZSwgbmV4dERpcikgewogIGNvbnN0IGh0bWwgPSByZWFkRmlsZVN5bmMoaHRtbEZpbGUsICd1dGY4Jyk7CiAgY29uc3QgY2h1bmtzID0gWy4uLmNodW5rUmVmcyhodG1sKV07CiAgbGV0IHJhdyA9IDA7CiAgbGV0IGd6aXAgPSAwOwogIGxldCBtaXNzaW5nID0gMDsKICBmb3IgKGNvbnN0IHJlZiBvZiBjaHVua3MpIHsKICAgIGNvbnN0IGZpbGUgPSBwYXRoLmpvaW4obmV4dERpciwgcmVmLnJlcGxhY2UoL15fbmV4dFwvLywgJycpKTsKICAgIGlmIChleGlzdHNTeW5jKGZpbGUpKSB7CiAgICAgIGNvbnN0IHMgPSBnemlwU2l6ZShmaWxlKTsKICAgICAgcmF3ICs9IHMucmF3OwogICAgICBnemlwICs9IHMuZ3ppcDsKICAgIH0gZWxzZSBtaXNzaW5nICs9IDE7CiAgfQogIHJldHVybiB7CiAgICBmaWxlOiBodG1sRmlsZSwKICAgIGh0bWxCeXRlczogQnVmZmVyLmJ5dGVMZW5ndGgoaHRtbCksCiAgICBmb250UHJlbG9hZHM6IGZvbnRQcmVsb2FkcyhodG1sKS5zaXplLAogICAgY2h1bmtDb3VudDogY2h1bmtzLmxlbmd0aCwKICAgIG1pc3NpbmdDaHVua3M6IG1pc3NpbmcsCiAgICBqc1JhdzogcmF3LAogICAganNHemlwOiBnemlwLAogIH07Cn0KCmZ1bmN0aW9uIG1haW4oKSB7CiAgY29uc3QgYXJncyA9IHBhcnNlQXJncyhwcm9jZXNzLmFyZ3YpOwogIGlmIChhcmdzLmhlbHApIHsKICAgIGNvbnNvbGUubG9nKCdVc2FnZTogY2hlY2stcGVyZi1idWRnZXQubWpzIFstLW5leHQtZGlyIDxwYXRoPl0gWy0taHRtbCA8ZmlsZT5dIFstLWpzb25dJyk7CiAgICByZXR1cm4gMDsKICB9CiAgY29uc3Qgc2NyaXB0RGlyID0gcGF0aC5kaXJuYW1lKGZpbGVVUkxUb1BhdGgoaW1wb3J0Lm1ldGEudXJsKSk7CiAgY29uc3QgbmV4dERpciA9IGFyZ3MubmV4dERpcgogICAgPyBwYXRoLnJlc29sdmUoYXJncy5uZXh0RGlyKQogICAgOiBwYXRoLnJlc29sdmUoc2NyaXB0RGlyLCAnLi4nLCAnLm5leHQnKTsgLy8gYXBwcy9zdG9yZWZyb250Ly5uZXh0CgogIGNvbnN0IHJvd3MgPSBbXTsKICBjb25zdCBhZGRSb3cgPSAobWV0cmljLCB2YWx1ZSwgdW5pdCwgY2ZnLCBub3RlID0gJycpID0+IHsKICAgIGNvbnN0IHQgPSB0aHJlc2hvbGQoY2ZnKTsKICAgIGNvbnN0IHN0YXR1cyA9IHZhbHVlID4gdC5lcnJvciA/ICdGQUlMJyA6IHZhbHVlID4gdC53YXJuID8gJ1dBUk4nIDogJ1BBU1MnOwogICAgcm93cy5wdXNoKHsgbWV0cmljLCB2YWx1ZSwgdW5pdCwgd2FybjogdC53YXJuLCBlcnJvcjogdC5lcnJvciwgc3RhdHVzLCBub3RlIH0pOwogIH07CgogIGlmIChhcmdzLmh0bWwubGVuZ3RoID4gMCkgewogICAgLy8gRml4dHVyZSBtb2RlOiBtZWFzdXJlIGV4YWN0bHkgdGhlIGdpdmVuIEhUTUwgZmlsZShzKS4KICAgIGxldCB3b3JzdEpzID0gMDsKICAgIGxldCBtYXhGb250cyA9IDA7CiAgICBsZXQgbWF4SHRtbCA9IDA7CiAgICBmb3IgKGNvbnN0IGYgb2YgYXJncy5odG1sKSB7CiAgICAgIGlmICghZXhpc3RzU3luYyhmKSkgeyBjb25zb2xlLmVycm9yKGBIVE1MIGZpbGUgbm90IGZvdW5kOiAke2Z9YCk7IHJldHVybiAyOyB9CiAgICAgIGNvbnN0IG0gPSBtZWFzdXJlSHRtbChwYXRoLnJlc29sdmUoZiksIG5leHREaXIpOwogICAgICBtYXhGb250cyA9IE1hdGgubWF4KG1heEZvbnRzLCBtLmZvbnRQcmVsb2Fkcyk7CiAgICAgIHdvcnN0SnMgPSBNYXRoLm1heCh3b3JzdEpzLCBtLmpzR3ppcCk7CiAgICAgIG1heEh0bWwgPSBNYXRoLm1heChtYXhIdG1sLCBtLmh0bWxCeXRlcyk7CiAgICAgIHJvd3MucHVzaCh7IG1ldHJpYzogYGZpeHR1cmUgJHtwYXRoLmJhc2VuYW1lKGYpfSBjaHVua3NgLCB2YWx1ZTogbS5jaHVua0NvdW50LCB1bml0OiAnZmlsZXMnLCB3YXJuOiBudWxsLCBlcnJvcjogbnVsbCwgc3RhdHVzOiAnSU5GTycsIG5vdGU6IG0ubWlzc2luZ0NodW5rcyA/IGAke20ubWlzc2luZ0NodW5rc30gY2h1bmsocykgbm90IGZvdW5kIHVuZGVyIC0tbmV4dC1kaXIgKHNpemVzIHBhcnRpYWwpYCA6ICcnIH0pOwogICAgfQogICAgYWRkUm93KCdmb250IHByZWxvYWRzIChmaXh0dXJlKScsIG1heEZvbnRzLCAnY291bnQnLCBERUZBVUxUUy5mb250UHJlbG9hZHMpOwogICAgaWYgKHdvcnN0SnMgPiAwKSBhZGRSb3coJ2luaXRpYWwgSlMgZ3ppcCAoZml4dHVyZSknLCBNYXRoLnJvdW5kKHdvcnN0SnMgLyBLaUIpLCAnS2lCJywgREVGQVVMVFMucm91dGVKc0d6aXBLaUIpOwogICAgYWRkUm93KCdIVE1MIHNpemUgKGZpeHR1cmUpJywgTWF0aC5yb3VuZChtYXhIdG1sIC8gS2lCKSwgJ0tpQicsIERFRkFVTFRTLmh0bWxLaUIpOwogIH0gZWxzZSB7CiAgICBpZiAoIWV4aXN0c1N5bmMobmV4dERpcikpIHsKICAgICAgY29uc29sZS5lcnJvcihgQnVpbGQgb3V0cHV0IG5vdCBmb3VuZDogJHtuZXh0RGlyfVxuUnVuIFxgbnBtIHJ1biBidWlsZFxgIGluIGFwcHMvc3RvcmVmcm9udCBmaXJzdC5gKTsKICAgICAgcmV0dXJuIDI7CiAgICB9CiAgICBjb25zdCBhcHBEaXIgPSBwYXRoLmpvaW4obmV4dERpciwgJ3NlcnZlcicsICdhcHAnKTsKICAgIGNvbnN0IGh0bWxGaWxlcyA9IHdhbGsoYXBwRGlyLCAnLmh0bWwnKS5maWx0ZXIoCiAgICAgIChmKSA9PiAhLyhefFwvKShfbm90LWZvdW5kfF9nbG9iYWwtZXJyb3IpXC5odG1sJC8udGVzdChmKSwKICAgICk7CiAgICBpZiAoaHRtbEZpbGVzLmxlbmd0aCA9PT0gMCkgewogICAgICBjb25zb2xlLmVycm9yKGBObyBwcmVyZW5kZXJlZCBIVE1MIHVuZGVyICR7YXBwRGlyfSDigJQgY2Fubm90IG1lYXN1cmUuIFdhcyB0aGUgYnVpbGQgY29tcGxldGVkP2ApOwogICAgICByZXR1cm4gMjsKICAgIH0KICAgIGNvbnN0IG1lYXN1cmVkID0gaHRtbEZpbGVzLm1hcCgoZikgPT4gKHsgcm91dGU6IHJvdXRlTGFiZWwobmV4dERpciwgZiksIC4uLm1lYXN1cmVIdG1sKGYsIG5leHREaXIpIH0pKTsKCiAgICBjb25zdCBtYXhGb250cyA9IE1hdGgubWF4KC4uLm1lYXN1cmVkLm1hcCgobSkgPT4gbS5mb250UHJlbG9hZHMpKTsKICAgIGFkZFJvdygnZm9udCBwcmVsb2FkcyAobWF4IG92ZXIgcHJlcmVuZGVyZWQgcGFnZXMpJywgbWF4Rm9udHMsICdjb3VudCcsIERFRkFVTFRTLmZvbnRQcmVsb2FkcywKICAgICAgJ3BsYW4gdGFyZ2V0IDw9MjsgcmF0Y2hldCBmcmVlemUgYXQgY3VycmVudCAxMCDigJQgc2VlIGhlYWRlciBUT0RPJyk7CgogICAgY29uc3Qga2V5Um91dGVzID0gWycvJywgJy9jaGVja291dCcsICcvY2FydCcsICcvcHJvZHVjdHMnXTsKICAgIGZvciAoY29uc3QgciBvZiBrZXlSb3V0ZXMpIHsKICAgICAgY29uc3QgbSA9IG1lYXN1cmVkLmZpbmQoKHgpID0+IHgucm91dGUgPT09IHIpOwogICAgICBpZiAobSkgewogICAgICAgIHJvd3MucHVzaCh7CiAgICAgICAgICBtZXRyaWM6IGBpbml0aWFsIEpTIGd6aXAg4oCUICR7ciA9PT0gJy8nID8gJ2hvbWUnIDogci5zbGljZSgxKX0gKHByZXJlbmRlcmVkKWAsCiAgICAgICAgICB2YWx1ZTogTWF0aC5yb3VuZChtLmpzR3ppcCAvIEtpQiksIHVuaXQ6ICdLaUInLCB3YXJuOiBudWxsLCBlcnJvcjogbnVsbCwgc3RhdHVzOiAnSU5GTycsCiAgICAgICAgICBub3RlOiBgJHttLmNodW5rQ291bnR9IGNodW5rcywgcmF3ICR7TWF0aC5yb3VuZChtLmpzUmF3IC8gS2lCKX0gS2lCYCwKICAgICAgICB9KTsKICAgICAgfQogICAgfQogICAgY29uc3QgZHluYW1pYyA9IGtleVJvdXRlcy5maWx0ZXIoKHIpID0+ICFtZWFzdXJlZC5zb21lKCh4KSA9PiB4LnJvdXRlID09PSByKSk7CiAgICBpZiAoZHluYW1pYy5sZW5ndGgpIHsKICAgICAgcm93cy5wdXNoKHsKICAgICAgICBtZXRyaWM6ICdkeW5hbWljIGtleSByb3V0ZXMgKG5vIHByZXJlbmRlcmVkIEhUTUwpJywgdmFsdWU6IGR5bmFtaWMuam9pbignLCAnKSwgdW5pdDogJycsCiAgICAgICAgd2FybjogbnVsbCwgZXJyb3I6IG51bGwsIHN0YXR1czogJ0lORk8nLAogICAgICAgIG5vdGU6ICdib3VuZGVkIGJ5IHJvb3QtSlMgKyB3b3JzdC1yb3V0ZSBtZXRyaWNzIGJlbG93OyBsYWIgY2hlY2sgPSBtYW51YWwgbGhjaSBqb2InLAogICAgICB9KTsKICAgIH0KICAgIGNvbnN0IHdvcnN0ID0gbWVhc3VyZWQucmVkdWNlKChhLCBiKSA9PiAoYi5qc0d6aXAgPiBhLmpzR3ppcCA/IGIgOiBhKSk7CiAgICBhZGRSb3coJ2luaXRpYWwgSlMgZ3ppcCDigJQgd29yc3QgcHJlcmVuZGVyZWQgcm91dGUnLCBNYXRoLnJvdW5kKHdvcnN0LmpzR3ppcCAvIEtpQiksICdLaUInLCBERUZBVUxUUy5yb3V0ZUpzR3ppcEtpQiwKICAgICAgYHdvcnN0OiAke3dvcnN0LnJvdXRlfTsgcGxhbiB0YXJnZXQgPD0yNTAgS2lCIG5vdCB5ZXQgbWV0IOKAlCByYXRjaGV0LCBzZWUgaGVhZGVyYCk7CgogICAgLy8gUm9vdCAoZXZlcnktcm91dGUpIEpTIGZyb20gdGhlIGJ1aWxkIG1hbmlmZXN0LgogICAgY29uc3QgbWFuaWZlc3RQYXRoID0gcGF0aC5qb2luKG5leHREaXIsICdidWlsZC1tYW5pZmVzdC5qc29uJyk7CiAgICBpZiAoZXhpc3RzU3luYyhtYW5pZmVzdFBhdGgpKSB7CiAgICAgIGNvbnN0IG1hbmlmZXN0ID0gSlNPTi5wYXJzZShyZWFkRmlsZVN5bmMobWFuaWZlc3RQYXRoLCAndXRmOCcpKTsKICAgICAgbGV0IGd6aXAgPSAwOwogICAgICBsZXQgcmF3ID0gMDsKICAgICAgZm9yIChjb25zdCBmIG9mIG1hbmlmZXN0LnJvb3RNYWluRmlsZXMgPz8gW10pIHsKICAgICAgICBjb25zdCBmaWxlID0gcGF0aC5qb2luKG5leHREaXIsIGYpOwogICAgICAgIGlmIChleGlzdHNTeW5jKGZpbGUpKSB7IGNvbnN0IHMgPSBnemlwU2l6ZShmaWxlKTsgcmF3ICs9IHMucmF3OyBnemlwICs9IHMuZ3ppcDsgfQogICAgICB9CiAgICAgIGFkZFJvdygncm9vdCBKUyBnemlwIChidWlsZC1tYW5pZmVzdCByb290TWFpbkZpbGVzKScsIE1hdGgucm91bmQoZ3ppcCAvIEtpQiksICdLaUInLCBERUZBVUxUUy5yb290SnNHemlwS2lCLAogICAgICAgIGByYXcgJHtNYXRoLnJvdW5kKHJhdyAvIEtpQil9IEtpQiwgbG9hZGVkIGJ5IGV2ZXJ5IHJvdXRlYCk7CiAgICB9CgogICAgLy8gTGFyZ2VzdCBzaW5nbGUgY2h1bmsgYW55d2hlcmUgaW4gdGhlIGJ1aWxkIOKAlCAiYSBiaWcgY2h1bmsgd2FzIGFkZGVkIiB0cmlwd2lyZS4KICAgIGxldCBsYXJnZXN0ID0geyBnemlwOiAwLCBmaWxlOiAnJyB9OwogICAgZm9yIChjb25zdCBmIG9mIHdhbGsocGF0aC5qb2luKG5leHREaXIsICdzdGF0aWMnLCAnY2h1bmtzJyksICcuanMnKSkgewogICAgICBjb25zdCBzID0gZ3ppcFNpemUoZik7CiAgICAgIGlmIChzLmd6aXAgPiBsYXJnZXN0Lmd6aXApIGxhcmdlc3QgPSB7IGd6aXA6IHMuZ3ppcCwgZmlsZTogcGF0aC5iYXNlbmFtZShmKSB9OwogICAgfQogICAgYWRkUm93KCdsYXJnZXN0IHNpbmdsZSBjaHVuayBnemlwJywgTWF0aC5yb3VuZChsYXJnZXN0Lmd6aXAgLyBLaUIpLCAnS2lCJywgREVGQVVMVFMuY2h1bmtHemlwS2lCLCBsYXJnZXN0LmZpbGUpOwoKICAgIGNvbnN0IG1heEh0bWwgPSBNYXRoLm1heCguLi5tZWFzdXJlZC5tYXAoKG0pID0+IG0uaHRtbEJ5dGVzKSk7CiAgICBhZGRSb3coJ0hUTUwgc2l6ZSDigJQgbGFyZ2VzdCBwcmVyZW5kZXJlZCBwYWdlJywgTWF0aC5yb3VuZChtYXhIdG1sIC8gS2lCKSwgJ0tpQicsIERFRkFVTFRTLmh0bWxLaUIsCiAgICAgIG1lYXN1cmVkLmZpbmQoKG0pID0+IG0uaHRtbEJ5dGVzID09PSBtYXhIdG1sKT8ucm91dGUgPz8gJycpOwogIH0KCiAgY29uc3QgZmFpbGVkID0gcm93cy5maWx0ZXIoKHIpID0+IHIuc3RhdHVzID09PSAnRkFJTCcpOwogIGlmIChhcmdzLmpzb24pIHsKICAgIGNvbnNvbGUubG9nKEpTT04uc3RyaW5naWZ5KHsgb2s6IGZhaWxlZC5sZW5ndGggPT09IDAsIHJvd3MgfSwgbnVsbCwgMikpOwogIH0gZWxzZSB7CiAgICBjb25zdCB3ID0gTWF0aC5tYXgoLi4ucm93cy5tYXAoKHIpID0+IHIubWV0cmljLmxlbmd0aCkpOwogICAgY29uc29sZS5sb2coJ1xuU3RvcmVmcm9udCBwZXJmIGJ1ZGdldCDigJQgYnVpbGQtb3V0cHV0IGdhdGUgKFA4KScpOwogICAgY29uc29sZS5sb2coYCR7J21ldHJpYycucGFkRW5kKHcpfSAgJHsndmFsdWUnLnBhZFN0YXJ0KDEwKX0gICR7J3dhcm4nLnBhZFN0YXJ0KDYpfSAgJHsnZXJyb3InLnBhZFN0YXJ0KDYpfSAgcmVzdWx0YCk7CiAgICBmb3IgKGNvbnN0IHIgb2Ygcm93cykgewogICAgICBjb25zdCB2YWwgPSByLnVuaXQgPyBgJHtyLnZhbHVlfSAke3IudW5pdH1gIDogYCR7ci52YWx1ZX1gOwogICAgICBjb25zb2xlLmxvZyhgJHtyLm1ldHJpYy5wYWRFbmQodyl9ICAke3ZhbC5wYWRTdGFydCgxMCl9ICAke1N0cmluZyhyLndhcm4gPz8gJ+KAlCcpLnBhZFN0YXJ0KDYpfSAgJHtTdHJpbmcoci5lcnJvciA/PyAn4oCUJykucGFkU3RhcnQoNil9ICAke3Iuc3RhdHVzfSR7ci5ub3RlID8gYCAgKCR7ci5ub3RlfSlgIDogJyd9YCk7CiAgICB9CiAgICBjb25zb2xlLmxvZyhmYWlsZWQubGVuZ3RoID09PSAwCiAgICAgID8gJ1xuUkVTVUxUOiBQQVNTICh3YXJuaW5ncyBhbGxvd2VkIOKAlCBzZWUgcmF0Y2hldCBub3RlcyBpbiBzY3JpcHQgaGVhZGVyKScKICAgICAgOiBgXG5SRVNVTFQ6IEZBSUwg4oCUICR7ZmFpbGVkLm1hcCgocikgPT4gci5tZXRyaWMpLmpvaW4oJzsgJyl9YCk7CiAgfQogIHJldHVybiBmYWlsZWQubGVuZ3RoID09PSAwID8gMCA6IDE7Cn0KCnRyeSB7CiAgcHJvY2Vzcy5leGl0KG1haW4oKSk7Cn0gY2F0Y2ggKGVycikgewogIGNvbnNvbGUuZXJyb3IoYGNoZWNrLXBlcmYtYnVkZ2V0OiAke2Vyci5tZXNzYWdlfWApOwogIHByb2Nlc3MuZXhpdCgyKTsKfQo=
+#!/usr/bin/env node
+/**
+ * check-perf-budget.mjs — storefront performance budget gate (Speed Plan P8).
+ *
+ * This is the PR gate. It measures ONLY the PR's own build output
+ * (apps/storefront/.next), never a deployed site, so a red result is always
+ * attributable to the change under review. (Lighthouse CI lives in
+ * .lighthouserc.js at the repo root and is a MANUAL workflow_dispatch job:
+ * against staging it measures already-deployed code, so it cannot gate a PR.)
+ *
+ * METHOD (reproducible, no server / no backend needed)
+ *   Next.js prerenders a set of routes at build time; their HTML is written to
+ *   .next/server/app/**.html. That HTML is the same document the server sends
+ *   first for those routes, so we measure it directly:
+ *     - Font preloads: distinct <link rel="preload" as="font"> (or *.woff/woff2
+ *       preload) hrefs in the page HTML. Max over all measured pages.
+ *     - Initial JS per route: distinct /_next/static/chunks/*.js referenced by
+ *       the page HTML (script tags + RSC flight data — the set the browser
+ *       downloads for that route), summed from the chunk files on disk,
+ *       raw and gzip (zlib level 9). Same method P5 used against `next start`,
+ *       applied to the prerendered document instead of a live response.
+ *     - Dynamic routes (home, PLP, PDP on current main) have no prerendered
+ *       HTML; they are bounded by two build-wide metrics that every route
+ *       loads: build-manifest.json `rootMainFiles` (gzip) and the largest
+ *       single chunk in .next/static/chunks (gzip). The worst prerendered
+ *       route (today: checkout) is the per-route ceiling sample.
+ *     - HTML size: largest prerendered page HTML (excl. _not-found/_global-error).
+ *
+ * THRESHOLDS — plan targets vs today's measured reality (origin/main 63a2e83,
+ * measured 2026-11-03 from a sibling build of the same code):
+ *   metric                    plan target   warn    error   measured today
+ *   font preloads             <= 2          2       2     1 (post-P1; error tightened 10 -> 2 on 2026-11-03)
+ *   route JS (worst, gzip)    <= 250 KiB    250     320 *   ~304 KiB (checkout 311,306 B)
+ *   root JS (gzip)            —             140     160     ~128.5 KiB (131,585 B)
+ *   largest chunk (gzip)      —             80      100     ~71 KiB (73,004 B)
+ *   HTML (largest page)       —             64      80      ~72 KiB (/careers 73,932 B)
+ *   * RATCHET: the plan target is NOT met by current code, so error is set at
+ *     a freeze/growth ceiling instead of the target — a gate set at the target
+ *     today would be red on every PR, including unrelated ones, and would be
+ *     ignored within a week. The freeze still goes red on ANY growth past the
+ *     ceiling, which is the plan's stated CI purpose. Fonts tightened to the
+ *     plan target (error 2) on 2026-11-03 after P1 landed (1 preload). Route
+ *     JS stays at the 320 KiB freeze until a future diet brings the worst
+ *     route under the 250 KiB target.
+ *
+ * Every error threshold can be overridden via env (used by the negative
+ * tests, and for future tightening without touching this file):
+ *   PERF_BUDGET_FONT_PRELOADS_MAX, PERF_BUDGET_ROUTE_JS_GZIP_KIB_MAX,
+ *   PERF_BUDGET_ROOT_JS_GZIP_KIB_MAX, PERF_BUDGET_CHUNK_GZIP_KIB_MAX,
+ *   PERF_BUDGET_HTML_KIB_MAX        (warn levels: same name + _WARN)
+ *
+ * USAGE
+ *   node apps/storefront/scripts/check-perf-budget.mjs [--next-dir <path>] [--json]
+ *   node apps/storefront/scripts/check-perf-budget.mjs --html <file.html> [--next-dir <path>]
+ *     --html measures one standalone HTML file (fixture mode; chunk sizes are
+ *     resolved from --next-dir when given).
+ *
+ * EXIT CODES: 0 = pass (warnings allowed), 1 = an error threshold was
+ * breached, 2 = could not measure (missing build output / bad arguments).
+ */
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const KiB = 1024;
+const DEFAULTS = {
+  fontPreloads: { warn: 2, error: 2, env: 'PERF_BUDGET_FONT_PRELOADS_MAX' },
+  routeJsGzipKiB: { warn: 250, error: 320, env: 'PERF_BUDGET_ROUTE_JS_GZIP_KIB_MAX' },
+  rootJsGzipKiB: { warn: 140, error: 160, env: 'PERF_BUDGET_ROOT_JS_GZIP_KIB_MAX' },
+  chunkGzipKiB: { warn: 80, error: 100, env: 'PERF_BUDGET_CHUNK_GZIP_KIB_MAX' },
+  htmlKiB: { warn: 64, error: 80, env: 'PERF_BUDGET_HTML_KIB_MAX' },
+};
+
+function threshold(cfg) {
+  const err = Number(process.env[cfg.env]);
+  const warn = Number(process.env[`${cfg.env}_WARN`]);
+  return {
+    warn: Number.isFinite(warn) && process.env[`${cfg.env}_WARN`] !== undefined ? warn : cfg.warn,
+    error: Number.isFinite(err) && process.env[cfg.env] !== undefined ? err : cfg.error,
+  };
+}
+
+function parseArgs(argv) {
+  const args = { json: false, nextDir: null, html: [] };
+  for (let i = 2; i < argv.length; i += 1) {
+    const a = argv[i];
+    if (a === '--json') args.json = true;
+    else if (a === '--next-dir') args.nextDir = argv[++i];
+    else if (a === '--html') args.html.push(argv[++i]);
+    else if (a === '--help' || a === '-h') args.help = true;
+    else throw new Error(`unknown argument: ${a}`);
+  }
+  return args;
+}
+
+const gzipCache = new Map();
+function gzipSize(file) {
+  if (!gzipCache.has(file)) {
+    const buf = readFileSync(file);
+    gzipCache.set(file, { raw: buf.length, gzip: gzipSync(buf, { level: 9 }).length });
+  }
+  return gzipCache.get(file);
+}
+
+function walk(dir, ext, out = []) {
+  if (!existsSync(dir)) return out;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(p, ext, out);
+    else if (entry.name.endsWith(ext)) out.push(p);
+  }
+  return out;
+}
+
+/** Distinct font-preload hrefs in one HTML document. */
+function fontPreloads(html) {
+  const hrefs = new Set();
+  for (const m of html.matchAll(/<link\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (!/rel="preload"/i.test(tag)) continue;
+    if (!/as="font"/i.test(tag) && !/\.woff2?(\?|"|$)/i.test(tag)) continue;
+    const href = /href="([^"]+)"/i.exec(tag)?.[1];
+    hrefs.add(href ?? tag);
+  }
+  return hrefs;
+}
+
+/** Distinct /_next/static/chunks/*.js referenced anywhere in the document. */
+function chunkRefs(html) {
+  const refs = new Set();
+  for (const m of html.matchAll(/_next\/static\/chunks\/[A-Za-z0-9_\-./%]+\.js/g)) {
+    refs.add(m[0]);
+  }
+  return refs;
+}
+
+function routeLabel(nextDir, htmlFile) {
+  const rel = path.relative(path.join(nextDir, 'server', 'app'), htmlFile).replace(/\\/g, '/');
+  let route = `/${rel.replace(/\.html$/, '')}`;
+  route = route.replace(/\/(index|page)$/, '') || '/';
+  route = route.replace(/\/\([^)]+\)/g, ''); // route groups: (main) etc.
+  return route === '' ? '/' : route;
+}
+
+function measureHtml(htmlFile, nextDir) {
+  const html = readFileSync(htmlFile, 'utf8');
+  const chunks = [...chunkRefs(html)];
+  let raw = 0;
+  let gzip = 0;
+  let missing = 0;
+  for (const ref of chunks) {
+    const file = path.join(nextDir, ref.replace(/^_next\//, ''));
+    if (existsSync(file)) {
+      const s = gzipSize(file);
+      raw += s.raw;
+      gzip += s.gzip;
+    } else missing += 1;
+  }
+  return {
+    file: htmlFile,
+    htmlBytes: Buffer.byteLength(html),
+    fontPreloads: fontPreloads(html).size,
+    chunkCount: chunks.length,
+    missingChunks: missing,
+    jsRaw: raw,
+    jsGzip: gzip,
+  };
+}
+
+function main() {
+  const args = parseArgs(process.argv);
+  if (args.help) {
+    console.log('Usage: check-perf-budget.mjs [--next-dir <path>] [--html <file>] [--json]');
+    return 0;
+  }
+  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+  const nextDir = args.nextDir
+    ? path.resolve(args.nextDir)
+    : path.resolve(scriptDir, '..', '.next'); // apps/storefront/.next
+
+  const rows = [];
+  const addRow = (metric, value, unit, cfg, note = '') => {
+    const t = threshold(cfg);
+    const status = value > t.error ? 'FAIL' : value > t.warn ? 'WARN' : 'PASS';
+    rows.push({ metric, value, unit, warn: t.warn, error: t.error, status, note });
+  };
+
+  if (args.html.length > 0) {
+    // Fixture mode: measure exactly the given HTML file(s).
+    let worstJs = 0;
+    let maxFonts = 0;
+    let maxHtml = 0;
+    for (const f of args.html) {
+      if (!existsSync(f)) { console.error(`HTML file not found: ${f}`); return 2; }
+      const m = measureHtml(path.resolve(f), nextDir);
+      maxFonts = Math.max(maxFonts, m.fontPreloads);
+      worstJs = Math.max(worstJs, m.jsGzip);
+      maxHtml = Math.max(maxHtml, m.htmlBytes);
+      rows.push({ metric: `fixture ${path.basename(f)} chunks`, value: m.chunkCount, unit: 'files', warn: null, error: null, status: 'INFO', note: m.missingChunks ? `${m.missingChunks} chunk(s) not found under --next-dir (sizes partial)` : '' });
+    }
+    addRow('font preloads (fixture)', maxFonts, 'count', DEFAULTS.fontPreloads);
+    if (worstJs > 0) addRow('initial JS gzip (fixture)', Math.round(worstJs / KiB), 'KiB', DEFAULTS.routeJsGzipKiB);
+    addRow('HTML size (fixture)', Math.round(maxHtml / KiB), 'KiB', DEFAULTS.htmlKiB);
+  } else {
+    if (!existsSync(nextDir)) {
+      console.error(`Build output not found: ${nextDir}\nRun \`npm run build\` in apps/storefront first.`);
+      return 2;
+    }
+    const appDir = path.join(nextDir, 'server', 'app');
+    const htmlFiles = walk(appDir, '.html').filter(
+      (f) => !/(^|\/)(_not-found|_global-error)\.html$/.test(f),
+    );
+    if (htmlFiles.length === 0) {
+      console.error(`No prerendered HTML under ${appDir} — cannot measure. Was the build completed?`);
+      return 2;
+    }
+    const measured = htmlFiles.map((f) => ({ route: routeLabel(nextDir, f), ...measureHtml(f, nextDir) }));
+
+    const maxFonts = Math.max(...measured.map((m) => m.fontPreloads));
+    addRow('font preloads (max over prerendered pages)', maxFonts, 'count', DEFAULTS.fontPreloads,
+      'plan target <=2; ratchet freeze at current 10 — see header TODO');
+
+    const keyRoutes = ['/', '/checkout', '/cart', '/products'];
+    for (const r of keyRoutes) {
+      const m = measured.find((x) => x.route === r);
+      if (m) {
+        rows.push({
+          metric: `initial JS gzip — ${r === '/' ? 'home' : r.slice(1)} (prerendered)`,
+          value: Math.round(m.jsGzip / KiB), unit: 'KiB', warn: null, error: null, status: 'INFO',
+          note: `${m.chunkCount} chunks, raw ${Math.round(m.jsRaw / KiB)} KiB`,
+        });
+      }
+    }
+    const dynamic = keyRoutes.filter((r) => !measured.some((x) => x.route === r));
+    if (dynamic.length) {
+      rows.push({
+        metric: 'dynamic key routes (no prerendered HTML)', value: dynamic.join(', '), unit: '',
+        warn: null, error: null, status: 'INFO',
+        note: 'bounded by root-JS + worst-route metrics below; lab check = manual lhci job',
+      });
+    }
+    const worst = measured.reduce((a, b) => (b.jsGzip > a.jsGzip ? b : a));
+    addRow('initial JS gzip — worst prerendered route', Math.round(worst.jsGzip / KiB), 'KiB', DEFAULTS.routeJsGzipKiB,
+      `worst: ${worst.route}; plan target <=250 KiB not yet met — ratchet, see header`);
+
+    // Root (every-route) JS from the build manifest.
+    const manifestPath = path.join(nextDir, 'build-manifest.json');
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      let gzip = 0;
+      let raw = 0;
+      for (const f of manifest.rootMainFiles ?? []) {
+        const file = path.join(nextDir, f);
+        if (existsSync(file)) { const s = gzipSize(file); raw += s.raw; gzip += s.gzip; }
+      }
+      addRow('root JS gzip (build-manifest rootMainFiles)', Math.round(gzip / KiB), 'KiB', DEFAULTS.rootJsGzipKiB,
+        `raw ${Math.round(raw / KiB)} KiB, loaded by every route`);
+    }
+
+    // Largest single chunk anywhere in the build — "a big chunk was added" tripwire.
+    let largest = { gzip: 0, file: '' };
+    for (const f of walk(path.join(nextDir, 'static', 'chunks'), '.js')) {
+      const s = gzipSize(f);
+      if (s.gzip > largest.gzip) largest = { gzip: s.gzip, file: path.basename(f) };
+    }
+    addRow('largest single chunk gzip', Math.round(largest.gzip / KiB), 'KiB', DEFAULTS.chunkGzipKiB, largest.file);
+
+    const maxHtml = Math.max(...measured.map((m) => m.htmlBytes));
+    addRow('HTML size — largest prerendered page', Math.round(maxHtml / KiB), 'KiB', DEFAULTS.htmlKiB,
+      measured.find((m) => m.htmlBytes === maxHtml)?.route ?? '');
+  }
+
+  const failed = rows.filter((r) => r.status === 'FAIL');
+  if (args.json) {
+    console.log(JSON.stringify({ ok: failed.length === 0, rows }, null, 2));
+  } else {
+    const w = Math.max(...rows.map((r) => r.metric.length));
+    console.log('\nStorefront perf budget — build-output gate (P8)');
+    console.log(`${'metric'.padEnd(w)}  ${'value'.padStart(10)}  ${'warn'.padStart(6)}  ${'error'.padStart(6)}  result`);
+    for (const r of rows) {
+      const val = r.unit ? `${r.value} ${r.unit}` : `${r.value}`;
+      console.log(`${r.metric.padEnd(w)}  ${val.padStart(10)}  ${String(r.warn ?? '—').padStart(6)}  ${String(r.error ?? '—').padStart(6)}  ${r.status}${r.note ? `  (${r.note})` : ''}`);
+    }
+    console.log(failed.length === 0
+      ? '\nRESULT: PASS (warnings allowed — see ratchet notes in script header)'
+      : `\nRESULT: FAIL — ${failed.map((r) => r.metric).join('; ')}`);
+  }
+  return failed.length === 0 ? 0 : 1;
+}
+
+try {
+  process.exit(main());
+} catch (err) {
+  console.error(`check-perf-budget: ${err.message}`);
+  process.exit(2);
+}
