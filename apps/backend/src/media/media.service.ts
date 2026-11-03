@@ -425,6 +425,18 @@ export class MediaService {
             size: existing.size,
             hash,
             sourceUrl: rawUrl,
+            // The file is byte-identical to `existing` (same hash), so its
+            // derivative set on disk is the same too. The clone must inherit
+            // the processing state + manifest + dimensions, otherwise it is
+            // a READY row with no manifest and the storefront serves the raw
+            // original for it forever.
+            width: existing.width,
+            height: existing.height,
+            processingStatus: existing.processingStatus,
+            derivativeManifest:
+              (existing.derivativeManifest as Prisma.InputJsonValue | null) ??
+              Prisma.DbNull,
+            blurUrl: existing.blurUrl,
           },
         });
         return {
@@ -970,6 +982,14 @@ export class MediaService {
     dryRun?: boolean;
   }): Promise<{ queued: number; scanned: number; missing: number }> {
     return this.mediaQueue.backfillAvif(opts);
+  }
+
+  async backfillMissingDerivatives(opts?: {
+    batchSize?: number;
+    max?: number;
+    dryRun?: boolean;
+  }): Promise<{ queued: number; scanned: number; missing: number }> {
+    return this.mediaQueue.backfillMissingDerivatives(opts);
   }
 
   async recoverStuck(sinceMinutes?: number): Promise<{ recovered: number }> {

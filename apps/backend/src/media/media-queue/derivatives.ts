@@ -105,6 +105,16 @@ export async function generateDerivatives(opts: {
   return { manifest, blurUrl };
 }
 
+/** True when a manifest carries at least one usable WebP size variant. */
+export function manifestHasUsableDerivative(
+  manifest: Record<string, unknown> | null | undefined,
+): boolean {
+  if (!manifest || typeof manifest !== 'object') return false;
+  return (
+    typeof manifest.small === 'string' || typeof manifest.large === 'string'
+  );
+}
+
 /** True when a manifest predates P3 (has WebP sizes but no AVIF sibling). */
 export function manifestMissingAvif(
   manifest: Record<string, unknown> | null | undefined,

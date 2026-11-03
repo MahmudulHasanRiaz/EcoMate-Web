@@ -1,6 +1,7 @@
 import {
   AVIF_OPTIONS,
   generateDerivatives,
+  manifestHasUsableDerivative,
   manifestMissingAvif,
 } from '../derivatives';
 
@@ -98,5 +99,23 @@ describe('manifestMissingAvif', () => {
     expect(manifestMissingAvif(null)).toBe(false);
     expect(manifestMissingAvif({})).toBe(false);
     expect(manifestMissingAvif({ blur: 'x' })).toBe(false);
+  });
+});
+
+describe('manifestHasUsableDerivative', () => {
+  it('is false for null, undefined, empty and avif-only manifests', () => {
+    expect(manifestHasUsableDerivative(null)).toBe(false);
+    expect(manifestHasUsableDerivative(undefined)).toBe(false);
+    expect(manifestHasUsableDerivative({})).toBe(false);
+    expect(manifestHasUsableDerivative({ small_avif: 'x' })).toBe(false);
+    expect(manifestHasUsableDerivative({ blur: 'x' })).toBe(false);
+  });
+
+  it('is true when a WebP small or large variant exists', () => {
+    expect(manifestHasUsableDerivative({ small: 'x' })).toBe(true);
+    expect(manifestHasUsableDerivative({ large: 'x' })).toBe(true);
+    expect(
+      manifestHasUsableDerivative({ small: 'x', small_avif: 'y' }),
+    ).toBe(true);
   });
 });
