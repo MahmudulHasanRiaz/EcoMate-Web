@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { CmsPagesService } from '../cms-pages.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MediaResolverService } from '../../media/media-resolver.service';
 
 describe('CmsPagesService', () => {
   let service: CmsPagesService;
@@ -25,6 +26,10 @@ describe('CmsPagesService', () => {
               findMany: jest.fn().mockResolvedValue([]),
             },
           },
+        },
+        {
+          provide: MediaResolverService,
+          useValue: { resolve: jest.fn().mockResolvedValue({}) },
         },
       ],
     }).compile();
@@ -76,6 +81,46 @@ describe('CmsPagesService', () => {
       const page = { id: 'x', slug: 'faq', isActive: true, config: {} };
       (prisma.cmsPage.findUnique as jest.Mock).mockResolvedValue(page);
       await expect(service.findBySlug('faq')).resolves.toEqual(page);
+    });
+
+    it('rewrites embedded original-upload images to derivatives (public path)', async () => {
+      const page = {
+        id: 'x',
+        slug: 'about',
+        isActive: true,
+        content: '<p>Hi</p><img src="/uploads/banner.jpg" alt="Banner">',
+      };
+      (prisma.cmsPage.findUnique as jest.Mock).mockResolvedValue(page);
+      const resolver = (service as any).mediaResolver as MediaResolverService;
+      (resolver.resolve as jest.Mock).mockResolvedValue({
+        '/uploads/banner.jpg': {
+          derivativeManifest: {
+            small: '/uploads/derivatives/m1/small.webp',
+            medium: '/uploads/derivatives/m1/medium.webp',
+            large: '/uploads/derivatives/m1/large.webp',
+          },
+          blurUrl: null,
+          updatedAt: new Date(),
+        },
+      });
+      const result: any = await service.findBySlug('about');
+      expect(result.content).toContain('src="/uploads/derivatives/m1/large.webp"');
+      expect(result.content).toContain('srcset=');
+      expect(result.content).toContain('loading="lazy"');
+      // The stored row object is not mutated.
+      expect(page.content).toContain('src="/uploads/banner.jpg"');
+    });
+
+    it('leaves content untouched when no derivatives exist yet', async () => {
+      const page = {
+        id: 'x',
+        slug: 'about',
+        isActive: true,
+        content: '<img src="/uploads/banner.jpg">',
+      };
+      (prisma.cmsPage.findUnique as jest.Mock).mockResolvedValue(page);
+      const result: any = await service.findBySlug('about');
+      expect(result.content).toBe(page.content);
     });
   });
 });
