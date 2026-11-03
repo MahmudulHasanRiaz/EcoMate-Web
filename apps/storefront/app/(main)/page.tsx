@@ -95,6 +95,7 @@ export default async function HomePage() {
   // (a failed section renders nothing but no longer shifts Brand/Combo
   // down — the only behavioral delta, and only on a fetch-failure path).
   const enabledSections = sections.filter((sec: any) => sec.enabled);
+  const hasHeroSlides = (config?.hero?.slides?.length ?? 0) > 0;
 
   return (
     <>
@@ -120,7 +121,7 @@ export default async function HomePage() {
             <HomeSection
               sec={sec}
               config={config}
-              prioritizeFirstCards={idx === 0 && !(config?.hero?.slides?.length > 0)}
+              prioritizeFirstCards={idx === 0 && !hasHeroSlides}
             />
           </Suspense>
           {idx === 0 && (
