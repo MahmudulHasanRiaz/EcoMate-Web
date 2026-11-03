@@ -964,6 +964,14 @@ export class MediaService {
     return this.mediaQueue.backfill(opts);
   }
 
+  async backfillAvif(opts?: {
+    batchSize?: number;
+    max?: number;
+    dryRun?: boolean;
+  }): Promise<{ queued: number; scanned: number; missing: number }> {
+    return this.mediaQueue.backfillAvif(opts);
+  }
+
   async recoverStuck(sinceMinutes?: number): Promise<{ recovered: number }> {
     return this.mediaQueue.recoverStuck(sinceMinutes);
   }

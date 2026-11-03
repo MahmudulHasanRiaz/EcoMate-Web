@@ -21,7 +21,7 @@ export function StoreBrand() {
     return (
       <div className="flex items-center gap-2">
         {config.branding.storefrontFavicon ? (
-          <img src={config.branding.storefrontFavicon} alt="" className="w-8 h-8 rounded object-contain" />
+          <img src={config.branding.storefrontFavicon} alt="" width={32} height={32} className="w-8 h-8 rounded object-contain" />
         ) : null}
         <span className="text-xl font-black text-brand-blue tracking-tight">{config.store.name}</span>
       </div>

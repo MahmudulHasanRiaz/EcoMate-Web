@@ -53,7 +53,7 @@ export function CartVariantSheet(props: CartVariantSheetProps) {
       <div className="flex items-center gap-3 mb-4">
         {product.image && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={product.image} alt="" className="w-14 h-[70px] object-cover rounded-[3px]" />
+          <img src={product.image} alt="" width={56} height={70} className="w-14 h-[70px] object-cover rounded-[3px]" />
         )}
         <div className="min-w-0">
           <p className="m-0 text-[14px] font-medium text-brand-dark truncate">{product.name}</p>

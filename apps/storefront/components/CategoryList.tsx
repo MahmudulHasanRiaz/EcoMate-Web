@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { getMenuCategories } from "@/lib/api/products";
 import type { Category } from "@/lib/types";
+import { resolveDerivativeUrl } from "@/lib/image-derivative";
 
 export default function CategoryList() {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -120,7 +121,7 @@ function CategoryItem({ category, imgErrors, setImgErrors }: {
   imgErrors: { [key: string]: boolean };
   setImgErrors: React.Dispatch<React.SetStateAction<{ [key: string]: boolean }>>;
 }) {
-  const catImg = category.mediaMeta?.[category.image]?.derivativeManifest?.thumbnail || category.image;
+  const catImg = resolveDerivativeUrl(category.mediaMeta, category.image, 'thumbnail');
   return (
     <Link
       href={`/products?category=${category.slug}`}

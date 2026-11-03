@@ -273,7 +273,7 @@ function GatewayChips({ gateways }: { gateways: any[] }) {
   return (
     <span className="flex items-center gap-1.5">
       {online.map(gw => gw.logoUrl ? (
-        <img key={gw.id} src={gw.logoUrl} alt={gw.name || gw.code} className="h-6 w-8 rounded object-contain" />
+        <img key={gw.id} src={gw.logoUrl} alt={gw.name || gw.code} width={32} height={24} className="h-6 w-8 rounded object-contain" />
       ) : (
         <PaymentLogo key={gw.id} method={gw.code} size="sm" />
       ))}

@@ -14,6 +14,7 @@ import { getAspectStyle } from "@/lib/utils/image-ratio";
 import { VariantPickerModal } from '@/components/VariantPickerModal';
 import { useAuth } from '@/context/AuthContext';
 import { resolveCatalogId } from '@/lib/catalog-id';
+import { resolveDerivativeUrl, resolveBlurUrl } from '@/lib/image-derivative';
 
 interface ProductCardProps {
   product: Product;
@@ -32,7 +33,9 @@ export default function ProductCard({ product, index = 99 }: ProductCardProps) {
   const [imageFailed, setImageFailed] = React.useState(false);
   const retriesRef = React.useRef(0);
 
-  const derivativeUrl = product.mediaMeta?.[product.image]?.derivativeManifest?.small || product.image;
+  const derivativeUrl = resolveDerivativeUrl(product.mediaMeta, product.image, 'small');
+  // P3/P6: per-image blur stored by the backend, generic constant as fallback.
+  const blurUrl = resolveBlurUrl(product.mediaMeta, product.image) || PRODUCT_BLUR_DATA_URL;
 
   React.useEffect(() => {
     retriesRef.current = 0;
@@ -172,7 +175,7 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
             loading={isPriority ? "eager" : "lazy"}
             decoding="async"
             placeholder="blur"
-            blurDataURL={PRODUCT_BLUR_DATA_URL}
+            blurDataURL={blurUrl}
             className={`object-contain transition-transform duration-500 group-hover:scale-105 pointer-events-none ${imageFailed ? 'opacity-60' : ''}`}
             onError={handleImageError}
           />
