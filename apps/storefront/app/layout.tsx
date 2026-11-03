@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Geist, Geist_Mono, Hind_Siliguri } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
 import { AuthProvider } from "@/context/AuthContext";
@@ -26,18 +26,19 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  // Used only via the `font-mono` utility in a few non-critical spots
+  // (order tracking IDs, bank account/routing numbers, landing countdown,
+  // policy-page labels) — never on the homepage/PLP critical path, so it
+  // must not be preloaded sitewide. The @font-face + --font-geist-mono
+  // variable are still emitted, so those spots render identically; the
+  // file is fetched on demand only where `font-mono` is actually used.
+  preload: false,
 });
 
-// PDP mockup typeface (Hind Siliguri: Latin + Bengali in one family, so
-// bilingual PDP content renders in a single matching face). Self-hosted via
-// next/font with display:swap — no render-blocking external stylesheet.
-// Applied on PDP scope only; the rest of the site keeps its theme font.
-const hindSiliguri = Hind_Siliguri({
-  variable: "--font-pdp",
-  subsets: ["latin", "bengali"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
+// NOTE: Hind Siliguri (--font-pdp) is intentionally NOT declared here.
+// It is PDP-only by design, so it is declared in the PDP segment layout
+// (app/(main)/products/[slug]/layout.tsx) — declaring it in the root
+// layout preloaded its 8 woff2 files (~190KB) on every page.
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -131,7 +132,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${hindSiliguri.variable}`}
+      className={`${geistSans.variable} ${geistMono.variable}`}
       style={initialConfig?.branding?.colors ? {
         '--color-brand-blue': initialConfig.branding.colors.primary,
         '--color-brand-blue-dark': initialConfig.branding.colors.primaryDark,
