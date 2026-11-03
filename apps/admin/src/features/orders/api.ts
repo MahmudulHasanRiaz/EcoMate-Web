@@ -250,6 +250,10 @@ export interface ScanLinkedCandidate {
   reason?: string | null
   /** False when the courier left Return.items empty — confirm quantities now. */
   itemsConfirmed?: boolean
+  /** Exchange order this return leg belongs to, when any. */
+  exchangeOrderId?: string | null
+  /** That exchange order's display id (Ex-…) — context on the return row only, never its own option. */
+  exchangeDisplayId?: string
 }
 
 export interface ScanResolveOutcome {

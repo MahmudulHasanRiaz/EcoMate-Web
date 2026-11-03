@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ReturnsService } from '../../returns/returns.service';
 import { normalizeScanIdentifier, resolveScanIdentifier } from '../scanner-resolver';
-import { loadLinkedReturnCandidates } from './linked-return-candidates';
+import { loadReturnCandidatesForScannedOrder } from './linked-return-candidates';
 import {
   ResolveOutcome,
   ScanActor,
@@ -108,7 +108,12 @@ export class ReturnReceivePurpose implements ScanPurposeHandler {
   }
 
   private async linkedCandidates(orderId: string): Promise<ScanLinkedCandidate[]> {
-    return loadLinkedReturnCandidates(this.prisma, orderId);
+    // Same scan-alias normalization as Process return (2026-11-04): an
+    // Ex-/RTN-order scan resolves to the return(s) it belongs to, and an
+    // exchange order with a return leg never appears as a second candidate
+    // next to its own leg (the shared loader suppresses that face).
+    const scope = await loadReturnCandidatesForScannedOrder(this.prisma, orderId);
+    return scope.candidates;
   }
 
   private async receiveReturn(
@@ -140,14 +145,36 @@ export class ReturnReceivePurpose implements ScanPurposeHandler {
       const outcome = await resolveScanIdentifier(this.prisma, identifier);
       const orderId = outcome.order?.id ?? outcome.dispatches[0]?.orderId ?? null;
       if (orderId && (ret as any).orderId !== orderId) {
-        return {
-          status: 'error',
-          identifier,
-          title: `${(ret as any).displayId ?? returnId} — Wrong order`,
-          message:
-            `Return ${(ret as any).displayId ?? returnId} does not belong to ` +
-            `this order. Scan the matching order barcode.`,
-        };
+        // The scan may name a CHILD of the return's order — above all its
+        // exchange order (staff scanned the Ex-… barcode/parcel). That
+        // child IS this return when the leg carries its id
+        // (Return.exchangeOrderId), and a child whose parent IS the
+        // return's order belongs to the same return flow — neither is a
+        // wrong order. Anything else stays rejected.
+        const isOwnExchange =
+          !!(ret as any).exchangeOrderId &&
+          (ret as any).exchangeOrderId === orderId;
+        let isChildOfReturnOrder = false;
+        if (!isOwnExchange) {
+          const child = (await this.prisma.order.findUnique({
+            where: { id: orderId },
+            select: { exchangeOfOrderId: true, returnOfOrderId: true },
+          })) as any;
+          isChildOfReturnOrder =
+            !!child &&
+            (child.exchangeOfOrderId === (ret as any).orderId ||
+              child.returnOfOrderId === (ret as any).orderId);
+        }
+        if (!isOwnExchange && !isChildOfReturnOrder) {
+          return {
+            status: 'error',
+            identifier,
+            title: `${(ret as any).displayId ?? returnId} — Wrong order`,
+            message:
+              `Return ${(ret as any).displayId ?? returnId} does not belong to ` +
+              `this order. Scan the matching order barcode.`,
+          };
+        }
       }
     }
     if ((ret as any).status === 'CLOSED') {

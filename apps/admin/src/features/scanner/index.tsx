@@ -596,9 +596,17 @@ export default function ScannerPage() {
 
       if (outcome.status === 'selection_required') {
         // Ambiguous — never guess. The inline panel lists EVERY candidate:
-        // courier dispatches AND linked return/exchange legs. The order itself
-        // is never a candidate.
-        const linked = outcome.linked ?? []
+        // courier dispatches AND linked return legs. The order itself is
+        // never a candidate. For Process return the candidates are RETURNS
+        // only (owner rule, 2026-11-04): an info-only exchange leg is never
+        // rendered as a selectable return option, whatever the payload says.
+        const linked = (outcome.linked ?? []).filter(
+          (c) => purpose !== 'DISPATCH_RETURN' || c.kind === 'return',
+        )
+        if (purpose === 'DISPATCH_RETURN' && linked.length + outcome.dispatches.length === 0) {
+          record({ status: 'error', identifier, title: 'Not found', message: 'No return was found for this identifier.' })
+          return
+        }
         setSelection({
           identifier,
           message: outcome.message ?? 'Multiple return options found. Select one to continue.',
@@ -613,7 +621,7 @@ export default function ScannerPage() {
             ? `${identifier} — Select return option`
             : `${identifier} — Multiple dispatches found`,
           message: purpose === 'DISPATCH_RETURN'
-            ? 'Select which dispatch, return, or exchange to stage below.'
+            ? 'Select which return to stage below.'
             : 'Select which dispatch to process below.',
         })
         return
@@ -621,9 +629,11 @@ export default function ScannerPage() {
 
       if (purpose === 'DISPATCH_RETURN') {
         // Process return is ALWAYS stage-only, batch toggle or not. Exactly
-        // one candidate (a dispatch OR a return/exchange leg) stages it; both
-        // kinds / several candidates always open the picker.
-        const linked = outcome.linked ?? []
+        // one candidate (a dispatch OR a return leg) stages it; several
+        // DISTINCT candidates always open the picker. Linked candidates are
+        // Return rows only — an exchange ORDER is never a return option
+        // (owner rule, 2026-11-04, enforced in the backend and again here).
+        const linked = (outcome.linked ?? []).filter((c) => c.kind === 'return')
         const total = outcome.dispatches.length + linked.length
         if (total === 0) {
           record({ status: 'error', identifier, title: 'Not found', message: outcome.message ?? 'No returnable dispatch or return/exchange found.' })
@@ -641,7 +651,7 @@ export default function ScannerPage() {
             status: 'warning',
             identifier,
             title: `${identifier} — Select return option`,
-            message: 'Select which dispatch, return, or exchange to stage below.',
+            message: 'Select which return to stage below.',
           })
           return
         }
@@ -1170,7 +1180,7 @@ export default function ScannerPage() {
                     </div>
                     <p className="text-[11px] text-muted-foreground -mt-1">
                       {mode === 'DISPATCH_RETURN'
-                        ? 'Select the dispatch, return, or exchange to stage — the scanner stays ready.'
+                        ? 'Select the return to stage — the scanner stays ready.'
                         : `Select the dispatch to ${batchMode && isDispatchPurpose ? 'stage' : 'process'} — the scanner stays ready.`}
                     </p>
 
@@ -1201,7 +1211,7 @@ export default function ScannerPage() {
 
                     {selectionLinked.length > 0 && (
                       <div className="flex flex-col gap-1.5">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Returns &amp; exchanges</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{mode === 'DISPATCH_RETURN' ? 'Returns' : 'Returns & exchanges'}</p>
                         {selectionLinked.map((c) => (
                           <div key={c.id} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2">
                             <div className="flex-1 min-w-0">
@@ -1209,7 +1219,7 @@ export default function ScannerPage() {
                                 {c.labelKind === 'exchange' || (c.labelKind === undefined && c.kind === 'exchange') ? 'Exchange' : 'Return'}{' '}
                                 <span className="font-mono">{c.displayId}</span>
                               </p>
-                              <p className="text-[11px] text-muted-foreground truncate">{c.status}{c.orderDisplayId ? ` · Order ${c.orderDisplayId}` : ''}</p>
+                              <p className="text-[11px] text-muted-foreground truncate">{c.status}{c.orderDisplayId ? ` · Order ${c.orderDisplayId}` : ''}{c.exchangeDisplayId ? ` · Exchange ${c.exchangeDisplayId}` : ''}</p>
                             </div>
                             <Button
                               size="sm"
