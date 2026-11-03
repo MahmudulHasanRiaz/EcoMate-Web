@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useTransition } from 'react';
 import { ChevronRight, Filter, ChevronDown, LayoutGrid, List, Search, X, Loader2, AlertCircle, Plus, Minus } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -249,12 +249,35 @@ export default function ArchivePageClient({
   const [tagSearch, setTagSearch] = React.useState('');
   const [priceMin, setPriceMin] = React.useState(initialMinPrice);
   const [priceMax, setPriceMax] = React.useState(initialMaxPrice);
-  const [navigating, setNavigating] = React.useState(false);
+  // Navigation pending state is owned by React's transition, not by a manual
+  // flag: the old `navigating` useState was set on push and cleared only by an
+  // effect on the `filters` object, so any navigation that did not deliver a
+  // new filters object (e.g. pushing the unchanged URL) left the "Updating…"
+  // overlay stuck forever. A transition always settles — with the new page,
+  // or immediately when the navigation is a no-op — so it cannot stick.
+  const [isPending, startTransition] = useTransition();
+  const navigating = isPending;
 
+  // REFETCH BUG FIX: every piece of filter UI state must re-sync when the
+  // server delivers new filters for the SAME mounted component (same-route
+  // navigation re-renders in place; correctness must not depend on the old
+  // page-level remount key). Previously only searchQuery was synced;
+  // selectedCategorySlug / sortBy / priceMin / priceMax stayed at their
+  // mount-time values, and useInfiniteScroll kept the mount-time items.
+  // Keyed on the serialized filter VALUES (stable across re-renders), so
+  // local typing in the search/price boxes never triggers a spurious sync.
+  const filterSignature = JSON.stringify(filters);
   useEffect(() => {
-    setNavigating(false);
     setSearchQuery(filters.search || '');
-  }, [filters]);
+    const categoryFromIdSync = filters.categoryId
+      ? categories.find(c => c.id === filters.categoryId)?.slug || null
+      : null;
+    setSelectedCategorySlug(categoryFromIdSync || filters.category || null);
+    setSortBy(filters.sort || 'default');
+    setPriceMin(filters.minPrice || '');
+    setPriceMax(filters.maxPrice || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterSignature]);
 
   /**
    * COMMIT semantics for the on-page search box: a Search event fires ONLY on
@@ -286,7 +309,15 @@ export default function ArchivePageClient({
       initialCursor,
       initialHasMore,
       pageSize: PAGE_SIZE,
+      // A new filter signature = a new result set: the hook replaces its
+      // accumulated items with the new server page instead of keeping the
+      // mount-time list (the refetch bug).
+      resetKey: `${filterSignature}|${hasStock ? 'stock' : ''}`,
       fetchPage: async (cursor, signal) => {
+        // Sort comes from the URL filters (server truth), not the local
+        // sortBy state — that state was mount-time stale whenever the sort
+        // changed via navigation (back/forward, shared link, header nav).
+        const effSort = filters.sort || 'default';
         const res = await getProducts({
           isActive: true,
           hasStock: hasStock || undefined,
@@ -298,12 +329,12 @@ export default function ArchivePageClient({
           minPrice: filters.minPrice ? parseFloat(filters.minPrice) : undefined,
           maxPrice: filters.maxPrice ? parseFloat(filters.maxPrice) : undefined,
           sort:
-            sortBy === 'price-low' || sortBy === 'price-high' ? 'basePrice'
-            : sortBy === 'newest' ? 'createdAt'
-            : sortBy === 'popularity' || sortBy === 'best-selling' ? 'popularity'
-            : sortBy === 'featured' ? 'isFeatured'
+            effSort === 'price-low' || effSort === 'price-high' ? 'basePrice'
+            : effSort === 'newest' ? 'createdAt'
+            : effSort === 'popularity' || effSort === 'best-selling' ? 'popularity'
+            : effSort === 'featured' ? 'isFeatured'
             : undefined,
-          order: sortBy === 'price-low' ? 'asc' : (sortBy === 'price-high' || sortBy === 'newest' || sortBy === 'popularity' || sortBy === 'best-selling' || sortBy === 'featured') ? 'desc' : undefined,
+          order: effSort === 'price-low' ? 'asc' : (effSort === 'price-high' || effSort === 'newest' || effSort === 'popularity' || effSort === 'best-selling' || effSort === 'featured') ? 'desc' : undefined,
           perPage: PAGE_SIZE,
           cursor: cursor ?? undefined,
           signal,
@@ -390,8 +421,12 @@ export default function ArchivePageClient({
       else params.delete('sort');
     }
     const qs = params.toString();
-    setNavigating(true);
-    router.push(`/products${qs ? `?${qs}` : ''}`);
+    // Transition navigation (React 19 / Next 16 pattern): the current grid
+    // stays mounted and interactive while the server round-trip runs, and
+    // `isPending` drives the existing "Updating…" overlay. No full remount.
+    startTransition(() => {
+      router.push(`/products${qs ? `?${qs}` : ''}`);
+    });
   };
 
   const toggleBrand = (brandName: string) => {
@@ -423,8 +458,9 @@ export default function ArchivePageClient({
   };
 
   const clearAll = () => {
-    setNavigating(true);
-    router.push('/products');
+    startTransition(() => {
+      router.push('/products');
+    });
   };
 
   const safeCategories = Array.isArray(categories) ? categories : [];
@@ -670,7 +706,7 @@ export default function ArchivePageClient({
             </div>
           </aside>
 
-          <main className="flex-1 relative">
+          <main className="flex-1 relative" aria-busy={navigating || undefined}>
             {navigating && (
               <div className="absolute inset-0 bg-white/70 z-10 flex items-center justify-center rounded-lg">
                 <div className="flex flex-col items-center gap-2">
@@ -689,7 +725,21 @@ export default function ArchivePageClient({
             ) : (
               <div className={`grid gap-3 md:gap-4 ${viewMode === 'grid' ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-1'}`}>
                 {visibleItems.map((product, index) => (
-                  <ProductCard key={product.id} product={product} index={index} />
+                  // content-visibility:auto lets the browser skip layout/
+                  // paint for off-screen cards in long infinite-scroll
+                  // sessions (24 × N mounted cards) with zero visual or
+                  // behavior change; contain-intrinsic-size:auto remembers
+                  // each card's real height after its first render, so the
+                  // scrollbar/scroll position stay stable. True windowing
+                  // was rejected: it fights the cursor sentinel, URL cursor
+                  // sync and scroll restoration for no extra user gain here.
+                  <div
+                    key={product.id}
+                    data-plp-card
+                    className="h-full [content-visibility:auto] [contain-intrinsic-size:auto_384px]"
+                  >
+                    <ProductCard product={product} index={index} />
+                  </div>
                 ))}
               </div>
             )}

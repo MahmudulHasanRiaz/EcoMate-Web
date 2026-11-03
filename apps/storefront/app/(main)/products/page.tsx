@@ -138,11 +138,12 @@ export default async function ProductsPage({
     order,
   });
 
-  const filterKey = JSON.stringify(sp);
-
+  // No remount key: ArchivePageClient re-syncs its filter state, sort and
+  // infinite-scroll list from new props in place (P6 refetch fix), and
+  // filter navigation runs inside a React transition — remounting here
+  // would throw away the visible grid (and scroll/focus) on every change.
   return (
     <ArchivePageClient
-      key={filterKey}
       initialItems={data}
       initialCursor={meta.nextCursor}
       initialHasMore={meta.hasMore}

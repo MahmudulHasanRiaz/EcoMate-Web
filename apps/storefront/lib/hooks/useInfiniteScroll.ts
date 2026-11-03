@@ -16,6 +16,13 @@ export interface UseInfiniteScrollOpts<T> {
   getId: (item: T) => string;
   pageSize?: number;
   urlSyncKey?: string;
+  /**
+   * Identity of the current initial page (e.g. the PLP filter signature).
+   * When it changes, the hook replaces its accumulated items/cursor/hasMore
+   * with the new initial page instead of appending to the previous result
+   * set. Callers that never change it keep the original mount-only behavior.
+   */
+  resetKey?: string;
 }
 
 export interface UseInfiniteScrollResult<T> {
@@ -59,6 +66,7 @@ export function useInfiniteScroll<T>(opts: UseInfiniteScrollOpts<T>): UseInfinit
     getId,
     pageSize: _pageSize = 8,
     urlSyncKey = "after",
+    resetKey,
   } = opts;
 
   const [items, setItems] = useState<T[]>(initialItems);
@@ -70,6 +78,23 @@ export function useInfiniteScroll<T>(opts: UseInfiniteScrollOpts<T>): UseInfinit
   const [sentinelNode, setSentinelNode] = useState<HTMLElement | null>(null);
 
   const seenIdsRef = useRef<Set<string>>(new Set(initialItems.map(getId)));
+  const resetKeyRef = useRef<string | undefined>(resetKey);
+
+  // New initial page under the same mounted hook (filter/search/sort
+  // navigation that re-renders in place rather than remounting): replace the
+  // accumulated list with the new page 1. Without this, `items` stays bound
+  // to the mount-time result set forever — the PLP refetch bug.
+  useEffect(() => {
+    if (resetKeyRef.current === resetKey) return;
+    resetKeyRef.current = resetKey;
+    if (inflightRef.current) inflightRef.current.abort();
+    seenIdsRef.current = new Set(initialItems.map(getId));
+    setItems(initialItems);
+    setCursor(initialCursor);
+    setHasMore(initialHasMore);
+    setError(null);
+    setIsLoading(false);
+  }, [resetKey, initialItems, initialCursor, initialHasMore, getId]);
   const isVisibleRef = useRef<boolean>(typeof document === "undefined" || document.visibilityState === "visible");
   const manualTriggerRef = useRef<boolean>(false);
   const inflightRef = useRef<AbortController | null>(null);

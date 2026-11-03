@@ -47,7 +47,41 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
-  const [progress, setProgress] = useState(0);
+  // P6: progress is written straight to the bar's DOM node — as React state
+  // it re-rendered the ENTIRE gallery (every slide + thumbnail) on every
+  // animation frame (~60×/s for the whole 4s slide, indefinitely).
+  const progressBarRef = useRef<HTMLDivElement | null>(null);
+  const setProgressBar = useCallback((pct: number) => {
+    if (progressBarRef.current) {
+      progressBarRef.current.style.width = `${pct}%`;
+    }
+  }, []);
+  // P6: autoplay pauses when the tab is hidden or the gallery is off-screen
+  // — a rAF loop nobody can see is pure main-thread cost.
+  const galleryRootRef = useRef<HTMLDivElement>(null);
+  const [isInView, setIsInView] = useState(true);
+  const [isTabVisible, setIsTabVisible] = useState(
+    () => typeof document === 'undefined' || document.visibilityState !== 'hidden',
+  );
+
+  useEffect(() => {
+    const onVisibility = () => setIsTabVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
+  useEffect(() => {
+    const el = galleryRootRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) setIsInView(entry.isIntersecting);
+      },
+      { rootMargin: '100px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const desktopScrollRef = useRef<HTMLDivElement>(null);
   const mobileScrollRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
@@ -76,12 +110,12 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
   const startAutoPlay = useCallback(() => {
     if (!hasMultiple) return;
     if (progressRef.current) cancelAnimationFrame(progressRef.current);
-    setProgress(0);
+    setProgressBar(0);
     const startTime = Date.now();
     const tick = () => {
       const elapsed = Date.now() - startTime;
       const pct = Math.min((elapsed / AUTO_SLIDE_MS) * 100, 100);
-      setProgress(pct);
+      setProgressBar(pct);
       if (pct >= 100) {
         scrollTo((activeIndex + 1) % images.length);
         return;
@@ -89,15 +123,15 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
       progressRef.current = requestAnimationFrame(tick);
     };
     progressRef.current = requestAnimationFrame(tick);
-  }, [hasMultiple, images.length, activeIndex, scrollTo]);
+  }, [hasMultiple, images.length, activeIndex, scrollTo, setProgressBar]);
 
   const stopAutoPlay = useCallback(() => {
     if (progressRef.current) cancelAnimationFrame(progressRef.current);
-    setProgress(0);
-  }, []);
+    setProgressBar(0);
+  }, [setProgressBar]);
 
   useEffect(() => {
-    if (isAutoPlaying && hasMultiple && !lightboxOpen) {
+    if (isAutoPlaying && hasMultiple && !lightboxOpen && isInView && isTabVisible) {
       startAutoPlay();
     } else {
       stopAutoPlay();
@@ -105,7 +139,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
     return () => {
       if (progressRef.current) cancelAnimationFrame(progressRef.current);
     };
-  }, [activeIndex, isAutoPlaying, hasMultiple, lightboxOpen, startAutoPlay, stopAutoPlay]);
+  }, [activeIndex, isAutoPlaying, hasMultiple, lightboxOpen, isInView, isTabVisible, startAutoPlay, stopAutoPlay]);
 
   useEffect(() => {
     const thumbContainer = thumbRef.current;
@@ -220,7 +254,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
 
   return (
     <>
-      <div className="min-w-0">
+      <div className="min-w-0" ref={galleryRootRef}>
         <div className="hidden min-[901px]:flex gap-3">
           {hasMultiple && (
             <div ref={thumbRef} className="flex flex-col gap-[10px] overflow-y-auto hide-scrollbar max-h-[520px] flex-shrink-0 w-[76px]">
@@ -244,8 +278,10 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                   {i === activeIndex && isAutoPlaying && (
                     <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-brand-blue/30">
                       <div
+                        ref={progressBarRef}
+                        data-testid="gallery-progress-bar"
                         className="h-full bg-brand-blue transition-none"
-                        style={{ width: `${progress}%` }}
+                        style={{ width: '0%' }}
                       />
                     </div>
                   )}

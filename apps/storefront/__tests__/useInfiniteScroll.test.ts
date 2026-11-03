@@ -223,3 +223,83 @@ describe('useInfiniteScroll', () => {
     expect(fetchPage).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('useInfiniteScroll — new initial page (filter/search navigation in place)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+  });
+
+  it('replaces items/cursor/hasMore when initial props change without a remount', async () => {
+    const fetchPage = createFetch();
+    const base = {
+      fetchPage,
+      getId: (item: Item) => item.id,
+      pageSize: 3,
+    };
+    type Props = typeof base & { initialItems: Item[]; initialCursor: string | null; initialHasMore: boolean; resetKey: string };
+    const hook = renderHook((p: Props) => useInfiniteScroll<Item>(p), {
+      initialProps: {
+        ...base,
+        initialItems: [{ id: 'id-1', name: 'Item 1' }],
+        initialCursor: 'cursor-after-1',
+        initialHasMore: true,
+        resetKey: 'search=shoes',
+      } as Props,
+    });
+    expect(hook.result.current.items.map((i) => i.id)).toEqual(['id-1']);
+
+    // Same hook instance, new server page (e.g. ?search=watch) — no remount.
+    hook.rerender({
+      ...base,
+      initialItems: [{ id: 'id-9', name: 'Watch 9' }],
+      initialCursor: 'cursor-after-9',
+      initialHasMore: false,
+      resetKey: 'search=watch',
+    });
+
+    await waitFor(() => {
+      expect(hook.result.current.items.map((i) => i.id)).toEqual(['id-9']);
+    });
+    expect(hook.result.current.hasMore).toBe(false);
+    expect(hook.result.current.error).toBeNull();
+  });
+
+  it('after a reset, load-more fetches from the NEW cursor and can re-add previously seen ids', async () => {
+    const fetchPage = createFetch();
+    const base = { fetchPage, getId: (item: Item) => item.id, pageSize: 3 };
+    type Props = typeof base & { initialItems: Item[]; initialCursor: string | null; initialHasMore: boolean; resetKey: string };
+    const hook = renderHook((p: Props) => useInfiniteScroll<Item>(p), {
+      initialProps: {
+        ...base,
+        initialItems: [{ id: 'id-1', name: 'Item 1' }],
+        initialCursor: 'cursor-after-1',
+        initialHasMore: true,
+        resetKey: 'all',
+      } as Props,
+    });
+    act(() => {
+      hook.result.current.sentinelRef(document.createElement('div'));
+    });
+
+    hook.rerender({
+      ...base,
+      initialItems: [{ id: 'id-2', name: 'Item 2' }],
+      initialCursor: 'cursor-filtered-2',
+      initialHasMore: true,
+      resetKey: 'category=accessories',
+    });
+    await waitFor(() => expect(hook.result.current.items.map((i) => i.id)).toEqual(['id-2']));
+
+    // id-1 was seen in the previous filter set; in the new set it is a
+    // legitimate page-2 result and must not be deduped away.
+    fetchPage.mockResolvedValueOnce({
+      items: [{ id: 'id-1', name: 'Item 1 (filtered)' }],
+      nextCursor: null,
+      hasMore: false,
+    });
+    act(() => triggerIntersection(true));
+    await waitFor(() => expect(hook.result.current.items.map((i) => i.id)).toEqual(['id-2', 'id-1']));
+    expect(fetchPage.mock.calls[0][0]).toBe('cursor-filtered-2');
+  });
+});
