@@ -15,6 +15,10 @@ import {
 import { CustomizationService } from '../customization/customization.service';
 import { MediaService } from '../media/media.service';
 import { MediaResolverService } from '../media/media-resolver.service';
+import {
+  extractUploadImagePaths,
+  rewriteUploadImages,
+} from '../media/html-image-rewrite';
 import { CacheService } from '../cache/cache.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { StockService } from '../stock/stock.service';
@@ -925,6 +929,7 @@ export class ProductsService {
     if (!product) throw new NotFoundException('Product not found');
     const enriched = (await this.enrichProductsWithAvailableStock([product]))[0];
     await this.enrichWithDerivatives([enriched]);
+    await this.rewriteDescriptionImages(enriched);
     if (!opts?.isStaff) this.stripPublicProduct(enriched);
     // Short TTL: availableStock is baked into this payload, so the cache is
     // only a brief read amplifier. Every stock-mutating path invalidates
@@ -2355,6 +2360,40 @@ export class ProductsService {
         if (derived[url]) meta[url] = derived[url];
       }
       p._mediaMeta = meta;
+    }
+  }
+
+  /**
+   * Stored-HTML guardrail (scale program, 2026-11-04): <img> tags embedded
+   * in the rich-text description / specifications that point at ORIGINAL
+   * uploads are rewritten to derivatives on the public PDP read path (see
+   * media/html-image-rewrite). Response-only — the stored HTML is never
+   * modified, so the admin editor (findOne) round-trips it verbatim.
+   */
+  private async rewriteDescriptionImages(p: any) {
+    try {
+      const sections =
+        p?.descriptionSections && typeof p.descriptionSections === 'object'
+          ? (p.descriptionSections as Record<string, unknown>)
+          : null;
+      const specs = sections?.specifications;
+      const paths = new Set<string>();
+      if (typeof p?.description === 'string') {
+        for (const u of extractUploadImagePaths(p.description)) paths.add(u);
+      }
+      if (typeof specs === 'string') {
+        for (const u of extractUploadImagePaths(specs)) paths.add(u);
+      }
+      if (paths.size === 0) return;
+      const map = await this.mediaResolver.resolve([...paths]);
+      if (typeof p.description === 'string') {
+        p.description = rewriteUploadImages(p.description, map);
+      }
+      if (sections && typeof specs === 'string') {
+        sections.specifications = rewriteUploadImages(specs, map);
+      }
+    } catch {
+      // Never break the PDP over a content rewrite — originals fall back.
     }
   }
 

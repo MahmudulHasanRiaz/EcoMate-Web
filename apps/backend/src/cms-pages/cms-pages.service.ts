@@ -8,12 +8,20 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCmsPageDto, UpdateCmsPageDto } from './dto/cms-page.dto';
 import { templatePages } from './template-pages';
+import { MediaResolverService } from '../media/media-resolver.service';
+import {
+  extractUploadImagePaths,
+  rewriteUploadImages,
+} from '../media/html-image-rewrite';
 
 @Injectable()
 export class CmsPagesService implements OnModuleInit {
   private readonly logger = new Logger(CmsPagesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mediaResolver: MediaResolverService,
+  ) {}
 
   async onModuleInit() {
     await this.ensureTemplatePages();
@@ -111,7 +119,25 @@ export class CmsPagesService implements OnModuleInit {
     const page = await this.prisma.cmsPage.findUnique({ where: { slug } });
     if (!page) throw new NotFoundException('Page not found');
     if (!page.isActive) throw new NotFoundException('Page is not active');
-    return page;
+    // Public read path ONLY: embedded <img> tags pointing at original
+    // uploads are rewritten to derivatives (see html-image-rewrite).
+    // The stored content is never modified — findOne (admin edit) keeps
+    // returning the raw HTML so the editor round-trips it verbatim.
+    return { ...page, content: await this.rewriteContentImages(page.content) };
+  }
+
+  private async rewriteContentImages(content: string): Promise<string> {
+    try {
+      const paths = extractUploadImagePaths(content ?? '');
+      if (paths.length === 0) return content;
+      const map = await this.mediaResolver.resolve(paths);
+      return rewriteUploadImages(content, map);
+    } catch (e) {
+      // A rewrite failure must never take a public page down — serve the
+      // stored HTML as-is (originals as fallback) and log it.
+      this.logger.warn(`CMS content image rewrite failed: ${e}`);
+      return content;
+    }
   }
 
   async create(dto: CreateCmsPageDto) {
