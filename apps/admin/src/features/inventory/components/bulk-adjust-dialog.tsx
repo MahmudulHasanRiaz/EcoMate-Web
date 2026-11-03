@@ -32,6 +32,14 @@ interface BulkResult {
   error?: string
 }
 
+interface BulkItem {
+  productId: string
+  variantId?: string
+  quantity: number
+  reason: string
+  confirmDestructive?: boolean
+}
+
 // Same reason codes as the single Adjust Stock modal.
 const REASON_OPTIONS = [
   { value: 'physical_count', label: 'Physical Count' },
@@ -63,11 +71,23 @@ export function BulkAdjustDialog({ open, onOpenChange, onSuccess }: BulkAdjustDi
   }
 
   const mutation = useMutation({
-    mutationFn: (items: Array<{ productId: string; variantId?: string; quantity: number; reason: string }>) =>
+    mutationFn: (items: BulkItem[]) =>
       apiClient.post('/inventory/bulk-adjust', { items }).then((r) => r.data),
     onSuccess: (data) => {
       const res: BulkResult[] = data?.results ?? []
-      setResults(res)
+      // Merge into any previous results (a destructive-confirm resubmit only
+      // returns the retried rows; the rest of the batch keeps its outcome).
+      setResults((prev) => {
+        if (!prev) return res
+        return prev.map(
+          (old) =>
+            res.find(
+              (r) =>
+                r.productId === old.productId &&
+                (r.variantId ?? null) === (old.variantId ?? null),
+            ) ?? old,
+        )
+      })
       const okCount = res.filter((r) => r.success).length
       if (okCount === res.length) {
         toast.success(`Adjusted ${okCount} item${okCount === 1 ? '' : 's'}`)
@@ -80,6 +100,26 @@ export function BulkAdjustDialog({ open, onOpenChange, onSuccess }: BulkAdjustDi
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Bulk adjustment failed'),
   })
+
+  // The backend refuses a deduction that would remove (nearly) all of a
+  // product's available stock unless the item carries confirmDestructive —
+  // the same guard the single Adjust Stock modal confirms. Those failures
+  // come back per-item with "confirmDestructive" in the error text; collect
+  // them so the user can explicitly confirm and resubmit just those rows.
+  const destructiveFailures = (results ?? []).filter(
+    (r) => !r.success && (r.error ?? '').includes('confirmDestructive'),
+  )
+
+  const handleConfirmDestructive = () => {
+    const items: BulkItem[] = destructiveFailures.map((r) => ({
+      productId: r.productId as string,
+      variantId: r.variantId ?? undefined,
+      quantity: r.quantity,
+      reason,
+      confirmDestructive: true,
+    }))
+    if (items.length > 0) mutation.mutate(items)
+  }
 
   const updateRow = (key: number, patch: Partial<BulkRow>) =>
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)))
@@ -197,6 +237,38 @@ export function BulkAdjustDialog({ open, onOpenChange, onSuccess }: BulkAdjustDi
               </SelectContent>
             </Select>
           </div>
+          {destructiveFailures.length > 0 && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
+              <p className="text-sm text-amber-900">
+                {destructiveFailures.length} adjustment
+                {destructiveFailures.length === 1 ? '' : 's'} would remove nearly
+                all available stock and need explicit confirmation:
+              </p>
+              <ul className="list-disc pl-5 text-xs text-amber-900 space-y-0.5">
+                {destructiveFailures.map((r) => {
+                  const row = rows.find(
+                    (x) =>
+                      x.picked?.productId === r.productId &&
+                      (x.picked?.variantId ?? null) === (r.variantId ?? null),
+                  )
+                  return (
+                    <li key={`${r.productId}-${r.variantId ?? ''}`}>
+                      {row?.picked?.productName ?? r.productId} — Δ {r.quantity}
+                    </li>
+                  )
+                })}
+              </ul>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleConfirmDestructive}
+                disabled={mutation.isPending}
+              >
+                {mutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                Confirm &amp; apply destructive adjustments
+              </Button>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
