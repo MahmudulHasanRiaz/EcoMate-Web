@@ -1,0 +1,11 @@
+{
+  "name": "deepmerge",
+  "version": "4.3.1",
+  "private": true,
+  "description": "In-repo drop-in replacement for the unmaintained deepmerge package (no release since 2023; unpatched advisory GHSA for 4.x). Exposes the exact deepmerge v4 API (callable merge + merge.all) powered by the actively maintained deepmerge-ts engine. Only dev/test tooling consumes deepmerge in this repo (jest-config, fork-ts-checker-webpack-plugin, @rollup/plugin-node-resolve) and none of them pass v4 options.",
+  "license": "MIT",
+  "main": "index.js",
+  "dependencies": {
+    "deepmerge-ts": "^8.0.2"
+  }
+}
