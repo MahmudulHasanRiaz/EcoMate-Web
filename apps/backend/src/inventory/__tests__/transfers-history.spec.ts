@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
 import { InventoryService } from '../inventory.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StockService } from '../../stock/stock.service';
@@ -248,6 +249,82 @@ describe('InventoryService — grouped transfer history (listTransfers)', () => 
         { status: 'IN_PROGRESS', NOT: { idempotencyKey: { startsWith: 'APPROVE_' } } },
       ]),
     );
+  });
+
+  it('keeps the completed mapping exactly (FULFILLED + non-APPROVE COMPLETED)', async () => {
+    (prisma.stockTransfer.findMany as jest.Mock).mockResolvedValueOnce([]);
+    (prisma.stockTransfer.count as jest.Mock).mockResolvedValue(0);
+
+    await service.listTransfers(1, 20, undefined, 'completed');
+
+    const args = (prisma.stockTransfer.findMany as jest.Mock).mock.calls[0][0];
+    expect(args.where.AND).toEqual(
+      expect.arrayContaining([
+        {
+          OR: [
+            { status: 'FULFILLED' },
+            { status: 'COMPLETED', NOT: { idempotencyKey: { startsWith: 'APPROVE_' } } },
+          ],
+        },
+      ]),
+    );
+  });
+
+  it('keeps the partial mapping exactly (POS failures + non-APPROVE PARTIAL)', async () => {
+    (prisma.stockTransfer.findMany as jest.Mock).mockResolvedValueOnce([]);
+    (prisma.stockTransfer.count as jest.Mock).mockResolvedValue(0);
+
+    await service.listTransfers(1, 20, undefined, 'partial');
+
+    const args = (prisma.stockTransfer.findMany as jest.Mock).mock.calls[0][0];
+    expect(args.where.AND).toEqual(
+      expect.arrayContaining([
+        {
+          OR: [
+            { idempotencyKey: { startsWith: 'POS_TRF_' }, status: 'APPROVAL_FAILED' },
+            { status: 'PARTIAL', NOT: { idempotencyKey: { startsWith: 'APPROVE_' } } },
+          ],
+        },
+      ]),
+    );
+  });
+
+  it("status 'requested' surfaces pending REQUESTED rows", async () => {
+    (prisma.stockTransfer.findMany as jest.Mock).mockResolvedValueOnce([]);
+    (prisma.stockTransfer.count as jest.Mock).mockResolvedValue(0);
+
+    await service.listTransfers(1, 20, undefined, 'requested');
+
+    const args = (prisma.stockTransfer.findMany as jest.Mock).mock.calls[0][0];
+    expect(args.where.AND).toEqual(
+      expect.arrayContaining([{ status: 'REQUESTED' }]),
+    );
+    // The representation filter must widen too — otherwise REQUESTED rows
+    // are ANDed away and the filter returns an empty list forever.
+    expect(JSON.stringify(args.where.AND[0].OR)).toContain('REQUESTED');
+  });
+
+  it("status 'failed' filters to APPROVAL_FAILED rows", async () => {
+    (prisma.stockTransfer.findMany as jest.Mock).mockResolvedValueOnce([]);
+    (prisma.stockTransfer.count as jest.Mock).mockResolvedValue(0);
+
+    await service.listTransfers(1, 20, undefined, 'failed');
+
+    const args = (prisma.stockTransfer.findMany as jest.Mock).mock.calls[0][0];
+    expect(args.where.AND).toEqual(
+      expect.arrayContaining([{ status: 'APPROVAL_FAILED' }]),
+    );
+  });
+
+  it('rejects an unrecognised status instead of returning the unfiltered list', async () => {
+    // ?status=IN_PROGRESS used to add NO condition and return everything.
+    await expect(
+      service.listTransfers(1, 20, undefined, 'IN_PROGRESS'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.listTransfers(1, 20, undefined, 'bogus'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.stockTransfer.findMany).not.toHaveBeenCalled();
   });
 
   it('searches id, notes, route names and request item product names', async () => {

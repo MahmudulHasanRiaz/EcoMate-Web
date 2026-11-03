@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
@@ -13,14 +13,20 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Package, MoreHorizontal, ArrowLeftRight, Edit3, Filter, HelpCircle, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react'
+import { Package, MoreHorizontal, ArrowLeftRight, Edit3, Filter, HelpCircle, AlertTriangle, Loader2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Layers } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { InventoryDetailDrawer } from './components/inventory-detail-drawer'
 import { AdjustStockModal } from './components/adjust-stock-modal'
+import { BulkAdjustDialog } from './components/bulk-adjust-dialog'
 import { useInventoryManagement } from './hooks/use-inventory-management'
 import { dedupePhysicalVariants } from './utils/dedupe-physical-variants'
-import { Link, useSearch } from '@tanstack/react-router'
+import { Link, useSearch, getRouteApi } from '@tanstack/react-router'
+
+// Route-scoped API (no import of the route file itself — that would cycle,
+// the route file imports this component). Gives useNavigate() this route's
+// real search type so the write-back reducer below type-checks.
+const inventoryRouteApi = getRouteApi('/_authenticated/op/inventory/')
 
 interface StockOverviewItem {
   id: string
@@ -58,17 +64,36 @@ interface StockOverviewResponse {
 
 export function Inventory() {
   const queryClient = useQueryClient()
+  // Route search params are the page's durable state: deep links land here
+  // (Overview's ?filter=low_stock, the warehouse drawer's ?warehouse=<id>,
+  // the orphaned physical page's redirect ?view=physical), and the Stock
+  // page writes its search text / warehouse filter / view mode back so
+  // navigating to a product detail and back restores them.
+  const routeSearch = useSearch({ strict: false }) as {
+    filter?: string
+    warehouse?: string
+    view?: string
+    q?: string
+  }
+  const navigate = inventoryRouteApi.useNavigate()
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
   const [adjustOpen, setAdjustOpen] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
   const [adjustProductId, setAdjustProductId] = useState<string | undefined>()
   const [adjustVariantId, setAdjustVariantId] = useState<string | undefined>()
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => routeSearch?.q ?? '')
   const [page, setPage] = useState(1)
   const [perPage] = useState(20)
   const { data: imEnabled = true } = useInventoryManagement()
   const [viewMode, setViewMode] = useState<'MANAGED' | 'PHYSICAL'>(() =>
-    imEnabled ? 'PHYSICAL' : 'MANAGED',
+    routeSearch?.view === 'physical'
+      ? 'PHYSICAL'
+      : routeSearch?.view === 'managed'
+        ? 'MANAGED'
+        : imEnabled
+          ? 'PHYSICAL'
+          : 'MANAGED',
   )
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
 
@@ -94,7 +119,7 @@ export function Inventory() {
     setPage(1)
   }
 
-  const { data: stockData, isLoading: isStockLoading, isError: isStockError } = useQuery<StockOverviewResponse>({
+  const { data: stockData, isLoading: isStockLoading, isError: isStockError, refetch: refetchStock } = useQuery<StockOverviewResponse>({
     queryKey: ['inventory-stock-overview', search, page, stockSort],
     queryFn: () =>
       apiClient.get('/inventory/stock-overview', {
@@ -109,21 +134,18 @@ export function Inventory() {
     enabled: true,
   })
 
-  const [selectedWarehouse, setSelectedWarehouse] = useState('all_wh')
+  const [selectedWarehouse, setSelectedWarehouse] = useState(() => routeSearch?.warehouse ?? 'all_wh')
   const [selectedBin, setSelectedBin] = useState('all_bins')
   const [selectedStatus, setSelectedStatus] = useState('all_status')
   const [inventoryStatus, setInventoryStatus] = useState<'all' | 'in_stock' | 'low' | 'out_of_stock'>('all')
 
   // Deep links into this page: the Overview "View all low stock" link
-  // (?filter=low_stock) and the warehouse drawer's "View Filtered Stock"
-  // link (?warehouse=<id>). Without reading them those links landed on an
-  // unfiltered list.
-  const routeSearch = useSearch({ strict: false }) as {
-    filter?: string
-    warehouse?: string
-  }
+  // (?filter=low_stock), the warehouse drawer's "View Filtered Stock" link
+  // (?warehouse=<id>) and the physical-page redirect (?view=physical).
+  // Without reading them those links landed on an unfiltered list.
   const routeFilter = routeSearch?.filter
   const routeWarehouse = routeSearch?.warehouse
+  const routeView = routeSearch?.view
   useEffect(() => {
     if (routeFilter === 'low_stock') {
       setInventoryStatus('low')
@@ -133,8 +155,33 @@ export function Inventory() {
       setSelectedBin('all_bins')
       setViewMode('PHYSICAL')
       setPage(1)
+    } else if (routeView === 'physical') {
+      setViewMode('PHYSICAL')
     }
-  }, [routeFilter, routeWarehouse])
+  }, [routeFilter, routeWarehouse, routeView])
+
+  // Write the durable filter state back into the URL (replace, no history
+  // spam) so leaving for a product detail and coming back restores it. The
+  // ref guard keeps the effect from re-navigating when nothing changed
+  // (navigate's identity is not guaranteed stable across renders).
+  const lastWrittenSearchRef = useRef('')
+  useEffect(() => {
+    const signature = JSON.stringify({ q: search, warehouse: selectedWarehouse, view: viewMode })
+    if (lastWrittenSearchRef.current === signature) return
+    lastWrittenSearchRef.current = signature
+    navigate({
+      // No explicit `prev` annotation: TanStack types it as this route's
+      // search object; annotating it Record<string, unknown> breaks the
+      // ParamsReducerFn assignability (the spread leaks an index signature).
+      search: (prev) => ({
+        ...prev,
+        q: search || undefined,
+        warehouse: selectedWarehouse !== 'all_wh' ? selectedWarehouse : undefined,
+        view: viewMode === 'PHYSICAL' ? 'physical' : 'managed',
+      }),
+      replace: true,
+    })
+  }, [navigate, search, selectedWarehouse, viewMode])
 
   const { data: warehouses } = useQuery<any[]>({
     queryKey: ['warehouses'],
@@ -147,59 +194,51 @@ export function Inventory() {
     enabled: selectedWarehouse !== 'all_wh' && viewMode === 'PHYSICAL',
   })
 
-  const { data: physicalData, isLoading: isPhysicalLoading, isError: isPhysicalError } = useQuery<any[]>({
-    queryKey: ['inventory-physical-list'],
+  // The physical endpoint filters SERVER-side by warehouseId and
+  // binLocationId ('' = unassigned/NULL bin) and returns EVERY matching
+  // row — there is no pagination and no search param on it. Warehouse/bin
+  // therefore go out as real query params instead of the old approach:
+  // fetch one page of the product catalogue and client-filter the physical
+  // rows that happened to overlap it (which silently dropped every product
+  // outside that page).
+  const physicalParams: Record<string, string> = {}
+  if (selectedWarehouse !== 'all_wh') physicalParams.warehouseId = selectedWarehouse
+  if (selectedBin === 'unassigned') physicalParams.binLocationId = ''
+  else if (selectedBin !== 'all_bins') physicalParams.binLocationId = selectedBin
+
+  const { data: physicalData, isLoading: isPhysicalLoading, isError: isPhysicalError, refetch: refetchPhysical } = useQuery<any[]>({
+    queryKey: ['inventory-physical-list', physicalParams],
     queryFn: () =>
-      apiClient.get('/inventory/physical').then((r) => r.data),
+      apiClient.get('/inventory/physical', { params: physicalParams }).then((r) => r.data),
     enabled: viewMode === 'PHYSICAL',
   })
 
-  const filteredPhysicalData = useMemo(() => {
+  // Group the (complete, server-filtered) physical rows by product. Search
+  // and the status filters run over this complete set in the stockLevels
+  // memo — the endpoint has no search param, but because it returns all
+  // matching rows, filtering the grouped set client-side is over the FULL
+  // result, never over one catalogue page.
+  const physicalGroups = useMemo(() => {
     if (!physicalData) return []
-    let data = physicalData
-
-    // Warehouse Filter
-    if (selectedWarehouse !== 'all_wh') {
-      data = data.filter((p: any) => p.warehouseId === selectedWarehouse)
-    }
-
-    // Bin Filter
-    if (selectedBin === 'unassigned') {
-      data = data.filter((p: any) => !p.binLocationId)
-    } else if (selectedBin !== 'all_bins') {
-      data = data.filter((p: any) => p.binLocationId === selectedBin)
-    }
-
-    // Search Filter
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      data = data.filter((p: any) =>
-        p.product?.name?.toLowerCase().includes(q) ||
-        p.product?.sku?.toLowerCase().includes(q)
-      )
-    }
-
-    // Group by product for expand/collapse support
-    const productMap = new Map<string, any>()
-    for (const pi of data) {
-      const pid = pi.product?.id
+    const productMap = new Map<string, { product: any; records: any[] }>()
+    for (const pi of physicalData) {
+      const pid = pi.product?.id ?? pi.productId
       if (!pid) continue
       if (!productMap.has(pid)) {
-        productMap.set(pid, {
-          ...pi,
-          _variants: [],
-          _totalQty: 0,
-          _totalReserved: 0,
-        })
+        productMap.set(pid, { product: pi.product ?? { id: pid }, records: [] })
       }
-      const agg = productMap.get(pid)
-      agg._variants.push(pi)
-      agg._totalQty += pi.quantity || 0
-      agg._totalReserved += pi.reservedQuantity || 0
+      productMap.get(pid)!.records.push(pi)
     }
-
-    return Array.from(productMap.values())
-  }, [physicalData, search, selectedWarehouse, selectedBin])
+    let groups = Array.from(productMap.values())
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      groups = groups.filter((g) =>
+        g.product?.name?.toLowerCase().includes(q) ||
+        g.product?.sku?.toLowerCase().includes(q),
+      )
+    }
+    return groups
+  }, [physicalData, search])
 
   const availabilityModeLabel = (mode: string) => {
     switch (mode) {
@@ -211,7 +250,7 @@ export function Inventory() {
     }
   }
 
-  const stockLevels = useMemo(() => {
+  const stockRows = useMemo<any[]>(() => {
     if (viewMode === 'MANAGED') {
       if (!stockData?.data) return []
       let items = stockData.data.map((p: StockOverviewItem) => {
@@ -222,7 +261,10 @@ export function Inventory() {
           name: p.name,
           sku: p.sku,
           availabilityMode: p.availabilityMode,
-          warehouse: p.availabilityMode === 'INVENTORY_CONTROLLED' ? '—' : 'Main Warehouse',
+          // Managed stock is virtual — the payload carries no warehouse.
+          // Show the warehouse name when the payload provides one, else
+          // '—'. (This used to fabricate a 'Main Warehouse' location.)
+          warehouse: (p as any).warehouseName ?? (p as any).warehouse?.name ?? '—',
           lot: '—',
           expiry: '—',
           available: p.availableStock,
@@ -258,142 +300,101 @@ export function Inventory() {
 
       return items
     } else {
-      if (!stockData?.data) return []
-
-      // Build physical data map by productId (aggregated totals + per-variant detail)
-      const physMap = new Map<string, any>()
-      const physData = filteredPhysicalData || []
-      for (const pi of physData) {
-        const pid = pi.product?.id
-        if (!pid) continue
-
-        let latestUpdatedAt = pi.updatedAt
-        let binCode = null
-        let warehouseName = 'Unknown Warehouse'
-
-        if (pi._variants && pi._variants.length > 0) {
-          for (const v of pi._variants) {
-            if (v.updatedAt && (!latestUpdatedAt || v.updatedAt > latestUpdatedAt)) {
-              latestUpdatedAt = v.updatedAt
-            }
-            if (v.binLocation?.code) {
-              binCode = v.binLocation.code
-            }
-            if (v.warehouse?.name) {
-              warehouseName = v.warehouse.name
-            }
-          }
-        }
-
-        physMap.set(pid, {
-          _variants: pi._variants || [],
-          _totalQty: pi._totalQty || 0,
-          _totalReserved: pi._totalReserved || 0,
-          _warehouseName: warehouseName,
-          _binCode: binCode,
-          _updatedAt: latestUpdatedAt,
-        })
-      }
-
-      let items = stockData.data.map((p: StockOverviewItem) => {
-        const phys = physMap.get(p.id)
-        const variants = phys?._variants || []
-        const totalQty = phys?._totalQty ?? 0
-        const totalReserved = phys?._totalReserved ?? 0
+      // PHYSICAL view: one row per product that HAS physical records,
+      // built entirely from the physical endpoint's own (complete,
+      // server-filtered) rows — the product catalogue is not involved, so
+      // products outside any single catalogue page are no longer dropped.
+      let items = physicalGroups.map((g) => {
+        const records = g.records as any[]
+        const prod = g.product ?? {}
+        const totalQty = records.reduce((s, r) => s + (r.quantity || 0), 0)
+        const totalReserved = records.reduce((s, r) => s + (r.reservedQuantity || 0), 0)
         const avail = totalQty - totalReserved
-        const prodImages = p.images
-        const firstImg = Array.isArray(prodImages) && prodImages.length ? prodImages[0] : null
-        const isVariable = p.type === 'variable'
-        const hasPhysicalStock = !!phys
-
-        // Build variant display list — merge PI records with virtual entries for
-        // variants without physical stock, then collapse to ONE row per variant:
-        // PhysicalInventory rows arrive per (variant × warehouse × bin) and used
-        // to render as duplicated variant lines.
-        let displayVariants = variants
-        if (isVariable) {
-          const merged = [...variants]
-          const piVariantIds = new Set(
-            variants.filter((v: any) => v.variantId).map((v: any) => v.variantId)
-          )
-          const stockVariants = (p as any).variants || []
-          for (const sv of stockVariants) {
-            if (!piVariantIds.has(sv.id)) {
-              merged.push({
-                id: `virtual-${sv.id}`,
-                variantId: sv.id,
-                variant: {
-                  id: sv.id,
-                  sku: sv.sku,
-                  image: sv.image,
-                  attributeValues: sv.attributeValues || [],
-                },
-                quantity: 0,
-                reservedQuantity: 0,
-                warehouse: null,
-                binLocation: null,
-                updatedAt: null,
-                _virtual: true,
-              })
-            }
-          }
-          displayVariants = dedupePhysicalVariants(merged)
-        }
-
+        const hasVariants = records.some((r) => r.variantId)
+        // One expanded row per variant (aggregated across warehouses/bins)
+        // for variable products; per location record for simple ones.
+        const displayVariants = hasVariants ? dedupePhysicalVariants(records) : records
+        const warehouseNames = [...new Set(records.map((r) => r.warehouse?.name).filter(Boolean))] as string[]
+        const binCodes = [...new Set(records.map((r) => r.binLocation?.code).filter(Boolean))] as string[]
+        const latestUpdatedAt = records.reduce<string | null>(
+          (max, r) => (r.updatedAt && (!max || r.updatedAt > max) ? r.updatedAt : max),
+          null,
+        )
+        const firstImg = Array.isArray(prod.images) && prod.images.length ? prod.images[0] : null
+        const lowStockQty = prod.lowStockQty ?? null
+        const status = avail < 0 ? 'negative' : avail <= (lowStockQty ?? 5) ? 'low' : 'optimal'
         return {
-          id: p.id,
-          productId: p.id,
-          name: p.name,
-          sku: p.sku || '—',
-          availabilityMode: p.availabilityMode,
-          warehouse: hasPhysicalStock
-            ? (displayVariants.length > 1
-                ? `${displayVariants.length} ${isVariable ? 'variants' : 'records'}`
-                : (displayVariants[0]?.warehouse?.name || phys._warehouseName))
-            : '—',
-          bin: hasPhysicalStock
-            ? (displayVariants[0]?.binLocation?.code || phys?._binCode || '—')
-            : '—',
+          id: prod.id,
+          productId: prod.id,
+          name: prod.name,
+          sku: prod.sku || '—',
+          availabilityMode: undefined as string | undefined,
+          warehouse: hasVariants && displayVariants.length > 1
+            ? `${displayVariants.length} variants`
+            : warehouseNames.length > 1
+              ? `${warehouseNames.length} warehouses`
+              : (warehouseNames[0] ?? '—'),
+          bin: binCodes.length ? binCodes.join(' · ') : '—',
           lot: '—',
           expiry: '—',
-          available: hasPhysicalStock ? avail : 0,
+          available: avail,
           reserved: totalReserved,
           onHand: totalQty,
-          cost: p.basePrice || 0,
-          lowStockQty: p.lowStockQty,
-          updated: hasPhysicalStock ? (phys._updatedAt ? new Date(phys._updatedAt).toLocaleDateString() : '—') : '—',
+          cost: 0,
+          lowStockQty,
+          updated: latestUpdatedAt ? new Date(latestUpdatedAt).toLocaleDateString() : '—',
           image: typeof firstImg === 'string' ? firstImg : null,
-          status: !hasPhysicalStock ? 'optimal' : (avail < 0 ? 'negative' : (avail <= (p.lowStockQty ?? 5) ? 'low' : 'optimal')),
-          raw: p,
+          status,
+          // The drawer accepts this explicit shape (onHand/available/
+          // reserved/status) — the physical payload has no catalogue row.
+          raw: {
+            id: prod.id,
+            name: prod.name,
+            sku: prod.sku,
+            images: prod.images,
+            lowStockQty,
+            type: hasVariants ? 'variable' : 'simple',
+            onHand: totalQty,
+            available: avail,
+            reserved: totalReserved,
+            status,
+          },
           _physicalVariants: displayVariants,
-          _hasPhysicalStock: hasPhysicalStock,
+          _expandable: hasVariants || records.length > 1,
+          _hasPhysicalStock: true,
         }
       })
 
-      // Apply physical stock filter. 'low' and 'out_of_stock' are distinct:
-      // out_of_stock = no physical stock records at all; low = has physical
-      // stock whose available quantity is at/below the product threshold
-      // (the row `status` is 'optimal' whenever there is no physical stock).
+      // Status filters run over the complete grouped set (see above).
       if (inventoryStatus === 'in_stock') {
-        items = items.filter((i: any) => i._hasPhysicalStock)
+        items = items.filter((i: any) => i.available > 0)
       } else if (inventoryStatus === 'out_of_stock') {
-        items = items.filter((i: any) => !i._hasPhysicalStock)
+        items = items.filter((i: any) => i.available <= 0)
       } else if (inventoryStatus === 'low') {
-        items = items.filter((i: any) => i.status === 'low')
+        items = items.filter((i: any) => i.status === 'low' || i.status === 'negative')
       }
 
       // Apply stock status filter (low/negative)
       if (selectedStatus === 'low') {
-        items = items.filter((i: any) => i._hasPhysicalStock && i.available > 0 && i.available <= (i.lowStockQty ?? 5))
+        items = items.filter((i: any) => i.available > 0 && i.available <= (i.lowStockQty ?? 5))
       } else if (selectedStatus === 'negative') {
         items = items.filter((i: any) => i.available < 0)
       }
 
       return items
     }
-  }, [viewMode, stockData, filteredPhysicalData, inventoryStatus, selectedStatus])
+  }, [viewMode, stockData, physicalGroups, inventoryStatus, selectedStatus])
 
-  const totalPages = stockData?.meta?.totalPages || 1
+  // MANAGED pages server-side via stock-overview's meta; PHYSICAL pages
+  // client-side over the complete grouped set.
+  const stockLevels = useMemo(() => {
+    if (viewMode !== 'PHYSICAL') return stockRows
+    return stockRows.slice((page - 1) * perPage, page * perPage)
+  }, [viewMode, stockRows, page, perPage])
+
+  const totalPages = viewMode === 'PHYSICAL'
+    ? Math.max(1, Math.ceil(stockRows.length / perPage))
+    : stockData?.meta?.totalPages || 1
   const isLoading = viewMode === 'MANAGED' ? isStockLoading : isPhysicalLoading
   const isError = viewMode === 'MANAGED' ? isStockError : isPhysicalError
 
@@ -410,7 +411,7 @@ export function Inventory() {
   const [adjustVariantName, setAdjustVariantName] = useState<string | undefined>()
   const handleQuickAdjust = (productId?: string, variantId?: string, variantName?: string) => {
     if (!productId) return
-    const item = stockLevels.find(p => p.productId === productId)
+    const item = stockRows.find(p => p.productId === productId)
     setAdjustProductId(productId)
     setAdjustVariantId(variantId)
     setAdjustVariantName(variantName)
@@ -432,6 +433,11 @@ export function Inventory() {
             </p>
           </div>
           <div className='flex items-center gap-3'>
+            {viewMode === 'MANAGED' && (
+              <Button variant='outline' size='sm' className='h-8 text-xs' onClick={() => setBulkOpen(true)}>
+                <Layers className='h-4 w-4 mr-1' /> Bulk Adjust
+              </Button>
+            )}
             <div className='flex items-center gap-1.5 bg-muted/40 p-1 border rounded-lg shrink-0'>
               <Button
                 variant={viewMode === 'MANAGED' ? 'secondary' : 'ghost'}
@@ -460,7 +466,7 @@ export function Inventory() {
             <Filter className="h-4 w-4" /> Filters:
           </div>
           <Input placeholder="Search name or SKU..." className="h-9 w-[200px] bg-background" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
-          <Select value={inventoryStatus} onValueChange={(v) => setInventoryStatus(v as any)}>
+          <Select value={inventoryStatus} onValueChange={(v) => { setInventoryStatus(v as any); setPage(1) }}>
             <SelectTrigger className="h-9 w-[160px] bg-background"><SelectValue placeholder="Inventory" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Products</SelectItem>
@@ -470,7 +476,7 @@ export function Inventory() {
             </SelectContent>
           </Select>
           {viewMode === 'PHYSICAL' && (
-            <Select value={selectedWarehouse} onValueChange={(v) => { setSelectedWarehouse(v); setSelectedBin('all_bins') }}>
+            <Select value={selectedWarehouse} onValueChange={(v) => { setSelectedWarehouse(v); setSelectedBin('all_bins'); setPage(1) }}>
               <SelectTrigger className="h-9 w-[180px] bg-background"><SelectValue placeholder="Warehouse" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all_wh">All Warehouses</SelectItem>
@@ -481,7 +487,7 @@ export function Inventory() {
             </Select>
           )}
           {viewMode === 'PHYSICAL' && selectedWarehouse !== 'all_wh' && binLocations && binLocations.length > 0 && (
-            <Select value={selectedBin} onValueChange={setSelectedBin}>
+            <Select value={selectedBin} onValueChange={(v) => { setSelectedBin(v); setPage(1) }}>
               <SelectTrigger className="h-9 w-[160px] bg-background"><SelectValue placeholder="Bin Location" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all_bins">All Bins</SelectItem>
@@ -492,7 +498,7 @@ export function Inventory() {
               </SelectContent>
             </Select>
           )}
-          <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+          <Select value={selectedStatus} onValueChange={(v) => { setSelectedStatus(v); setPage(1) }}>
             <SelectTrigger className="h-9 w-[150px] bg-background"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all_status">All Statuses</SelectItem>
@@ -555,6 +561,19 @@ export function Inventory() {
                       <Loader2 className="animate-spin h-6 w-6 mx-auto text-muted-foreground" />
                     </TableCell>
                   </TableRow>
+                ) : isError ? (
+                  <TableRow>
+                    <TableCell colSpan={viewMode === 'PHYSICAL' ? 8 : 7} className="text-center py-12">
+                      <p className="text-sm text-destructive mb-2">Failed to load stock data.</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { refetchStock(); if (viewMode === 'PHYSICAL') refetchPhysical() }}
+                      >
+                        Retry
+                      </Button>
+                    </TableCell>
+                  </TableRow>
                 ) : stockLevels.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={viewMode === 'PHYSICAL' ? 8 : 7} className="text-center py-12 text-muted-foreground">
@@ -567,7 +586,7 @@ export function Inventory() {
                       <TableRow className={`cursor-pointer hover:bg-muted/50 transition-colors ${p.status === 'negative' ? 'bg-red-50/50 dark:bg-red-950/20' : ''}`} onClick={() => handleRowClick(p)}>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            {(viewMode === 'MANAGED' || viewMode === 'PHYSICAL') && p.raw?.type === 'variable' ? (
+                            {p.raw?.type === 'variable' || (p as any)._expandable ? (
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -605,7 +624,9 @@ export function Inventory() {
                           <div className="text-xs text-muted-foreground mt-1 flex gap-2">
                             {p.lot !== '—' && <span>Lot: {p.lot}</span>}
                             {p.expiry !== '—' && <span className="text-amber-600">Exp: {p.expiry}</span>}
-                            <Badge variant='outline' className='text-[10px] font-mono'>{availabilityModeLabel(p.availabilityMode)}</Badge>
+                            {p.availabilityMode && (
+                              <Badge variant='outline' className='text-[10px] font-mono'>{availabilityModeLabel(p.availabilityMode)}</Badge>
+                            )}
                           </div>
                         </TableCell>
                         {viewMode === 'PHYSICAL' && (
@@ -720,9 +741,13 @@ export function Inventory() {
                           )
                         })
                       }
-                      {(p as any).raw?.type === 'variable' && expandedRows[p.id] && viewMode === 'PHYSICAL' && (p as any)._physicalVariants &&
+                      {expandedRows[p.id] && viewMode === 'PHYSICAL' && (p as any)._physicalVariants &&
                         (p as any)._physicalVariants.map((pv: any) => {
-                          const attrs = pv.variant?.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ') || 'Default'
+                          // Variant rows are labelled by their attributes;
+                          // simple-product rows are per-location records, so
+                          // they are labelled by their bin instead.
+                          const attrs = pv.variant?.attributeValues?.map((av: any) => av.attributeValue?.value).join(' / ')
+                            || (pv.variantId ? 'Default' : pv.binLocation?.code ? `Bin ${pv.binLocation.code}` : 'No bin assigned')
                           const variantImg = pv.variant?.image || p.image
                           const pvAvail = (pv.quantity || 0) - (pv.reservedQuantity || 0)
                           return (
@@ -739,7 +764,7 @@ export function Inventory() {
                                   <div>
                                     <div className="font-semibold text-sm">{attrs}</div>
                                     <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
-                                      <span>SKU: {pv.variant?.sku || pv.sku || '—'}</span>
+                                      <span>SKU: {pv.variant?.sku || p.sku || '—'}</span>
                                     </div>
                                   </div>
                                 </div>
@@ -784,10 +809,14 @@ export function Inventory() {
           </CardContent>
         </Card>
 
-        {stockData?.meta && totalPages > 1 && (
+        {totalPages > 1 && (
           <div className="flex items-center justify-between">
             <div className="text-sm text-muted-foreground">
-              {`${(stockData.meta.page - 1) * stockData.meta.perPage + 1}-${Math.min(stockData.meta.page * stockData.meta.perPage, stockData.meta.total)} of ${stockData.meta.total}`}
+              {viewMode === 'PHYSICAL'
+                ? `${(page - 1) * perPage + 1}-${Math.min(page * perPage, stockRows.length)} of ${stockRows.length}`
+                : stockData?.meta
+                  ? `${(stockData.meta.page - 1) * stockData.meta.perPage + 1}-${Math.min(stockData.meta.page * stockData.meta.perPage, stockData.meta.total)} of ${stockData.meta.total}`
+                  : ''}
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>
@@ -814,11 +843,20 @@ export function Inventory() {
         productId={adjustProductId} 
         variantId={adjustVariantId}
         variantName={adjustVariantName}
-        productName={stockLevels.find(p => p.productId === adjustProductId)?.name}
+        productName={stockRows.find(p => p.productId === adjustProductId)?.name}
         availabilityMode={adjustAvailabilityMode}
         onSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
           queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
+        }}
+      />
+
+      <BulkAdjustDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
+          queryClient.invalidateQueries({ queryKey: ['inventory', 'low-stock'] })
         }}
       />
     </>

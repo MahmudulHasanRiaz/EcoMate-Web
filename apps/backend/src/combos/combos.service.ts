@@ -7,12 +7,14 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateComboDto, UpdateComboDto } from './dto/combos.dto';
 import { MediaService } from '../media/media.service';
+import { StockRouterService } from '../stock/stock-router.service';
 
 @Injectable()
 export class CombosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly media: MediaService,
+    private readonly stockRouter: StockRouterService,
   ) {}
 
   private buildWhere(query: {
@@ -254,12 +256,54 @@ export class CombosService {
       select: {
         id: true,
         name: true,
+        availabilityMode: true,
         managedStockQuantity: true,
+        reservedStock: true,
         manageStock: true,
-        variants: { select: { id: true, managedStockQuantity: true } },
+        variants: {
+          select: { id: true, managedStockQuantity: true, reservedStock: true },
+        },
       },
     });
     const productMap = new Map(products.map((p) => [p.id, p]));
+
+    // Mode-aware availability (owner rule): each component is checked
+    // against the layer its OWN availabilityMode sells from — the old check
+    // read the parent managed counter for every mode and every variant.
+    // INVENTORY_CONTROLLED components read physical availability summed
+    // across all warehouses (a combo is fulfilled from wherever stock sits).
+    const imEnabled =
+      await this.stockRouter.isInventoryManagementEnabled();
+    const icProductIds = products
+      .filter((p) => p.availabilityMode === 'INVENTORY_CONTROLLED')
+      .map((p) => p.id);
+    const physicalByProduct = new Map<string, number>();
+    const physicalByVariant = new Map<string, number>();
+    if (imEnabled && icProductIds.length > 0) {
+      const rows = await this.prisma.physicalInventory.findMany({
+        where: { productId: { in: icProductIds } },
+        select: {
+          productId: true,
+          variantId: true,
+          quantity: true,
+          reservedQuantity: true,
+        },
+      });
+      for (const row of rows) {
+        const available = Math.max(0, row.quantity - row.reservedQuantity);
+        physicalByProduct.set(
+          row.productId,
+          (physicalByProduct.get(row.productId) ?? 0) + available,
+        );
+        if (row.variantId) {
+          physicalByVariant.set(
+            row.variantId,
+            (physicalByVariant.get(row.variantId) ?? 0) + available,
+          );
+        }
+      }
+    }
+
     for (const item of items) {
       const product = productMap.get(item.productId);
       if (!product)
@@ -273,7 +317,39 @@ export class CombosService {
             `Variant ${item.variantId} does not belong to product ${item.productId}`,
           );
       }
-      if (product.manageStock && item.quantity > product.managedStockQuantity) {
+
+      const mode = product.availabilityMode ?? 'MANAGED_STOCK';
+      if (mode === 'ALWAYS_IN_STOCK') continue;
+      if (mode === 'ALWAYS_OUT_OF_STOCK') {
+        throw new BadRequestException(
+          `Product "${product.name}" is always out of stock and cannot be added to a combo`,
+        );
+      }
+      if (mode === 'INVENTORY_CONTROLLED') {
+        if (!imEnabled) {
+          throw new BadRequestException(
+            `Product "${product.name}" is stocked in physical inventory, but Inventory Management is disabled — it cannot be added to a combo`,
+          );
+        }
+        const available = item.variantId
+          ? (physicalByVariant.get(item.variantId) ?? 0)
+          : (physicalByProduct.get(item.productId) ?? 0);
+        if (item.quantity > available) {
+          throw new BadRequestException(
+            `Insufficient stock for product "${product.name}"`,
+          );
+        }
+        continue;
+      }
+      // MANAGED_STOCK: a product that does not track stock is not gated.
+      if (!product.manageStock) continue;
+      const variant = item.variantId
+        ? product.variants.find((v) => v.id === item.variantId)
+        : undefined;
+      const available = variant
+        ? variant.managedStockQuantity - (variant.reservedStock ?? 0)
+        : product.managedStockQuantity - (product.reservedStock ?? 0);
+      if (item.quantity > available) {
         throw new BadRequestException(
           `Insufficient stock for product "${product.name}"`,
         );

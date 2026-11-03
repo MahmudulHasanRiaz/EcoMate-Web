@@ -173,12 +173,32 @@ export class StockService {
     throw new BadRequestException('productId, variantId, or comboId required');
   }
 
+  /**
+   * Apply one managed-counter move (on-hand or reserved) to every target.
+   *
+   * Returns the set of target keys (`productId|variantId`) whose counters
+   * ACTUALLY moved, so callers can write ledger rows only for real legs —
+   * a skipped leg must never produce a fabricated ledger entry.
+   *
+   * A product's managed leg applies only when the managed engine governs it:
+   * MANAGED_STOCK (or legacy null mode), or INVENTORY_CONTROLLED with
+   * syncManagedStock=true (the router's mirror case). For any other product
+   * the managed leg is a complete no-op — no state change — because its
+   * stock lives in the physical layer (or is not tracked at all).
+   *
+   * `guardAgainstReserved` (scrap): a managedStockQuantity decrement may
+   * only consume UNRESERVED on-hand — reserved units belong to open orders
+   * and cannot be scrapped out from under them.
+   */
   private async applyStockChange(
     targets: StockTarget[],
     field: 'managedStockQuantity' | 'reservedStock',
     op: StockOp,
     tx: Prisma.TransactionClient,
-  ) {
+    opts?: { guardAgainstReserved?: boolean },
+  ): Promise<Set<string>> {
+    const moved = new Set<string>();
+    const targetKey = (t: StockTarget) => `${t.productId}|${t.variantId ?? ''}`;
     const pIds = [...new Set(targets.map((t) => t.productId))];
     const vIds = [
       ...new Set(targets.filter((t) => t.variantId).map((t) => t.variantId!)),
@@ -191,6 +211,7 @@ export class StockService {
         type: true,
         manageStock: true,
         availabilityMode: true,
+        syncManagedStock: true,
         managedStockQuantity: true,
         reservedStock: true,
       },
@@ -231,10 +252,31 @@ export class StockService {
       }
     };
 
-    const isManagedField = (p: { availabilityMode: string | null }) =>
-      field !== 'managedStockQuantity' ||
+    const managedLegApplies = (p: {
+      availabilityMode: string | null;
+      syncManagedStock: boolean;
+    }) =>
       p.availabilityMode === 'MANAGED_STOCK' ||
-      p.availabilityMode === null;
+      p.availabilityMode === null ||
+      (p.availabilityMode === 'INVENTORY_CONTROLLED' &&
+        p.syncManagedStock === true);
+
+    // Available units for the move being attempted. A reservation can only
+    // claim UNRESERVED on-hand; a release can only give back what is held;
+    // a plain on-hand decrement is bounded by on-hand (or, for scrap, by
+    // unreserved on-hand).
+    const availableFor = (
+      onHand: number,
+      reserved: number,
+    ): number => {
+      if (field === 'reservedStock') {
+        return op === 'increment' ? onHand - reserved : reserved;
+      }
+      if (op === 'decrement' && opts?.guardAgainstReserved) {
+        return onHand - reserved;
+      }
+      return onHand;
+    };
 
     for (const t of targets) {
       if (t.variantId) {
@@ -242,24 +284,47 @@ export class StockService {
         if (!v)
           throw new BadRequestException(`Variant ${t.variantId} not found`);
         const p = productMap.get(t.productId);
-        if (!isManagedField(p!)) continue;
-        const avail =
-          field === 'reservedStock'
-            ? (op === 'increment' ? v.managedStockQuantity - v.reservedStock : v.reservedStock)
-            : v.managedStockQuantity;
+        if (!p || !managedLegApplies(p)) continue;
+        const avail = availableFor(v.managedStockQuantity, v.reservedStock);
         if (op === 'decrement' && avail < t.qty) {
           throw new BadRequestException(
             `Insufficient stock variant ${t.variantId}. Available: ${avail}, needed: ${t.qty}.`,
           );
         }
+        // Reserve guard: never hold more than the unreserved on-hand. The
+        // decrement side has always thrown on over-draw; the increment side
+        // silently inflated reservedStock past the physical quantity, which
+        // is how a managed reservation could oversell the product. Products
+        // that do not track stock (manageStock=false) are exempt — their
+        // counters are flag-only and reservations must keep working.
+        if (
+          op === 'increment' &&
+          field === 'reservedStock' &&
+          p.manageStock &&
+          avail < t.qty
+        ) {
+          throw new BadRequestException(
+            `Insufficient stock variant ${t.variantId}. Available: ${avail}, needed: ${t.qty}.`,
+          );
+        }
         await adjust('productVariant', t.variantId, field, t.qty);
+        moved.add(targetKey(t));
         // Also update parent product stock if it manages stock
-        if (p && p.manageStock && p.type === 'simple') {
-          const pAvail =
-            field === 'reservedStock'
-              ? (op === 'increment' ? Number(p.managedStockQuantity) - Number(p.reservedStock) : Number(p.reservedStock))
-              : Number(p.managedStockQuantity);
+        if (p.manageStock && p.type === 'simple') {
+          const pAvail = availableFor(
+            Number(p.managedStockQuantity),
+            Number(p.reservedStock),
+          );
           if (op === 'decrement' && pAvail < t.qty) {
+            throw new BadRequestException(
+              `Insufficient stock product ${t.productId}. Available: ${pAvail}, needed: ${t.qty}.`,
+            );
+          }
+          if (
+            op === 'increment' &&
+            field === 'reservedStock' &&
+            pAvail < t.qty
+          ) {
             throw new BadRequestException(
               `Insufficient stock product ${t.productId}. Available: ${pAvail}, needed: ${t.qty}.`,
             );
@@ -270,47 +335,99 @@ export class StockService {
         const p = productMap.get(t.productId);
         if (!p)
           throw new BadRequestException(`Product ${t.productId} not found`);
-        if (!isManagedField(p)) continue;
-        const avail =
-          field === 'reservedStock'
-            ? (op === 'increment' ? p.managedStockQuantity - p.reservedStock : p.reservedStock)
-            : p.managedStockQuantity;
+        if (!managedLegApplies(p)) continue;
+        const avail = availableFor(p.managedStockQuantity, p.reservedStock);
         if (op === 'decrement' && !p.manageStock) continue; // skip non-managed stock
         if (op === 'decrement' && avail < t.qty) {
           throw new BadRequestException(
             `Insufficient stock product ${t.productId}. Available: ${avail}, needed: ${t.qty}.`,
           );
         }
+        if (
+          op === 'increment' &&
+          field === 'reservedStock' &&
+          p.manageStock &&
+          avail < t.qty
+        ) {
+          throw new BadRequestException(
+            `Insufficient stock product ${t.productId}. Available: ${avail}, needed: ${t.qty}.`,
+          );
+        }
         await adjust('product', t.productId, field, t.qty);
+        moved.add(targetKey(t));
       }
     }
+    return moved;
   }
 
+  /**
+   * Cost a managed deduction through the costing-lot FIFO.
+   *
+   * The legacy implementation consumed the OLDEST lot of the product across
+   * ALL warehouses, skipped variant targets entirely, wrote no consumption
+   * records, and silently stopped at the first warehouse gap (warn + break)
+   * — cost silently leaked between warehouses and left no audit trail.
+   *
+   * Now delegated to CostingLotService.consumeFIFO, which is scoped by
+   * product + variant + warehouse, claims each lot with a guarded
+   * updateMany, and writes one CostingLotConsumption row per lot. The
+   * warehouse is the operation's warehouse when the caller supplies one,
+   * else the product's home warehouse, else the warehouse holding the
+   * product's physical stock.
+   *
+   * Shortfall policy: consumeFIFO is called with allowShortfall — a shortfall
+   * is logged at ERROR level with the full reference (never a buried warn),
+   * but it does not roll back the stock movement. Managed stock can
+   * legitimately exist without lots (manual managed adjustments and seeded
+   * stock create none), so hard-failing the deduction would newly block
+   * dispatches that work today.
+   */
   private async deductCostingLots(
     targets: StockTarget[],
+    params: StockOperationParams,
     tx: Prisma.TransactionClient,
   ) {
+    // One reference per operate() call: the caller's reference keeps the
+    // consumption rows traceable, the suffix keeps the (referenceType,
+    // referenceId, costingLotId, type) unique key collision-free across
+    // repeated deductions for the same order.
+    const referenceId = `${params.reference}#${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
     for (const t of targets) {
-      if (t.variantId) continue;
-      let remaining = t.qty;
-      while (remaining > 0) {
-        const lot = await tx.costingLot.findFirst({
-          where: { productId: t.productId, remainingQty: { gt: 0 } },
-          orderBy: { receivedAt: 'asc' },
+      let warehouseId = params.warehouseId ?? null;
+      if (!warehouseId) {
+        const product = await tx.product.findUnique({
+          where: { id: t.productId },
+          select: { warehouseId: true },
         });
-        if (!lot) {
-          this.logger.warn(
-            `No costing lot for product ${t.productId}, remaining ${remaining}`,
-          );
-          break;
-        }
-        const deduct = Math.min(remaining, lot.remainingQty);
-        await tx.costingLot.update({
-          where: { id: lot.id },
-          data: { remainingQty: { decrement: deduct } },
-        });
-        remaining -= deduct;
+        warehouseId = product?.warehouseId ?? null;
       }
+      if (!warehouseId) {
+        const firstStock = await tx.physicalInventory.findFirst({
+          where: { productId: t.productId, variantId: t.variantId },
+          select: { warehouseId: true },
+        });
+        warehouseId = firstStock?.warehouseId ?? null;
+      }
+      if (!warehouseId) {
+        this.logger.error(
+          `Cannot cost deduction for product ${t.productId}: no warehouse resolvable ` +
+            `(reference ${params.reference}); skipping costing for this target.`,
+        );
+        continue;
+      }
+      await this.costingLotService.consumeFIFO({
+        productId: t.productId,
+        variantId: t.variantId,
+        warehouseId,
+        quantity: t.qty,
+        type: 'FULFILLMENT',
+        referenceType: 'STOCK_DEDUCT',
+        referenceId,
+        tx,
+        allowShortfall: true,
+      });
     }
   }
 
@@ -554,7 +671,32 @@ export class StockService {
           reservedQuantity: Number(existing.reservedQuantity ?? 0),
         };
 
-        if (op === 'decrement') {
+        if (op === 'increment' && field === 'reservedQuantity') {
+          // A non-allocated reservation may only hold stock that EXISTS and
+          // is not already held: quantity − reservedQuantity >= qty. The old
+          // path incremented reservedQuantity unconditionally, so a reserve
+          // could push reserved past on-hand and every availability figure
+          // downstream went negative. The write is a compare-and-swap on the
+          // reservedQuantity just read — a concurrent hold or
+          // reservation-consuming deduct that changed it fails the claim
+          // instead of over-reserving.
+          const available = before.quantity - before.reservedQuantity;
+          if (available < t.qty) {
+            throw new BadRequestException(
+              `Insufficient available physical stock to reserve for product ${t.productId}${t.variantId ? ` variant ${t.variantId}` : ''} in warehouse ${t.warehouseId}${t.binLocationId ? ` bin ${t.binLocationId}` : ''}. ` +
+                `Available: ${available}, needed: ${t.qty}.`,
+            );
+          }
+          const claimed = await tx.physicalInventory.updateMany({
+            where: { id: existing.id, reservedQuantity: before.reservedQuantity },
+            data: { reservedQuantity: { increment: t.qty } },
+          });
+          if (claimed.count === 0) {
+            throw new ConflictException(
+              `Physical reservation for product ${t.productId}${t.variantId ? ` variant ${t.variantId}` : ''} in warehouse ${t.warehouseId} raced another stock movement — retry.`,
+            );
+          }
+        } else if (op === 'decrement') {
           // Guarded decrement. A bare `update({ where: {id} })` re-reads the
           // row and decrements whatever it finds, so two concurrent movements
           // out of the same bin both succeed and the row ends up NEGATIVE —
@@ -599,22 +741,32 @@ export class StockService {
           moved: t.qty,
         });
       } else {
+        if (field === 'reservedQuantity') {
+          // Reserving against a row that does not exist would seed a row
+          // with reservedQuantity > quantity — a phantom hold on stock that
+          // was never there. Mirror the decrement-on-missing behaviour and
+          // refuse; stock must be received (add) before it can be held.
+          throw new BadRequestException(
+            `No physical inventory record for product ${t.productId}${t.variantId ? ` variant ${t.variantId}` : ''} in warehouse ${t.warehouseId}${t.binLocationId ? ` bin ${t.binLocationId}` : ''}`,
+          );
+        }
+        // Past the throw-guard above, field is provably 'quantity'
+        // (a reservedQuantity create is refused), so the seed is explicit.
         const created = await tx.physicalInventory.create({
           data: {
             productId: t.productId,
             variantId: t.variantId || null,
             warehouseId: t.warehouseId,
             binLocationId: t.binLocationId || null,
-            quantity: field === 'quantity' ? (op === 'increment' ? t.qty : 0) : 0,
-            reservedQuantity:
-              field === 'reservedQuantity' ? (op === 'increment' ? t.qty : 0) : 0,
+            quantity: op === 'increment' ? t.qty : 0,
+            reservedQuantity: 0,
           },
           select: { id: true, binLocationId: true },
         });
         const zero = { quantity: 0, reservedQuantity: 0 };
         const seeded = {
-          quantity: field === 'quantity' ? t.qty : 0,
-          reservedQuantity: field === 'reservedQuantity' ? t.qty : 0,
+          quantity: t.qty,
+          reservedQuantity: 0,
         };
         snapshots.push({
           physicalInventoryId: created.id,
@@ -817,24 +969,58 @@ export class StockService {
     params: StockOperationParams,
   ) {
     const exec = async (tx: Prisma.TransactionClient) => {
-      const targets = await this.resolveTargets(params, tx);
+      let targets = await this.resolveTargets(params, tx);
+      let effectiveOperation = operation;
+
+      // Mirror operatePhysical's negative-quantity contract: a negative
+      // quantity is a magnitude plus a direction flip for 'add' (a negative
+      // add is a removal). Without this, a negative reserve/deduct fed the
+      // raw negative into the counters and inverted the movement.
+      if (params.quantity < 0) {
+        targets = targets.map((t) => ({ ...t, qty: Math.abs(t.qty) }));
+        if (operation === 'add') {
+          effectiveOperation = 'deduct';
+        }
+      }
+
+      // Aggregate duplicate targets (same product + variant) BEFORE any
+      // availability check, like the physical path: a combo listing the
+      // same component twice (or a repeated line) must be guarded on the
+      // SUM, not pass twice on partial quantities.
+      const aggregated = new Map<string, StockTarget>();
+      for (const t of targets) {
+        const key = `${t.productId}|${t.variantId ?? ''}`;
+        const existing = aggregated.get(key);
+        if (existing) {
+          existing.qty += t.qty;
+        } else {
+          aggregated.set(key, { ...t });
+        }
+      }
+      targets = [...aggregated.values()];
+
       await this.lockRows(targets, tx);
 
-      if (operation === 'reserve') {
-        await this.applyStockChange(targets, 'reservedStock', 'increment', tx);
+      const targetKey = (t: StockTarget) => `${t.productId}|${t.variantId ?? ''}`;
+      const movedOnly = (moved: Set<string>) =>
+        targets.filter((t) => moved.has(targetKey(t)));
+
+      if (effectiveOperation === 'reserve') {
+        const moved = await this.applyStockChange(targets, 'reservedStock', 'increment', tx);
+        const movedTargets = movedOnly(moved);
         await this.logInventory(
-          targets,
+          movedTargets,
           'reserve',
           `Reserved for ${params.reference}`,
           params.performedBy,
           tx,
         );
-        for (const t of targets) {
+        for (const t of movedTargets) {
           const p = await tx.product.findUnique({
             where: { id: t.productId },
             select: { availabilityMode: true, managedStockQuantity: true, reservedStock: true },
           });
-          if (p?.availabilityMode === 'MANAGED_STOCK') {
+          if (p) {
             let currentStock = 0;
             let currentReserved = 0;
             if (t.variantId) {
@@ -877,21 +1063,22 @@ export class StockService {
             });
           }
         }
-      } else if (operation === 'release') {
-        await this.applyStockChange(targets, 'reservedStock', 'decrement', tx);
+      } else if (effectiveOperation === 'release') {
+        const moved = await this.applyStockChange(targets, 'reservedStock', 'decrement', tx);
+        const movedTargets = movedOnly(moved);
         await this.logInventory(
-          targets,
+          movedTargets,
           'release',
           `Released for ${params.reference}`,
           params.performedBy,
           tx,
         );
-        for (const t of targets) {
+        for (const t of movedTargets) {
           const p = await tx.product.findUnique({
             where: { id: t.productId },
             select: { availabilityMode: true, managedStockQuantity: true, reservedStock: true },
           });
-          if (p?.availabilityMode === 'MANAGED_STOCK') {
+          if (p) {
             let currentStock = 0;
             let currentReserved = 0;
             if (t.variantId) {
@@ -934,26 +1121,32 @@ export class StockService {
             });
           }
         }
-      } else if (operation === 'deduct') {
-        await this.applyStockChange(
+      } else if (effectiveOperation === 'deduct') {
+        const qtyMoved = await this.applyStockChange(
           targets,
           'managedStockQuantity',
           'decrement',
           tx,
         );
-        await this.applyStockChange(targets, 'reservedStock', 'decrement', tx);
+        const reservedMoved = await this.applyStockChange(targets, 'reservedStock', 'decrement', tx);
+        // Ledger + costing cover the legs that actually moved (on-hand
+        // and/or the released hold). A target skipped by both — a product
+        // the managed engine does not govern — gets no fabricated rows.
+        const movedTargets = movedOnly(
+          new Set([...qtyMoved, ...reservedMoved]),
+        );
         if (!params.skipCostingLotDeduct) {
-          await this.deductCostingLots(targets, tx);
+          await this.deductCostingLots(movedTargets, params, tx);
         }
         await this.logInventory(
-          targets,
+          movedTargets,
           'order_fulfilled',
           `Deducted for ${params.reference}`,
           params.performedBy,
           tx,
         );
         await this.logManagedStockLedger(
-          targets,
+          movedTargets,
           'OUT',
           'ORDER_DEDUCTION',
           'ORDER',
@@ -962,15 +1155,16 @@ export class StockService {
           `Deducted for ${params.reference}`,
           tx,
         );
-      } else if (operation === 'add') {
-        await this.applyStockChange(
+      } else if (effectiveOperation === 'add') {
+        const moved = await this.applyStockChange(
           targets,
           'managedStockQuantity',
           'increment',
           tx,
         );
+        const movedTargets = movedOnly(moved);
         await this.logInventory(
-          targets,
+          movedTargets,
           params.reference.startsWith('GRN-') ||
             params.reference.startsWith('PO-')
             ? 'purchase_receive'
@@ -980,7 +1174,7 @@ export class StockService {
           tx,
         );
         await this.logManagedStockLedger(
-          targets,
+          movedTargets,
           'IN',
           (params.ledgerType as Prisma.$ManagedStockLedgerPayload['scalars']['type']) || 'MANUAL_ADD',
           (params.referenceType as Prisma.$ManagedStockLedgerPayload['scalars']['referenceType']) || 'MANUAL',
@@ -989,22 +1183,26 @@ export class StockService {
           `Added via ${params.reference}`,
           tx,
         );
-      } else if (operation === 'scrap') {
-        await this.applyStockChange(
+      } else if (effectiveOperation === 'scrap') {
+        // Scrap may only consume UNRESERVED on-hand (guardAgainstReserved):
+        // reserved units belong to open orders.
+        const moved = await this.applyStockChange(
           targets,
           'managedStockQuantity',
           'decrement',
           tx,
+          { guardAgainstReserved: true },
         );
+        const movedTargets = movedOnly(moved);
         await this.logInventory(
-          targets,
+          movedTargets,
           'scrap',
           `Scrapped: ${params.reference}`,
           params.performedBy,
           tx,
         );
         await this.logManagedStockLedger(
-          targets,
+          movedTargets,
           'OUT',
           (params.ledgerType as Prisma.$ManagedStockLedgerPayload['scalars']['type']) || 'MANUAL_REMOVE',
           'MANUAL',
@@ -1093,7 +1291,10 @@ export class StockService {
     const totalReserved = records.reduce((sum, r) => sum + r.reservedQuantity, 0);
     const availableStock = totalQty - totalReserved;
     return {
-      available: totalQty > 0,
+      // Available means something can actually be taken: stock that is
+      // fully reserved (availableStock 0) is NOT available, even though
+      // on-hand is positive.
+      available: availableStock > 0,
       currentStock: totalQty,
       reserved: totalReserved,
       availableStock,
@@ -1499,9 +1700,11 @@ export class StockService {
     quantity: number;
     unitCost: number;
     reference: string;
+    /** Caller's transaction — costing writes must join it (see below). */
+    tx?: Prisma.TransactionClient;
   }) {
     const lotNumber = `ADJ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    await this.prisma.costingLot.create({
+    await (params.tx ?? this.prisma).costingLot.create({
       data: {
         productId: params.productId,
         variantId: params.variantId,
@@ -1521,6 +1724,8 @@ export class StockService {
     variantId?: string;
     warehouseId: string;
     quantity: number;
+    /** Caller's transaction — costing writes must join it (see below). */
+    tx?: Prisma.TransactionClient;
   }) {
     await this.costingLotService.consumeFIFO({
       productId: params.productId,
@@ -1532,6 +1737,7 @@ export class StockService {
       type: 'ADJUSTMENT',
       referenceType: 'ADJUSTMENT',
       referenceId: `ADJ-${Date.now()}`,
+      tx: params.tx,
       // A manual adjustment corrects physical stock, which may legitimately be
       // ahead of the received/received-costed quantity. Failing the adjustment
       // would leave stock that is demonstrably there un-recorded; the cost gap
@@ -1614,11 +1820,15 @@ export class StockService {
             unitCost: item.unitCost,
             tx,
           });
+          // Costing joins THIS transaction: previously the helper wrote
+          // through the root client, so a rolled-back adjustment still
+          // consumed/created lots (and a committed one could lose them).
           await this.deductCostingLotsForAdjustment({
             productId: item.productId,
             variantId: item.variantId,
             warehouseId: params.warehouseId,
             quantity: Math.abs(item.quantity),
+            tx,
           });
         } else if (finalOp === 'add') {
           const snaps = await this.applyPhysicalChange(
@@ -1645,6 +1855,7 @@ export class StockService {
               quantity: item.quantity,
               unitCost: item.unitCost,
               reference: params.reason,
+              tx,
             });
           }
           if (item.binLocationId) {
@@ -1728,7 +1939,77 @@ export class StockService {
         include: { product: { select: { id: true, name: true, sku: true, images: true } }, warehouse: true },
         orderBy: { updatedAt: 'desc' },
       });
-      results.push(...phys);
+
+      // Attach the order reference + "reserved since" date from the
+      // reservation RECORDS. A PhysicalInventory row is an aggregate — it
+      // has no order of its own — so resolve the ACTIVE PhysicalReservation
+      // / ComboComponentPhysicalReservation rows for the same
+      // product+variant+warehouse and surface the earliest one's createdAt
+      // (stock has been held since then) plus every linked order.
+      const reservationWhere: any = { status: 'ACTIVE' };
+      if (warehouseId && warehouseId !== 'all') reservationWhere.warehouseId = warehouseId;
+      if (productId) reservationWhere.productId = productId;
+      const [itemReservations, comboReservations] = await Promise.all([
+        this.prisma.physicalReservation.findMany({
+          where: reservationWhere,
+          orderBy: { createdAt: 'asc' },
+        }),
+        this.prisma.comboComponentPhysicalReservation.findMany({
+          where: reservationWhere,
+          orderBy: { createdAt: 'asc' },
+        }),
+      ]);
+      const allReservations = [...itemReservations, ...comboReservations];
+      const reservationOrderIds = [...new Set(allReservations.map((r) => r.orderId))];
+      const reservationOrders = reservationOrderIds.length
+        ? await this.prisma.order.findMany({
+            where: { id: { in: reservationOrderIds } },
+            select: { id: true, displayId: true },
+          })
+        : [];
+      const displayIdByOrderId = new Map(
+        reservationOrders.map((o) => [o.id, o.displayId]),
+      );
+      const reservationsByStockKey = new Map<string, any[]>();
+      for (const r of allReservations) {
+        const key = `${r.productId}|${r.variantId ?? ''}|${r.warehouseId}`;
+        const entry = {
+          id: r.id,
+          orderId: r.orderId,
+          orderDisplayId: displayIdByOrderId.get(r.orderId) ?? null,
+          quantity: r.quantity,
+          createdAt: r.createdAt,
+        };
+        const list = reservationsByStockKey.get(key);
+        if (list) list.push(entry);
+        else reservationsByStockKey.set(key, [entry]);
+      }
+
+      for (const row of phys) {
+        const linked =
+          reservationsByStockKey.get(
+            `${row.productId}|${row.variantId ?? ''}|${row.warehouseId}`,
+          ) ?? [];
+        const earliest = linked[0] ?? null;
+        // "Reserved since" is the reservation record's createdAt — never
+        // the PI row's updatedAt (any stock movement bumps that). Rows with
+        // no reservation record (legacy non-allocated holds) fall back to
+        // the PI row's own createdAt.
+        const reservedSince = earliest?.createdAt ?? row.createdAt;
+        const distinctOrderIds = [...new Set(linked.map((l) => l.orderId))];
+        results.push({
+          ...row,
+          orderId: distinctOrderIds.length === 1 ? distinctOrderIds[0] : null,
+          orderDisplayId:
+            distinctOrderIds.length === 1
+              ? (displayIdByOrderId.get(distinctOrderIds[0]) ?? null)
+              : null,
+          createdAt: reservedSince,
+          reservedSince,
+          updatedAt: reservedSince,
+          reservations: linked,
+        });
+      }
     }
 
     if (showManaged) {
@@ -1739,7 +2020,7 @@ export class StockService {
         include: {
           product: { select: { id: true, name: true, sku: true, images: true } },
           variant: { select: { id: true, sku: true, managedStockQuantity: true, reservedStock: true } },
-          order: { select: { displayId: true, updatedAt: true } },
+          order: { select: { id: true, displayId: true, updatedAt: true } },
         },
       });
 
@@ -1748,7 +2029,7 @@ export class StockService {
       const managedComboComps = await this.prisma.orderItemComboComponent.findMany({
         where: comboCompWhere,
         include: {
-          orderItem: { include: { order: { select: { displayId: true, updatedAt: true } } } },
+          orderItem: { include: { order: { select: { id: true, displayId: true, updatedAt: true } } } },
         },
       });
 
@@ -1782,7 +2063,15 @@ export class StockService {
           warehouseId: 'managed',
           quantity: item.variant ? item.variant.managedStockQuantity : ((item.product as any)?.managedStockQuantity ?? 0),
           reservedQuantity: item.quantity,
-          updatedAt: item.order.updatedAt,
+          // The orderItem IS the managed reservation record: link its order
+          // and date the hold from the record's own createdAt. The order's
+          // updatedAt (previously used here) moves on every order edit and
+          // says nothing about when the stock was reserved.
+          orderId: item.order.id,
+          orderDisplayId: item.order.displayId,
+          createdAt: item.createdAt,
+          reservedSince: item.createdAt,
+          updatedAt: item.createdAt,
           product: {
             id: item.product?.id,
             name: item.product?.name + variantLabel,
@@ -1809,7 +2098,11 @@ export class StockService {
           warehouseId: 'managed',
           quantity: variant ? variant.managedStockQuantity : (prod?.managedStockQuantity ?? 0),
           reservedQuantity: comp.totalQuantity,
-          updatedAt: comp.orderItem.order.updatedAt,
+          orderId: comp.orderItem.order.id,
+          orderDisplayId: comp.orderItem.order.displayId,
+          createdAt: comp.createdAt,
+          reservedSince: comp.createdAt,
+          updatedAt: comp.createdAt,
           product: {
             id: prod?.id,
             name: (prod?.name ?? 'Unknown Component') + variantLabel,

@@ -41,6 +41,15 @@ const emptyReport = {
 
 function makeService(opts: any = {}) {
   const tx: any = {
+    // WS3: Apply takes a transaction-scoped advisory lock first, then the
+    // stale sweep + RUNNING check + run create all run inside that tx.
+    $executeRaw: jest.fn(async () => 0),
+    reconciliationRun: {
+      updateMany: jest.fn(async () => ({ count: 0 })),
+      findFirst: jest.fn(async () => opts.runningRun ?? null),
+      create: jest.fn(async () => ({ id: 'run-1' })),
+      update: jest.fn(async () => ({})),
+    },
     return: {
       findUnique: jest.fn(async () => ({
         id: 'r1',
@@ -53,6 +62,12 @@ function makeService(opts: any = {}) {
       findUnique: jest.fn(async () => ({
         availabilityMode: 'MANAGED_STOCK',
         warehouseId: null,
+      })),
+    },
+    // WS3: applyRow caps the restore at the ordered quantity via the order.
+    order: {
+      findUnique: jest.fn(async () => ({
+        items: [{ productId: 'p1', variantId: 'v1', quantity: 2 }],
       })),
     },
     managedStockLedger: {
@@ -98,6 +113,10 @@ function makeService(opts: any = {}) {
       .mockResolvedValue(opts.postReport ?? emptyReport),
     managedRestoredByReturn: realFinder.managedRestoredByReturn.bind(realFinder),
     physicalRestoredByReturn: realFinder.physicalRestoredByReturn.bind(realFinder),
+    // WS3: applyRow also sums the blanket order-keyed evidence so a
+    // blanket-restored return is never restored a second time.
+    managedRestoredByOrder: realFinder.managedRestoredByOrder.bind(realFinder),
+    physicalRestoredByOrder: realFinder.physicalRestoredByOrder.bind(realFinder),
   };
 
   const stockService: any = { operate: jest.fn(async () => []) };
@@ -121,10 +140,10 @@ describe('ReconciliationApplyService', () => {
   });
 
   it('applies a still-R1 row via the receive-path managed add and records the actor', async () => {
-    const { service, prisma, stockService } = makeService();
+    const { service, prisma, stockService, tx } = makeService();
     const result = await service.apply({
       performedBy: 'boss@example.com',
-      backupId: 'dump-1',
+      backupId: 'dump-1', confirmed: true,
       rowIds: [R1_ROW.id],
     });
     expect(result.applied).toEqual([R1_ROW.id]);
@@ -141,8 +160,9 @@ describe('ReconciliationApplyService', () => {
         performedBy: 'boss@example.com',
       }),
     );
-    // The audit record carries the token-side actor + backup id.
-    expect(prisma.reconciliationRun.create).toHaveBeenCalledWith({
+    // The audit record carries the token-side actor + backup id. (WS3: the
+    // run row is created inside the lock-holding transaction, hence tx.)
+    expect(tx.reconciliationRun.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         performedBy: 'boss@example.com',
         backupId: 'dump-1',
@@ -156,20 +176,22 @@ describe('ReconciliationApplyService', () => {
     const { service, prisma, stockService } = makeService({ rows: [R4_ROW] });
     const result = await service.apply({
       performedBy: 'boss@example.com',
-      backupId: 'dump-1',
+      backupId: 'dump-1', confirmed: true,
       rowIds: [R4_ROW.id],
     });
     expect(result.applied).toEqual([]);
     expect(result.skipped[0].reason).toContain('never applied');
     expect(stockService.operate).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    // WS3 note: the run-record transaction (advisory lock + RUNNING row)
+    // DOES open — it audits the attempt; the invariant that matters is
+    // that no stock write happens for an R4 row.
   });
 
   it('skips a row id that no longer qualifies in the fresh report', async () => {
     const { service, stockService } = makeService({ rows: [] });
     const result = await service.apply({
       performedBy: 'boss@example.com',
-      backupId: 'dump-1',
+      backupId: 'dump-1', confirmed: true,
       rowIds: [R1_ROW.id],
     });
     expect(result.applied).toEqual([]);
@@ -185,7 +207,7 @@ describe('ReconciliationApplyService', () => {
     });
     const result = await service.apply({
       performedBy: 'boss@example.com',
-      backupId: 'dump-1',
+      backupId: 'dump-1', confirmed: true,
       rowIds: [R1_ROW.id],
     });
     expect(result.applied).toEqual([]);
@@ -195,17 +217,18 @@ describe('ReconciliationApplyService', () => {
 
   it('refuses while STOCK_RECONCILE_ON_BOOT=true is in env', async () => {
     process.env['STOCK_RECONCILE_ON_BOOT'] = 'true';
-    const { service, prisma } = makeService();
+    const { service, prisma, tx } = makeService();
     await expect(
-      service.apply({ performedBy: 'boss@example.com', backupId: 'd', rowIds: [] }),
+      service.apply({ performedBy: 'boss@example.com', backupId: 'd', confirmed: true, rowIds: [] }),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.reconciliationRun.create).not.toHaveBeenCalled();
+    expect(tx.reconciliationRun.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('refuses a concurrent Apply with 409 while another run is RUNNING', async () => {
     const { service } = makeService({ runningRun: { id: 'run-other' } });
     await expect(
-      service.apply({ performedBy: 'boss@example.com', backupId: 'd', rowIds: [] }),
+      service.apply({ performedBy: 'boss@example.com', backupId: 'd', confirmed: true, rowIds: [] }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 });

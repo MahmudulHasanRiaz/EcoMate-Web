@@ -94,7 +94,9 @@ export class CostingLotService {
           remainingQty: { gt: 0 },
           ...(skippedLotIds.length ? { id: { notIn: skippedLotIds } } : {}),
         },
-        orderBy: { receivedAt: 'asc' },
+        // FIFO: oldest receipt first; createdAt breaks ties between lots
+        // received in the same instant so consumption order is deterministic.
+        orderBy: [{ receivedAt: 'asc' }, { createdAt: 'asc' }],
       });
 
       if (!lot) {
@@ -179,7 +181,9 @@ export class CostingLotService {
           remainingQty: { gt: 0 },
           ...(skippedLotIds.length ? { id: { notIn: skippedLotIds } } : {}),
         },
-        orderBy: { receivedAt: 'asc' },
+        // FIFO: oldest receipt first; createdAt breaks ties between lots
+        // received in the same instant so consumption order is deterministic.
+        orderBy: [{ receivedAt: 'asc' }, { createdAt: 'asc' }],
       });
 
       if (!lot) {
@@ -293,6 +297,16 @@ export class CostingLotService {
    *
    * Walks consumptions in reverse (newest first) to find restorable balance.
    * Fails if total restorable < returnQty.
+   *
+   * Idempotent per returnReferenceId: restorations already recorded under
+   * the same reference count toward returnQty, so a duplicate call is a
+   * no-op and a call interrupted mid-way resumes for the remainder only
+   * (the existing restoration row is topped up — @@unique([consumptionId,
+   * returnReferenceId]) forbids a second row). When the caller supplies the
+   * returned order's own identifiers (orderItemIds and/or cycleId), that
+   * order's consumptions are restored from FIRST — the exact cost basis of
+   * the units that actually went out — and the general pool is only touched
+   * for any remainder.
    */
   async restoreForReturn(params: {
     returnReferenceId: string;
@@ -300,33 +314,70 @@ export class CostingLotService {
     variantId: string | null;
     warehouseId: string;
     returnQty: number;
+    orderItemIds?: string[];
+    cycleId?: string;
     tx?: Prisma.TransactionClient;
   }): Promise<void> {
     const client = params.tx ?? this.prisma;
+    const lotScope = {
+      productId: params.productId,
+      variantId: params.variantId ?? null,
+      warehouseId: params.warehouseId,
+    };
+
+    // Idempotency: what has THIS return reference already restored (within
+    // this product/variant/warehouse scope)?
+    const priorForRef = await client.costingLotRestoration.findMany({
+      where: {
+        returnReferenceId: params.returnReferenceId,
+        consumption: {
+          type: 'FULFILLMENT',
+          referenceType: 'ORDER_ITEM',
+          costingLot: lotScope,
+        },
+      },
+      select: { id: true, consumptionId: true, quantity: true },
+    });
+    const alreadyRestored = priorForRef.reduce((sum, r) => sum + r.quantity, 0);
+    let returnRemaining = params.returnQty - alreadyRestored;
+    if (returnRemaining <= 0) return; // duplicate call — nothing left to do
+    const priorByConsumption = new Map(
+      priorForRef.map((r) => [r.consumptionId, r]),
+    );
 
     // Find all FULFILLMENT consumptions for this product/variant/warehouse, newest first
     const consumptions = await client.costingLotConsumption.findMany({
       where: {
         type: 'FULFILLMENT',
         referenceType: 'ORDER_ITEM',
-        costingLot: {
-          productId: params.productId,
-          variantId: params.variantId ?? null,
-          warehouseId: params.warehouseId,
-        },
+        costingLot: lotScope,
       },
       orderBy: { createdAt: 'desc' },
       include: { restorations: { select: { quantity: true } } },
     });
 
-    let returnRemaining = params.returnQty;
+    // Prefer the returned order's OWN consumptions (exact cost basis);
+    // stable partition keeps newest-first order inside each group.
+    const ownItemIds = new Set(params.orderItemIds ?? []);
+    const isOwn = (c: { referenceId: string; cycleId: string | null }) =>
+      ownItemIds.has(c.referenceId) ||
+      (params.cycleId != null && c.cycleId === params.cycleId);
+    const ordered =
+      ownItemIds.size > 0 || params.cycleId != null
+        ? [
+            ...consumptions.filter(isOwn),
+            ...consumptions.filter((c) => !isOwn(c)),
+          ]
+        : consumptions;
+
     const restorationBatches: {
       consumptionId: string;
       quantity: number;
       unitCost: Prisma.Decimal;
+      existingRestorationId?: string;
     }[] = [];
 
-    for (const consumption of consumptions) {
+    for (const consumption of ordered) {
       if (returnRemaining <= 0) break;
       const restored = consumption.restorations.reduce((sum, r) => sum + r.quantity, 0);
       const restorable = consumption.quantity - restored;
@@ -337,6 +388,7 @@ export class CostingLotService {
         consumptionId: consumption.id,
         quantity: toRestore,
         unitCost: consumption.unitCost,
+        existingRestorationId: priorByConsumption.get(consumption.id)?.id,
       });
       returnRemaining -= toRestore;
     }
@@ -348,16 +400,25 @@ export class CostingLotService {
       );
     }
 
-    // Create restoration records and new costing lots
+    // Create restoration records and new costing lots. A consumption already
+    // restored under this same reference (interrupted earlier call) is
+    // topped up in place instead of duplicated.
     for (const batch of restorationBatches) {
-      await client.costingLotRestoration.create({
-        data: {
-          consumptionId: batch.consumptionId,
-          returnReferenceId: params.returnReferenceId,
-          quantity: batch.quantity,
-          unitCost: batch.unitCost,
-        },
-      });
+      if (batch.existingRestorationId) {
+        await client.costingLotRestoration.update({
+          where: { id: batch.existingRestorationId },
+          data: { quantity: { increment: batch.quantity } },
+        });
+      } else {
+        await client.costingLotRestoration.create({
+          data: {
+            consumptionId: batch.consumptionId,
+            returnReferenceId: params.returnReferenceId,
+            quantity: batch.quantity,
+            unitCost: batch.unitCost,
+          },
+        });
+      }
 
       // Create new CostingLot at original unit cost for returned stock
       const lotNumber = `RET-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

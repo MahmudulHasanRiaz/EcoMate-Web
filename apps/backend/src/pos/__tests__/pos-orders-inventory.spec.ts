@@ -293,6 +293,11 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
   describe('getProductAvailability', () => {
     it('returns current showroom stock + network when IM ON', async () => {
       (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(true);
+      // WS4: the physical/network answer is for INVENTORY_CONTROLLED
+      // products; the mode is read from the product row first.
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+        availabilityMode: 'INVENTORY_CONTROLLED',
+      });
       (stock.checkPhysicalAvailability as jest.Mock).mockResolvedValue({
         currentStock: 5,
         reserved: 1,
@@ -346,7 +351,12 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
   describe('findProducts with showroomId', () => {
     it('adds _showroomStock and _showroomAvailable when showroomId provided (IM ON)', async () => {
       (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(true);
-      (prisma.product.findMany as jest.Mock).mockResolvedValue([{ ...mockProduct }]);
+      // WS4 mode rule: showroom PHYSICAL figures answer only for an
+      // INVENTORY_CONTROLLED product (a MANAGED_STOCK product reports its
+      // managed counters — see the IM OFF test below).
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([
+        { ...mockProduct, availabilityMode: 'INVENTORY_CONTROLLED' },
+      ]);
       (prisma.product.count as jest.Mock).mockResolvedValue(1);
       (prisma.physicalInventory.findMany as jest.Mock).mockResolvedValue([
         { productId: 'prod-1', variantId: null, quantity: 8, reservedQuantity: 1 },
@@ -381,7 +391,9 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
 
     it('computes _showroomStock for variable product variants', async () => {
       (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(true);
-      (prisma.product.findMany as jest.Mock).mockResolvedValue([{ ...mockVariantProduct }]);
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([
+        { ...mockVariantProduct, availabilityMode: 'INVENTORY_CONTROLLED' },
+      ]);
       (prisma.product.count as jest.Mock).mockResolvedValue(1);
       // variant-level physical records
       (prisma.physicalInventory.findMany as jest.Mock).mockResolvedValue([
@@ -812,7 +824,7 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
       });
     }
 
-    it('skips stock deduction for cross-warehouse items (source != current showroom)', async () => {
+    it('deducts cross-warehouse items from their SOURCE warehouse (WS4: never silently skipped)', async () => {
       (stockRouter.isInventoryManagementEnabled as jest.Mock).mockResolvedValue(true);
       setupMocks();
 
@@ -829,8 +841,17 @@ describe('PosOrdersService — Inventory-Aware Extensions', () => {
         'cashier-1',
       );
 
-      // addPhysical should NOT be called for cross-warehouse items
-      expect(stock.addPhysical).not.toHaveBeenCalled();
+      // The old behaviour silently skipped deduction for cross-warehouse
+      // lines (inventory leaked). WS4: the line deducts from its OWN
+      // source warehouse, or the sale fails loud.
+      expect(stock.addPhysical).toHaveBeenCalledTimes(1);
+      expect(stock.addPhysical).toHaveBeenCalledWith(
+        expect.objectContaining({
+          productId: 'prod-1',
+          warehouseId: 'banani',
+          quantity: -2,
+        }),
+      );
     });
 
     it('deducts stock normally for current-showroom items (source == current)', async () => {

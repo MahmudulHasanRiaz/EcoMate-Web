@@ -7,6 +7,7 @@ import { TrackingCaptureService } from '../../tracking/tracking-capture.service'
 import { TrackingSettingsService } from '../../tracking/tracking-settings.service';
 import { CustomerAddressService } from '../../customers/customer-address.service';
 import { SalesChannelService } from '../../sales-channel/sales-channel.service';
+import { OrdersService } from '../../orders/orders.service';
 
 const configSnapshotMock = {
   enabledProviders: ['meta'],
@@ -107,6 +108,10 @@ describe('CheckoutLeadsService', () => {
             },
             product: {
               findMany: jest.fn().mockResolvedValue([]),
+              // Conversion's per-line availability pre-check reads the
+              // product; null = legacy line without a product row, which
+              // the check tolerates (reserve path decides).
+              findUnique: jest.fn().mockResolvedValue(null),
             },
             marketingSession: {
               findUnique: jest.fn().mockResolvedValue(null),
@@ -141,6 +146,12 @@ describe('CheckoutLeadsService', () => {
         {
           provide: CustomerAddressService,
           useValue: { syncFromOrder: jest.fn().mockResolvedValue(0) },
+        },
+        {
+          provide: OrdersService,
+          // Conversion delegates per-line stock to OrdersService (WS3);
+          // these specs assert order/payment outcomes, not stock mechanics.
+          useValue: { applyStockForLine: jest.fn().mockResolvedValue(undefined) },
         },
         {
           provide: SalesChannelService,

@@ -331,6 +331,41 @@ export class ProductsService {
     return Array.from(ids);
   }
 
+  /**
+   * Product ids with genuinely sellable stock, per each product's own
+   * availabilityMode (owner rule): MANAGED_STOCK counts managed AVAILABLE
+   * (quantity − reserved), INVENTORY_CONTROLLED counts physical AVAILABLE
+   * across warehouses, ALWAYS_IN_STOCK always qualifies,
+   * ALWAYS_OUT_OF_STOCK never does. "Quantity − reserved > 0" is a
+   * cross-field comparison Prisma's where API cannot express, so the
+   * hasStock filter resolves the matching id set via raw SQL (the same
+   * technique the low-stock report already uses) and intersects it with
+   * the caller's other filters.
+   */
+  private async findInStockProductIds(): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT p.id
+      FROM "Product" p
+      WHERE p."availabilityMode" = 'ALWAYS_IN_STOCK'
+         OR (p."availabilityMode" = 'MANAGED_STOCK' AND p.type <> 'variable'
+             AND p."stock" - p."reservedStock" > 0)
+         OR (p."availabilityMode" = 'MANAGED_STOCK' AND p.type = 'variable'
+             AND EXISTS (SELECT 1 FROM "ProductVariant" v
+                         WHERE v."productId" = p.id AND v."isActive" = true
+                           AND v."stock" - v."reservedStock" > 0))
+         OR (p."availabilityMode" = 'INVENTORY_CONTROLLED' AND p.type <> 'variable'
+             AND EXISTS (SELECT 1 FROM "PhysicalInventory" pi
+                         WHERE pi."productId" = p.id AND pi."variantId" IS NULL
+                           AND pi."quantity" - pi."reservedQuantity" > 0))
+         OR (p."availabilityMode" = 'INVENTORY_CONTROLLED' AND p.type = 'variable'
+             AND EXISTS (SELECT 1 FROM "PhysicalInventory" pi
+                         JOIN "ProductVariant" v ON v.id = pi."variantId"
+                         WHERE pi."productId" = p.id AND v."isActive" = true
+                           AND pi."quantity" - pi."reservedQuantity" > 0))
+    `;
+    return rows.map((r) => r.id);
+  }
+
   private decodeCursor(cursor: string): { createdAt: Date; id: string } | null {
     try {
       const raw = Buffer.from(cursor, 'base64url').toString('utf8');
@@ -508,37 +543,13 @@ export class ProductsService {
       ];
     }
     if (query.hasStock === true) {
+      // AVAILABLE stock (quantity − reserved), per product mode — the old
+      // OR clauses matched GROSS quantity, so a fully-reserved product
+      // still counted as "in stock" even though it could not be sold.
+      const inStockIds = await this.findInStockProductIds();
       where.AND = [
         ...(where.AND || []),
-        {
-          OR: [
-            // MANAGED_STOCK non-variable: check stock quantity
-            { availabilityMode: 'MANAGED_STOCK', type: { not: 'variable' }, managedStockQuantity: { gt: 0 } },
-            // MANAGED_STOCK variable: any active variant with stock
-            { availabilityMode: 'MANAGED_STOCK', type: 'variable', variants: { some: { isActive: true, managedStockQuantity: { gt: 0 } } } },
-            // ALWAYS_IN_STOCK: always available
-            { availabilityMode: 'ALWAYS_IN_STOCK' },
-            // INVENTORY_CONTROLLED: check physical inventory records of active variants
-            {
-              availabilityMode: 'INVENTORY_CONTROLLED',
-              OR: [
-                {
-                  type: { not: 'variable' },
-                  physicalInventories: { some: { quantity: { gt: 0 } } },
-                },
-                {
-                  type: 'variable',
-                  physicalInventories: {
-                    some: {
-                      quantity: { gt: 0 },
-                      variant: { isActive: true },
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        },
+        { id: { in: inStockIds } },
       ];
     }
     // SECURITY (2026-10-25, F16): sort/order are allowlisted — the old
@@ -752,33 +763,11 @@ export class ProductsService {
       ];
     }
     if (query.hasStock === true) {
+      // Same AVAILABLE-stock (quantity − reserved) rule as findAll.
+      const inStockIds = await this.findInStockProductIds();
       filters.AND = [
         ...(filters.AND || []),
-        {
-          OR: [
-            { availabilityMode: 'MANAGED_STOCK', type: { not: 'variable' }, managedStockQuantity: { gt: 0 } },
-            { availabilityMode: 'MANAGED_STOCK', type: 'variable', variants: { some: { isActive: true, managedStockQuantity: { gt: 0 } } } },
-            { availabilityMode: 'ALWAYS_IN_STOCK' },
-            {
-              availabilityMode: 'INVENTORY_CONTROLLED',
-              OR: [
-                {
-                  type: { not: 'variable' },
-                  physicalInventories: { some: { quantity: { gt: 0 } } },
-                },
-                {
-                  type: 'variable',
-                  physicalInventories: {
-                    some: {
-                      quantity: { gt: 0 },
-                      variant: { isActive: true },
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        },
+        { id: { in: inStockIds } },
       ];
     }
     const cursorWhere: any = { ...filters };
@@ -2177,8 +2166,15 @@ export class ProductsService {
       },
     });
 
-    const productSumMap = new Map<string, number>();
-    const productReservedMap = new Map<string, number>();
+    // Physical sums split by row kind: variantId-null rows belong to
+    // simple products; variant rows belong to that variant only. A variable
+    // product's total is the sum over its ACTIVE variants — summing every
+    // row of the product (the old productSumMap) credited stock held by
+    // inactive variants, and the managed branch subtracted the PARENT's
+    // reservedStock from the variant quantity sum even though reservations
+    // live on the variants.
+    const simpleSumMap = new Map<string, number>();
+    const simpleReservedMap = new Map<string, number>();
     const variantSumMap = new Map<string, number>();
     const variantReservedMap = new Map<string, number>();
 
@@ -2188,27 +2184,42 @@ export class ProductsService {
       const qty = s._sum.quantity ?? 0;
       const reserved = s._sum.reservedQuantity ?? 0;
 
-      productSumMap.set(pId, (productSumMap.get(pId) ?? 0) + qty);
-      productReservedMap.set(pId, (productReservedMap.get(pId) ?? 0) + reserved);
-
       if (vId) {
         variantSumMap.set(vId, qty);
         variantReservedMap.set(vId, reserved);
+      } else {
+        simpleSumMap.set(pId, (simpleSumMap.get(pId) ?? 0) + qty);
+        simpleReservedMap.set(pId, (simpleReservedMap.get(pId) ?? 0) + reserved);
       }
     }
 
     for (const p of products) {
-      const physicalStockSum = productSumMap.get(p.id) ?? 0;
-      const physicalReservedSum = productReservedMap.get(p.id) ?? 0;
-      const managedStockSum = p.type === 'variable' && p.variants
-        ? p.variants.reduce((sum, v) => sum + (v.managedStockQuantity ?? 0), 0)
-        : p.managedStockQuantity;
+      const isVariable = p.type === 'variable' && Array.isArray(p.variants);
+      const activeVariants = isVariable
+        ? p.variants.filter((v: any) => v.isActive !== false)
+        : [];
+      const managedAvailable = isVariable
+        ? activeVariants.reduce(
+            (sum: number, v: any) =>
+              sum + ((v.managedStockQuantity ?? 0) - (v.reservedStock ?? 0)),
+            0,
+          )
+        : (p.managedStockQuantity ?? 0) - (p.reservedStock ?? 0);
+      const physicalAvailable = isVariable
+        ? activeVariants.reduce(
+            (sum: number, v: any) =>
+              sum +
+              ((variantSumMap.get(v.id) ?? 0) -
+                (variantReservedMap.get(v.id) ?? 0)),
+            0,
+          )
+        : (simpleSumMap.get(p.id) ?? 0) - (simpleReservedMap.get(p.id) ?? 0);
 
       p.availableStock =
         p.availabilityMode === 'MANAGED_STOCK'
-          ? managedStockSum - (p.reservedStock ?? 0)
+          ? managedAvailable
           : p.availabilityMode === 'INVENTORY_CONTROLLED'
-            ? physicalStockSum - physicalReservedSum
+            ? physicalAvailable
             : p.availabilityMode === 'ALWAYS_IN_STOCK'
               ? null
               : 0;

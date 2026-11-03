@@ -17,6 +17,7 @@ import {
   MovementDirection,
   ReferenceEntity,
 } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { ValuationQueryDto, StockTransferDto } from './dto/valuation.dto';
 import { LedgerQueryDto } from './dto/ledger-query.dto';
 
@@ -104,6 +105,11 @@ export class InventoryService {
     `;
     const lowStockProducts = products.map((p) => ({
       id: p.id,
+      // productId on EVERY row (2026-11-03): consumers dedupe by
+      // `productId ?? id`, and variant rows carry id = variantId — without
+      // a real productId the Overview counted 29 variant rows as 29
+      // products ("In Stock −16" on staging).
+      productId: p.id,
       name: p.name,
       slug: p.slug,
       stock: p.stock,
@@ -155,7 +161,11 @@ export class InventoryService {
       ORDER BY p.name ASC
     `;
     const lowStockVariants = variableProducts.map((v) => ({
+      // `id` stays the VARIANT id (existing semantics); productId is the
+      // PARENT product (v.id from the raw query's p.id) so consumers can
+      // group/dedupe variant rows by their product.
       id: v.variantId,
+      productId: v.id,
       name: v.name,
       slug: v.slug,
       stock: v.variantStock,
@@ -318,11 +328,24 @@ export class InventoryService {
     search?: string,
     status?: string,
   ) {
-    const REQUEST_REP = ['FULFILLED', 'APPROVAL_FAILED'];
+    // A 'requested' filter additionally surfaces pending requests (stored
+    // status REQUESTED), which the default History representation
+    // deliberately leaves to the Requests tab — so REQUESTED joins both
+    // representation sets ONLY for that filter (2026-11-03).
+    const REQUEST_REP = [
+      'FULFILLED',
+      'APPROVAL_FAILED',
+      ...(status === 'requested' ? ['REQUESTED'] : []),
+    ];
     // PARTIAL included (2026-11-02 audit): manual transfers whose legs
     // partially failed carry a PARTIAL header status — excluding it made
     // those transfers invisible in History altogether.
-    const EXECUTED = ['IN_PROGRESS', 'COMPLETED', 'PARTIAL'];
+    const EXECUTED = [
+      'IN_PROGRESS',
+      'COMPLETED',
+      'PARTIAL',
+      ...(status === 'requested' ? ['REQUESTED'] : []),
+    ];
 
     const and: any[] = [
       {
@@ -360,6 +383,24 @@ export class InventoryService {
           { status: 'PARTIAL', NOT: { idempotencyKey: { startsWith: 'APPROVE_' } } },
         ],
       });
+    } else if (status === 'requested') {
+      // Pending POS transfer requests (see the widened representation sets
+      // above — without them this condition ANDed to an empty list).
+      and.push({ status: 'REQUESTED' });
+    } else if (status === 'failed') {
+      // Approval failures live on the POS_TRF_ request header as
+      // APPROVAL_FAILED — the same rows the 'partial' mapping above folds
+      // in. The representation filter already scopes them to POS_TRF_
+      // headers, so the bare status condition is exact.
+      and.push({ status: 'APPROVAL_FAILED' });
+    } else if (status) {
+      // Status honesty (2026-11-02 audit): an unrecognised filter value
+      // used to add NO condition at all, silently returning the whole
+      // unfiltered history (?status=IN_PROGRESS did exactly that). Fail
+      // loudly instead of lying with a full list.
+      throw new BadRequestException(
+        `Unknown transfer status filter: '${status}'`,
+      );
     }
 
     if (search && search.trim()) {
@@ -1167,53 +1208,118 @@ export class InventoryService {
     if (params.categoryId) where.categoryId = params.categoryId;
     if (params.type) where.type = params.type;
 
-    const orderBy: any = {};
-    if (params.sortBy === 'name') orderBy.name = params.sortOrder || 'asc';
-    else if (params.sortBy === 'stock')
-      orderBy.managedStockQuantity = params.sortOrder || 'desc';
-    else if (params.sortBy === 'price')
-      orderBy.basePrice = params.sortOrder || 'desc';
-    else orderBy.updatedAt = 'desc';
-
-    const [data, total] = await Promise.all([
-      this.prisma.product.findMany({
-        where,
-        skip: (page - 1) * perPage,
-        take: perPage,
-        orderBy,
+    const overviewSelect = {
+      id: true,
+      name: true,
+      slug: true,
+      sku: true,
+      type: true,
+      availabilityMode: true,
+      managedStockQuantity: true,
+      manageStock: true,
+      reservedStock: true,
+      lowStockQty: true,
+      basePrice: true,
+      salePrice: true,
+      images: true,
+      categoryId: true,
+      category: { select: { id: true, name: true } },
+      variants: {
         select: {
           id: true,
-          name: true,
-          slug: true,
           sku: true,
-          type: true,
-          availabilityMode: true,
           managedStockQuantity: true,
-          manageStock: true,
           reservedStock: true,
-          lowStockQty: true,
-          basePrice: true,
-          salePrice: true,
-          images: true,
-          categoryId: true,
-          category: { select: { id: true, name: true } },
-          variants: {
-            select: {
-              id: true,
-              sku: true,
-              managedStockQuantity: true,
-              reservedStock: true,
-              price: true,
-              attributeValues: {
-                include: { attributeValue: { select: { value: true } } },
-              },
-            },
+          price: true,
+          attributeValues: {
+            include: { attributeValue: { select: { value: true } } },
           },
-          _count: { select: { orderItems: true } },
         },
-      }),
-      this.prisma.product.count({ where }),
-    ]);
+      },
+      _count: { select: { orderItems: true } },
+    } satisfies Prisma.ProductSelect;
+
+    let data: any[];
+    let total: number;
+
+    if (params.sortBy === 'stock') {
+      // Sort by the stock figure the response actually reports (2026-11-03
+      // audit): for a VARIABLE product that figure is the SUM of its
+      // variants' managedStockQuantity, recomputed in JS below — ordering
+      // by the parent column (0 for variable products) buried every
+      // variable product at one end of the list while the UI showed a
+      // completely different order. Prisma cannot order by that sum, so
+      // order the ids with raw SQL over the SAME filters and page through
+      // the ids; the row fetch and the response shape are unchanged.
+      // (managedStockQuantity is @map("stock") on Product AND
+      // ProductVariant.)
+      const dir = params.sortOrder === 'asc' ? 'ASC' : 'DESC';
+      const conds: Prisma.Sql[] = [Prisma.sql`p."isActive" = true`];
+      if (params.productId) {
+        conds.push(Prisma.sql`p.id = ${params.productId}`);
+      }
+      if (params.search) {
+        // Same LIKE-wildcard escaping as valuation(): a search of "%"
+        // must not match the whole catalogue.
+        const escaped = params.search
+          .replace(/\\/g, '\\\\')
+          .replace(/%/g, '\\%')
+          .replace(/_/g, '\\_');
+        conds.push(
+          Prisma.sql`(p.name ILIKE ${`%${escaped}%`} ESCAPE '\\' OR p.sku ILIKE ${`%${escaped}%`} ESCAPE '\\')`,
+        );
+      }
+      if (params.categoryId) {
+        conds.push(Prisma.sql`p."categoryId" = ${params.categoryId}`);
+      }
+      if (params.type) {
+        conds.push(Prisma.sql`p.type = ${params.type}`);
+      }
+      const ordered = await this.prisma.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`
+          SELECT p.id
+          FROM "Product" p
+          WHERE ${Prisma.join(conds, ' AND ')}
+          ORDER BY (
+            CASE WHEN p.type = 'variable'
+              THEN COALESCE((SELECT SUM(v."stock") FROM "ProductVariant" v WHERE v."productId" = p.id), 0)
+              ELSE p."stock"
+            END
+          ) ${Prisma.raw(dir)}, p.id ASC
+        `,
+      );
+      total = ordered.length;
+      const pageIds = ordered
+        .slice((page - 1) * perPage, page * perPage)
+        .map((r) => r.id);
+      const rows = pageIds.length
+        ? await this.prisma.product.findMany({
+            where: { id: { in: pageIds } },
+            select: overviewSelect,
+          })
+        : [];
+      const byId = new Map(rows.map((r: any) => [r.id, r]));
+      data = pageIds.map((id) => byId.get(id)).filter(Boolean);
+    } else {
+      const orderBy: any = {};
+      if (params.sortBy === 'name') orderBy.name = params.sortOrder || 'asc';
+      else if (params.sortBy === 'price')
+        orderBy.basePrice = params.sortOrder || 'desc';
+      // The fallback honours sortOrder too (2026-11-03): ?sortOrder=asc on
+      // its own used to be silently ignored behind a hard-coded desc.
+      else orderBy.updatedAt = params.sortOrder === 'asc' ? 'asc' : 'desc';
+
+      [data, total] = await Promise.all([
+        this.prisma.product.findMany({
+          where,
+          skip: (page - 1) * perPage,
+          take: perPage,
+          orderBy,
+          select: overviewSelect,
+        }),
+        this.prisma.product.count({ where }),
+      ]);
+    }
 
     const productIds = data.map((p) => p.id);
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
@@ -1353,6 +1459,9 @@ export class InventoryService {
       sku: string | null;
       type: 'product' | 'variant';
       available: number;
+      /** On-hand / reserved in the same scope as `available` (see below). */
+      onHand: number;
+      reserved: number;
       image: string | null;
       /** True when `sku` or the parent `Product.sku` is an exact hit. */
       exactSku: boolean;
@@ -1385,6 +1494,8 @@ export class InventoryService {
             sku: v.sku,
             type: 'variant',
             available: this.managedAvailable('variant', v.managedStockQuantity, v.reservedStock),
+            onHand: v.managedStockQuantity,
+            reserved: v.reservedStock ?? 0,
             image: this.lookupImage((p as any).images),
             exactSku:
               (v.sku?.toLowerCase() ?? '') === lowered || (p.sku?.toLowerCase() ?? '') === lowered,
@@ -1405,6 +1516,8 @@ export class InventoryService {
         sku: p.sku,
         type: 'product',
         available: this.managedAvailable('product', p.managedStockQuantity, p.reservedStock),
+        onHand: p.managedStockQuantity,
+        reserved: p.reservedStock ?? 0,
         image: this.lookupImage((p as any).images),
         exactSku: (p.sku?.toLowerCase() ?? '') === lowered,
       });
@@ -1441,16 +1554,24 @@ export class InventoryService {
     // are excluded so the two phases never duplicate rows.
     let hasMore = exactFull && matches.length >= perPage;
     if (matches.length < perPage) {
+      // Token-based matching (2026-11-03 audit): the WHOLE query used to be
+      // one `contains`, so typing a product's full name ("TEST-AUDIT
+      // Widget") matched nothing — no single field contains the whole
+      // string in the general case. Now EVERY whitespace-separated token
+      // must match the name or a SKU (AND of per-token ORs); a single token
+      // behaves exactly as the old whole-string contains did.
+      const tokens = q.split(/\s+/).filter(Boolean);
+      const tokenClauses: Prisma.ProductWhereInput[] = tokens.map((t) => ({
+        OR: [
+          { name: { contains: t, mode: 'insensitive' } },
+          { sku: { contains: t, mode: 'insensitive' } },
+          { variants: { some: { sku: { contains: t, mode: 'insensitive' } } } },
+        ],
+      }));
       const fuzzyWhere: Prisma.ProductWhereInput = {
         isActive: true,
         AND: [
-          {
-            OR: [
-              { name: { contains: q, mode: 'insensitive' } },
-              { sku: { contains: q, mode: 'insensitive' } },
-              { variants: { some: { sku: { contains: q, mode: 'insensitive' } } } },
-            ],
-          },
+          ...tokenClauses,
           ...(seen.size > 0 ? [{ id: { notIn: [...seen] } }] : []),
         ],
       };
@@ -1492,10 +1613,19 @@ export class InventoryService {
       if (matches.length < perPage) hasMore = false;
     }
 
-    // Physical availability (quantity − reserved) for the resolved rows only:
-    // ONE grouped aggregate keyed by (productId, variantId), optionally scoped
-    // to a warehouse. Replaces the per-keystroke enrich + groupBy over 50 rows.
-    const physicalByKey = new Map<string, number>();
+    // Physical figures for the resolved rows only: ONE grouped aggregate
+    // keyed by (productId, variantId), optionally scoped to a warehouse.
+    // The groupBy SUMS across every bin row in scope — onHand = Σ quantity,
+    // reserved = Σ reservedQuantity, available = Σ (quantity − reserved) —
+    // so a unit split across bins reports its true warehouse position
+    // (2026-11-02 audit: the picker showed "On Hand 4 · Reserved 0" for a
+    // unit actually holding 8 on hand / 4 reserved across bins; the rows
+    // also carried no onHand/reserved figures at all until now).
+    // Replaces the per-keystroke enrich + groupBy over 50 rows.
+    const physicalByKey = new Map<
+      string,
+      { onHand: number; reserved: number; available: number }
+    >();
     if (matches.length > 0) {
       const physical = await this.prisma.physicalInventory.groupBy({
         by: ['productId', 'variantId'],
@@ -1506,10 +1636,13 @@ export class InventoryService {
         _sum: { quantity: true, reservedQuantity: true },
       });
       for (const s of physical) {
-        physicalByKey.set(
-          `${s.productId}:${s.variantId ?? ''}`,
-          (s._sum.quantity ?? 0) - (s._sum.reservedQuantity ?? 0),
-        );
+        const onHand = s._sum.quantity ?? 0;
+        const reserved = s._sum.reservedQuantity ?? 0;
+        physicalByKey.set(`${s.productId}:${s.variantId ?? ''}`, {
+          onHand,
+          reserved,
+          available: onHand - reserved,
+        });
       }
     }
 
@@ -1521,11 +1654,18 @@ export class InventoryService {
       return (a.sku ?? '').localeCompare(b.sku ?? '');
     });
 
-    const data = matches.map(({ key, exactSku, productSku, ...row }) => ({
-      ...row,
-      // No PhysicalInventory rows for this unit → keep the managed figure.
-      available: physicalByKey.has(key) ? physicalByKey.get(key)! : row.available,
-    }));
+    const data = matches.map(({ key, exactSku, productSku, ...row }) => {
+      const phys = physicalByKey.get(key);
+      // No PhysicalInventory rows for this unit → keep the managed figures.
+      return phys
+        ? {
+            ...row,
+            onHand: phys.onHand,
+            reserved: phys.reserved,
+            available: phys.available,
+          }
+        : row;
+    });
 
     return { data, meta: { total: data.length, perPage, hasMore } };
   }
@@ -1623,9 +1763,10 @@ export class InventoryService {
 
     for (const row of rows) {
       const fifoValue = Number(row.fifo_value);
+      const lotQty = Number(row.lot_qty);
       totalValue += fifoValue;
       totalPhysicalQty += Number(row.physical_qty);
-      totalLotQty += Number(row.lot_qty);
+      totalLotQty += lotQty;
       items.push({
         id: row.id,
         type: 'product',
@@ -1633,8 +1774,14 @@ export class InventoryService {
         sku: row.sku,
         physicalQty: Number(row.physical_qty),
         physicalReserved: Number(row.physical_reserved),
-        lotRemainingQty: Number(row.lot_qty),
-        unitCost: Number(row.standardCost) || 0,
+        lotRemainingQty: lotQty,
+        // unitCost is the TRUE FIFO average of the remaining lots
+        // (fifoValue / lotQty) — it used to carry the product's
+        // standardCost, so a product whose lots cost ৳960 apiece reported
+        // a ৳0.00 "unit cost" whenever standardCost was unset (2026-11-02
+        // audit). standardCost is now exposed under its own name.
+        unitCost: lotQty > 0 ? fifoValue / lotQty : 0,
+        standardCost: Number(row.standardCost) || 0,
         fifoValue,
         reconciliationStatus: row.reconciliation_status,
       });
@@ -1947,7 +2094,9 @@ export class InventoryService {
       productId: query.productId,
       variantId: query.variantId,
       type: query.type,
-      referenceType: query.referenceType as any,
+      // LedgerQueryDto now validates both fields against the real Prisma
+      // enums, so the old `as any` cast is gone (2026-11-03).
+      referenceType: query.referenceType,
       referenceId: query.referenceId,
       page: query.page,
       perPage: query.perPage,
@@ -2001,6 +2150,15 @@ export class InventoryService {
       );
     }
 
+    // Same-warehouse transfer (2026-11-02 audit): moving stock from a
+    // warehouse to itself is a no-op that still wrote a header, two ledger
+    // legs and a costing-lot round-trip. Reject it at the edge.
+    if (dto.sourceLocation === dto.destinationLocation) {
+      throw new BadRequestException(
+        'Source and destination warehouses must be different',
+      );
+    }
+
     // Variable products hold their stock on variants. A transfer without a
     // variantId would write PhysicalInventory rows with variantId NULL that no
     // variant can ever consume — stock that exists in the warehouse but is
@@ -2028,16 +2186,30 @@ export class InventoryService {
       }
     }
 
+    // Idempotency key: optional at the edge (StockTransferDto). A caller
+    // that supplies none — or only whitespace, which @IsNotEmpty cannot
+    // catch — gets a fresh server-generated key, so the call is its own
+    // transfer. An empty key must never reach the unique column: every
+    // empty-keyed transfer would collapse into the first one (2026-11-02
+    // audit §A.16).
+    const idempotencyKey: string = dto.idempotencyKey?.trim()
+      ? (dto.idempotencyKey as string)
+      : randomUUID();
+    const effectiveDto: StockTransferDto & { idempotencyKey: string } = {
+      ...dto,
+      idempotencyKey,
+    };
+
     // Idempotency check — INSIDE the transaction, so two concurrent requests
     // carrying the same key cannot both pass it. The unique index on
     // idempotencyKey is the real arbiter; P2002 is handled below.
     const existing = await prisma.stockTransfer.findUnique({
-      where: { idempotencyKey: dto.idempotencyKey },
+      where: { idempotencyKey },
     });
     if (existing) return existing;
 
     try {
-      return await this.executeTransfer(dto, product, sourceWarehouse, destWarehouse, performedBy, prisma);
+      return await this.executeTransfer(effectiveDto, product, sourceWarehouse, destWarehouse, performedBy, prisma);
     } catch (err) {
       // Two concurrent requests, same key: this one lost the unique index
       // race. The winner's transfer IS the answer — return it rather than
@@ -2048,7 +2220,7 @@ export class InventoryService {
         this.isStockTransferIdempotencyConflict(err)
       ) {
         const winner = await this.prisma.stockTransfer.findUnique({
-          where: { idempotencyKey: dto.idempotencyKey },
+          where: { idempotencyKey },
         });
         if (winner) return winner;
       }
@@ -2069,7 +2241,7 @@ export class InventoryService {
   }
 
   private async executeTransfer(
-    dto: StockTransferDto,
+    dto: StockTransferDto & { idempotencyKey: string },
     product: { id: string; name: string },
     sourceWarehouse: { id: string; name: string },
     destWarehouse: { id: string; name: string },

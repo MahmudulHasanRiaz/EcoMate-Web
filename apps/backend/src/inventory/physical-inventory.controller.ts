@@ -131,9 +131,12 @@ export class PhysicalInventoryController {
     @Body() dto: AdjustPhysicalDto,
     @CurrentUser() user: { email: string },
   ) {
-    // Validate: positive adjustment requires unitCost
+    // Validate: positive adjustment requires unitCost. A missing/invalid
+    // field is a client error (400), not a missing resource — this used to
+    // throw NotFoundException (404), which sent staff hunting for a phantom
+    // missing record (2026-11-02 audit). The bulk path already used 400.
     if (dto.quantity > 0 && (!dto.unitCost || dto.unitCost <= 0)) {
-      throw new NotFoundException('Unit cost is required when adding stock');
+      throw new BadRequestException('Unit cost is required when adding stock');
     }
 
     // Reject product-level adjustment for variable parent products
@@ -396,7 +399,14 @@ export class PhysicalInventoryController {
 
   @Roles('superadmin', 'admin', 'employee')
   @Delete('reservations/:id')
-  async releaseReservation(@Param('id') id: string) {
+  async releaseReservation(
+    @Param('id') id: string,
+    @CurrentUser() user: { email: string },
+  ) {
+    // Every branch stamps the ACTING user (2026-11-02 audit): a release is a
+    // manual staff act, but the managed legs hard-coded performedBy 'system'
+    // and the physical leg stamped nobody, so a released hold could never be
+    // traced back to the person who released it.
     // 1. Try physical inventory reservation record
     const record = await this.stockService.getPhysicalRecord(id);
     if (record) {
@@ -408,6 +418,7 @@ export class PhysicalInventoryController {
         warehouseId: record.warehouseId,
         quantity: record.reservedQuantity,
         reference: 'manual-release',
+        performedBy: user.email,
       });
       return { ok: true };
     }
@@ -424,7 +435,7 @@ export class PhysicalInventoryController {
           variantId: orderItem.variantId ?? undefined,
           quantity: orderItem.quantity,
           reference: `Manual release: ${orderItem.order.displayId}`,
-          performedBy: 'system',
+          performedBy: user.email,
           tx,
           ledgerType: 'CANCEL_RELEASE',
         });
@@ -448,7 +459,7 @@ export class PhysicalInventoryController {
           variantId: comp.variantId ?? undefined,
           quantity: comp.totalQuantity,
           reference: `Manual release: ${comp.orderItem.order.displayId}`,
-          performedBy: 'system',
+          performedBy: user.email,
           tx,
           ledgerType: 'CANCEL_RELEASE',
         });

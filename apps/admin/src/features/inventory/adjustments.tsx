@@ -23,6 +23,7 @@ interface AdjustmentLog {
   quantity: number
   direction: string
   type: string
+  reason?: string | null
   stockBefore: number
   stockAfter: number
   note: string | null
@@ -30,6 +31,32 @@ interface AdjustmentLog {
   performedAt: string
   productName: string
   warehouseName?: string
+}
+
+/**
+ * Human labels for the reason codes / adjustment types the ledgers store
+ * (the page used to print raw codes like "physical_count" /
+ * "Physical_adjustment"). Unknown codes fall back to a title-cased
+ * rendering of the raw value instead of leaking the snake_case code.
+ */
+const ADJUSTMENT_LABELS: Record<string, string> = {
+  physical_count: 'Physical Count',
+  physical_adjustment: 'Physical Adjustment',
+  adjustment: 'Adjustment',
+  damage: 'Damage',
+  lost: 'Lost',
+  found: 'Found',
+  correction: 'Correction',
+  initial: 'Initial Balance',
+  other: 'Other',
+}
+
+function humanLabel(code: string | null | undefined): string {
+  if (!code) return '—'
+  return (
+    ADJUSTMENT_LABELS[code.toLowerCase()] ??
+    code.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  )
 }
 
 interface PaginationMeta {
@@ -152,12 +179,14 @@ export function Adjustments() {
                     <TableCell>
                       <div>
                         <div className="font-medium text-sm">{log.productName}{log.variantName ? ` — ${log.variantName}` : ''}</div>
-                        <div className="text-xs text-muted-foreground">{log.note || '—'}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {[log.reason ? humanLabel(log.reason) : null, log.note].filter(Boolean).join(' — ') || '—'}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>{log.warehouseName || '—'}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="capitalize">{log.type}</Badge>
+                      <Badge variant="outline">{humanLabel(log.type)}</Badge>
                     </TableCell>
                     <TableCell>
                       <span className={log.direction === 'IN' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>

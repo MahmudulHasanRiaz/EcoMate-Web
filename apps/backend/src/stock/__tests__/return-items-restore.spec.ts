@@ -187,11 +187,29 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
     }
   });
 
-  it('disarms matched claims so a later blanket restore cannot double-restore', async () => {
+  it('a partial receive restores its units but keeps the claim ARMED (no early disarm)', async () => {
+    // Audit item 4: disarming on a partial receive (flags cleared +
+    // reservation RESTORED) is what made the SECOND partial return
+    // restore nothing. The claim must stay armed until cumulative
+    // settlement reaches the line quantity.
     await service.restoreForReturnItems({
       orderId: 'order-1',
       items: [{ productId: 'pa', quantity: 2 }],
       returnId: 'ret-1',
+      tx,
+    });
+
+    // Managed flags NOT cleared — the remaining 3 units stay restorable.
+    expect(tx.orderItem.update).not.toHaveBeenCalled();
+    // Physical reservation NOT marked handled.
+    expect(tx.physicalReservation.update).not.toHaveBeenCalled();
+  });
+
+  it('full coverage disarms the claim so a later blanket restore cannot double-restore', async () => {
+    await service.restoreForReturnItems({
+      orderId: 'order-1',
+      items: [{ productId: 'pa', quantity: 5 }],
+      returnId: 'ret-full',
       tx,
     });
 
@@ -213,6 +231,242 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
       (c) => c[0]?.where?.id,
     );
     expect(resIds).not.toContain('res-b');
+  });
+
+  it('two partial receives against one line together restore the full line (cumulative)', async () => {
+    // First partial: 2 of 5 arrive.
+    tx.return = { findMany: jest.fn().mockResolvedValue([]) };
+    const first = await service.restoreForReturnItems({
+      orderId: 'order-1',
+      items: [{ productId: 'pa', quantity: 2 }],
+      returnId: 'ret-1',
+      tx,
+    });
+    expect(first.restored).toEqual([{ productId: 'pa', variantId: null, quantity: 2 }]);
+    expect(tx.orderItem.update).not.toHaveBeenCalled();
+    expect(tx.physicalReservation.update).not.toHaveBeenCalled();
+
+    jest.clearAllMocks();
+
+    // Second partial: the remaining 3 arrive in a NEW return. The first
+    // return is now stockReconciled — its items are the settlement
+    // evidence, so the claim starts with remaining = 3, and the physical
+    // walk skips the 2 units already put back.
+    tx.return = {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: 'ret-1',
+          items: [{ productId: 'pa', variantId: null, quantity: 2, damagedQuantity: 0 }],
+        },
+      ]),
+    };
+    const second = await service.restoreForReturnItems({
+      orderId: 'order-1',
+      items: [{ productId: 'pa', quantity: 3 }],
+      returnId: 'ret-2',
+      tx,
+    });
+    expect(second.restored).toEqual([{ productId: 'pa', variantId: null, quantity: 3 }]);
+    // Managed: exactly the remaining 3 are added (not 5, not 0).
+    expect(stockService.operate).toHaveBeenCalledWith(
+      'add',
+      expect.objectContaining({ productId: 'pa', quantity: 3 }),
+    );
+    // Physical: the allocation walk skips the 2 restored units and adds 3.
+    expect(tx.physicalInventory.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'pi-1' }),
+        data: expect.objectContaining({ quantity: expect.objectContaining({ increment: 3 }) }),
+      }),
+    );
+    // NOW the claim is fully settled: flags cleared + reservation RESTORED.
+    expect(tx.orderItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'item-a' },
+        data: expect.objectContaining({ managedStockDeducted: false, managedStockReserved: false }),
+      }),
+    );
+    expect(tx.physicalReservation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'res-a' }, data: { status: 'RESTORED' } }),
+    );
+  });
+
+  it('a damaged-only partial settles only the damaged share — the good remainder stays armed', async () => {
+    tx.return = { findMany: jest.fn().mockResolvedValue([]) };
+    const res = await service.restoreForReturnItems({
+      orderId: 'order-1',
+      items: [{ productId: 'pa', quantity: 2, damagedQuantity: 2 }],
+      returnId: 'ret-dmg-1',
+      tx,
+    });
+    expect(res.restored).toEqual([]);
+    // Nothing restocks (damaged never sells again)…
+    for (const [op] of stockService.operate.mock.calls as any[]) {
+      expect(op).not.toBe('add');
+    }
+    // …but the claim is NOT disarmed: flags stay set, reservation stays.
+    expect(tx.orderItem.update).not.toHaveBeenCalled();
+    expect(tx.physicalReservation.update).not.toHaveBeenCalled();
+
+    jest.clearAllMocks();
+
+    // The good remainder (3 units) arrives later and restores normally.
+    tx.return = {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: 'ret-dmg-1',
+          items: [{ productId: 'pa', variantId: null, quantity: 2, damagedQuantity: 2 }],
+        },
+      ]),
+    };
+    const second = await service.restoreForReturnItems({
+      orderId: 'order-1',
+      items: [{ productId: 'pa', quantity: 3 }],
+      returnId: 'ret-dmg-2',
+      tx,
+    });
+    expect(second.restored).toEqual([{ productId: 'pa', variantId: null, quantity: 3 }]);
+    expect(stockService.operate).toHaveBeenCalledWith(
+      'add',
+      expect.objectContaining({ productId: 'pa', quantity: 3 }),
+    );
+    expect(tx.orderItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'item-a' } }),
+    );
+    expect(tx.physicalReservation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'res-a' }, data: { status: 'RESTORED' } }),
+    );
+  });
+
+  it('a later blanket restoreForOrder restores only the unsettled remainder', async () => {
+    tx.return = {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: 'ret-1',
+          items: [{ productId: 'pa', variantId: null, quantity: 2, damagedQuantity: 0 }],
+        },
+      ]),
+    };
+    tx.costingLotConsumption.findMany = jest.fn().mockResolvedValue([]);
+
+    await service.restoreForOrder({
+      orderId: 'order-1',
+      referencePrefix: 'return',
+      tx,
+    });
+
+    // pa: 2 of 5 already restored by the item-level return → blanket adds 3.
+    expect(stockService.operate).toHaveBeenCalledWith(
+      'add',
+      expect.objectContaining({ productId: 'pa', quantity: 3 }),
+    );
+    for (const [op, args] of stockService.operate.mock.calls as any[]) {
+      if (op === 'add' && args?.productId === 'pa') {
+        expect(args.quantity).toBe(3);
+      }
+    }
+    // Physical walk skips the 2 restored units and increments exactly 3.
+    const increments = (tx.physicalInventory.update.mock.calls as any[])
+      .map((c) => c[0]?.data?.quantity?.increment)
+      .filter((n) => typeof n === 'number');
+    expect(increments).toContain(3);
+    expect(increments).not.toContain(5);
+  });
+
+  it('reports unrestored units when the physical reservation is missing (never silently RESTOCKED)', async () => {
+    tx.physicalReservation.findUnique.mockResolvedValue(null);
+    const res = await service.restoreForReturnItems({
+      orderId: 'order-1',
+      items: [{ productId: 'pa', quantity: 2 }],
+      returnId: 'ret-nores',
+      tx,
+    });
+    expect(res.restored).toEqual([]);
+    expect(res.unrestored).toEqual([
+      { productId: 'pa', variantId: null, quantity: 2 },
+    ]);
+  });
+
+  it('reports the shortfall when allocations cover fewer units than were deducted', async () => {
+    tx.physicalReservation.findUnique.mockImplementation(({ where }: any) => {
+      if (where?.orderItemId_cycleId?.orderItemId === 'item-a') {
+        return Promise.resolve({
+          id: 'res-a',
+          status: 'CONSUMED',
+          productId: 'pa',
+          variantId: null,
+          warehouseId: 'wh-1',
+          allocations: [{ id: 'alloc-a', physicalInventoryId: 'pi-1', quantity: 1 }],
+        });
+      }
+      return Promise.resolve(null);
+    });
+    const res = await service.restoreForReturnItems({
+      orderId: 'order-1',
+      items: [{ productId: 'pa', quantity: 2 }],
+      returnId: 'ret-short',
+      tx,
+    });
+    expect(res.restored).toEqual([{ productId: 'pa', variantId: null, quantity: 1 }]);
+    expect(res.unrestored).toEqual([
+      { productId: 'pa', variantId: null, quantity: 1 },
+    ]);
+  });
+
+  it('ACTIVE reservation release is budget-capped across allocations (no per-allocation qty reuse)', async () => {
+    // Audit item 5 (ACTIVE branch): allocations [3, 3], release qty 4 →
+    // decrements must be 3 then 1 (the old code released 3 then 3).
+    tx.order.findUnique.mockResolvedValue({
+      id: 'order-1',
+      items: [orderItem('item-a', managedProduct, 4)],
+    });
+    tx.physicalReservation.findUnique.mockResolvedValue({
+      id: 'res-active',
+      status: 'ACTIVE',
+      productId: 'pa',
+      variantId: null,
+      warehouseId: 'wh-1',
+      allocations: [
+        { id: 'alloc-1', physicalInventoryId: 'pi-1', quantity: 3 },
+        { id: 'alloc-2', physicalInventoryId: 'pi-2', quantity: 3 },
+      ],
+    });
+
+    await service.restoreForReturnItems({
+      orderId: 'order-1',
+      items: [{ productId: 'pa', quantity: 4 }],
+      returnId: 'ret-active',
+      tx,
+    });
+
+    const decrements = (tx.physicalInventory.updateMany.mock.calls as any[]).map(
+      (c) => ({
+        id: c[0]?.where?.id,
+        take: c[0]?.where?.reservedQuantity?.gte,
+      }),
+    );
+    expect(decrements).toEqual([
+      { id: 'pi-1', take: 3 },
+      { id: 'pi-2', take: 1 },
+    ]);
+  });
+
+  it('RESTORATION ledger rows carry the REAL stock before/after (not fabricated 0 → take)', async () => {
+    // The mock PI row reads quantity 10 AFTER the +2 increment.
+    await service.restoreForReturnItems({
+      orderId: 'order-1',
+      items: [{ productId: 'pa', quantity: 2 }],
+      returnId: 'ret-snap',
+      tx,
+    });
+    const restorationRows = (tx.physicalInventoryLedger.create.mock.calls as any[])
+      .map((c) => c[0]?.data)
+      .filter((d) => d?.type === 'RESTORATION');
+    expect(restorationRows.length).toBeGreaterThan(0);
+    for (const row of restorationRows) {
+      expect(row.stockBefore).toBe(8);
+      expect(row.stockAfter).toBe(10);
+    }
   });
 
   it('keeps the ACTIVE cycle on partial coverage; terminates on full coverage', async () => {
@@ -262,16 +516,31 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
     expect(tx.orderStockCycle.update).not.toHaveBeenCalled();
   });
 
-  it('restores nothing when the whole line is damaged', async () => {
+  it('restores nothing when the whole line is damaged (hold freed, never restocked)', async () => {
+    // The line (item-a) holds 5 units; ALL 5 arrive damaged. (WS2
+    // cumulative settlement: disarm requires the settled total — good +
+    // damaged across all returns — to reach the LINE quantity, so this
+    // test must return the whole line; a 2-of-5 damaged return would
+    // correctly leave the claim armed for the remaining 3.)
     const res = await service.restoreForReturnItems({
       orderId: 'order-1',
-      items: [{ productId: 'pa', quantity: 2, damagedQuantity: 2 }],
+      items: [{ productId: 'pa', quantity: 5, damagedQuantity: 5 }],
       returnId: 'ret-all-damaged',
       tx,
     });
     expect(res.restored).toEqual([]);
-    expect(stockService.operate).not.toHaveBeenCalled();
+    // No on-hand movement of any kind: the only engine call allowed is the
+    // capped RELEASE of the damaged units' hold (they will never restock,
+    // so their reservation share must not leak).
+    for (const [op, args] of stockService.operate.mock.calls as any[]) {
+      expect(op).toBe('release');
+      expect(args?.quantity).toBe(5);
+    }
     expect(tx.physicalInventory.update).not.toHaveBeenCalled();
+    // The line IS fully settled (5 of 5 damaged), so the claim disarms.
+    expect(tx.orderItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'item-a' } }),
+    );
   });
 
   it('caps restoration at the ordered quantity and skips non-positive lines', async () => {
@@ -384,6 +653,17 @@ describe('CancelReturnStockService.restoreForReturnItems (Task 6)', () => {
 
     it('item-level return: physical restored, managed add NEVER happens, claim settled', async () => {
       tx.order.findUnique.mockResolvedValue(movedOrder());
+      // WS2 restores physical INTO the reservation's allocations; the
+      // shared default mock (res-b, 3 units) belongs to another product —
+      // this line's reservation covers the full 4 units.
+      tx.physicalReservation.findUnique.mockResolvedValue({
+        id: 'res-c',
+        status: 'CONSUMED',
+        productId: 'pc',
+        variantId: null,
+        warehouseId: 'wh-1',
+        allocations: [{ id: 'alloc-c', physicalInventoryId: 'pi-1', quantity: 4 }],
+      });
 
       const res = await service.restoreForReturnItems({
         orderId: 'order-1',

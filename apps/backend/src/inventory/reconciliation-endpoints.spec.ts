@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { InventoryController } from './inventory.controller';
 import { PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
+import { ROLES_KEY } from '../common/decorators/roles.decorator';
 import { getAllPermissions } from '../common/permissions/registry';
 
 /**
@@ -50,6 +51,17 @@ describe('InventoryController reconciliation endpoints', () => {
     ).toEqual(['run_stock_reconciliation']);
   });
 
+  it('both endpoints also carry the staff role gate', () => {
+    // The permission alone left the role layer unset (2026-11-03): every
+    // other inventory route pairs @Permissions with the staff @Roles set.
+    expect(
+      Reflect.getMetadata(ROLES_KEY, InventoryController.prototype.reconcile),
+    ).toEqual(['superadmin', 'admin', 'employee']);
+    expect(
+      Reflect.getMetadata(ROLES_KEY, InventoryController.prototype.reconcileApply),
+    ).toEqual(['superadmin', 'admin', 'employee']);
+  });
+
   it('run_stock_reconciliation is grantable via getAllPermissions (no maintain_media repeat)', () => {
     expect(getAllPermissions()).toContain('run_stock_reconciliation');
   });
@@ -90,6 +102,9 @@ describe('InventoryController reconciliation endpoints', () => {
     expect(apply.apply).toHaveBeenCalledWith({
       performedBy: 'boss@example.com',
       backupId: 'dump-1',
+      // WS3: the controller now forwards the body's confirmed flag so the
+      // service can enforce it in depth (it used to stop at the controller).
+      confirmed: true,
       rowIds: ['R1|x'],
     });
   });

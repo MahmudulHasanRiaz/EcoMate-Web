@@ -287,7 +287,7 @@ describe('FeedService', () => {
 
       await (service as any).enrichProductsWithStock(products);
 
-      expect(products[0]._availableStock).toBe(15); // (10+5) - 0 (product reservedStock)
+      expect(products[0]._availableStock).toBe(13); // Σ per-variant available: (10-2) + (5-0) — variant reservations count (the old 15 subtracted only the product-level reserve and double-counted v1's 2 reserved units)
       expect(products[0].variants[0]._availableStock).toBe(8); // 10-2
       expect(products[0].variants[1]._availableStock).toBe(5); // 5-0
     });

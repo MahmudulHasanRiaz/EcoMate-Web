@@ -68,7 +68,12 @@ function makeService(scenario: any = {}) {
       }),
     },
     physicalReservation: {
-      findMany: jest.fn(async () => scenario.activeRes ?? []),
+      findMany: jest.fn(async (args: any) => {
+        // WS3's physical-applicability evidence query filters by orderId;
+        // the Q6 check filters by status ACTIVE instead.
+        if (args?.where?.orderId) return scenario.physicalEngagement ?? [];
+        return scenario.activeRes ?? [];
+      }),
     },
     comboComponentPhysicalReservation: {
       findMany: jest.fn(async () => scenario.activeComboRes ?? []),
@@ -160,6 +165,10 @@ describe('ReconciliationFinderService', () => {
         { referenceId: 'return-r2', productId: 'p1', variantId: null, quantity: 2 },
       ],
       physicalLedger: [],
+      // The order's delivery DID engage the physical layer (a reservation
+      // record exists) — so the missing physical restore is a real,
+      // applicable shortage (WS3 applicability gate).
+      physicalEngagement: [{ orderId: 'o1', productId: 'p1', variantId: null }],
     });
     const report = await service.buildReport();
     expect(report.counts.R2).toBe(1);
@@ -167,6 +176,39 @@ describe('ReconciliationFinderService', () => {
     expect(row.layer).toBe('physical');
     expect(row.missingPhysicalQty).toBe(2);
     expect(row.missingManagedQty).toBe(0);
+  });
+
+  it('R3 (WS3 gate): physical shortage with NO reservation/deduction evidence is report-only, never applicable', async () => {
+    const { service } = makeService({
+      returns: [
+        {
+          id: 'r2',
+          displayId: 'RTN-2',
+          orderId: 'o1',
+          type: 'FULL',
+          status: 'RECEIVED',
+          stockReconciled: true,
+          items: [{ productId: 'p1', variantId: null, quantity: 2 }],
+        },
+      ],
+      ordersForReturns: [
+        { id: 'o1', displayId: 'ORD-1', items: [{ productId: 'p1', variantId: null, quantity: 2 }] },
+      ],
+      products: [{ id: 'p1', name: 'Mug', availabilityMode: 'MANAGED_STOCK' }],
+      managedLedger: [
+        { referenceId: 'return-r2', productId: 'p1', variantId: null, quantity: 2 },
+      ],
+      physicalLedger: [],
+      // No physicalEngagement: the physical layer was never engaged for
+      // this line, so the apparent shortage must not be auto-applied
+      // (a warehouse/stock location is never invented).
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R2).toBe(0);
+    expect(report.counts.R3).toBe(1);
+    const row = report.rows.find((r) => r.category === 'R3')!;
+    expect(row.layer).toBe('physical');
+    expect(row.missingPhysicalQty).toBe(0);
   });
 
   it('healthy return (both layers restored) produces NO row', async () => {

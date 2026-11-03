@@ -1,10 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { dhakaDateParts } from '../common/utils/dhaka-time';
+import { appendOrderTimeline } from '../orders/order-timeline.util';
+
+const guardLogger = new Logger('RestoreStockForReturnTx');
 
 export interface GuardReturnItem {
   productId: string;
@@ -439,7 +443,10 @@ export interface RestoreStockForReturnDeps {
       returnId: string;
       performedBy?: string;
       tx: any;
-    }) => Promise<unknown>;
+    }) => Promise<{
+      restored?: Array<{ productId: string; variantId: string | null; quantity: number }>;
+      unrestored?: Array<{ productId: string; variantId: string | null; quantity: number }>;
+    }>;
   };
 }
 
@@ -483,6 +490,10 @@ export async function resolveReceivedById(
  * unknown split must never restock). The RECEIVED transition, the item-level
  * movement and the stockReconciled flag commit in the CALLER's transaction —
  * a double call (retry, double-scan, webhook + scanner race) is a no-op.
+ *
+ * The flag is set ONLY when every received good unit actually restored:
+ * a physical shortfall leaves the row RECEIVED + unreconciled (retryable,
+ * visible) instead of silently RESTOCKED — see the shortfall branch below.
  *
  * `db` is the transaction client the caller already runs in.
  */
@@ -580,13 +591,78 @@ export async function restoreStockForReturnTx(
       },
     });
   }
-  await cancelReturnStock.restoreForReturnItems({
+  const restoreResult = await cancelReturnStock.restoreForReturnItems({
     orderId: (ret as any).orderId as string,
     items: receivedItems,
     returnId,
     performedBy: opts?.performedBy,
     tx: db,
   });
+
+  // RESTOCKED HONESTY (inventory audit 2026-11-02, item 7): units that
+  // were received but could NOT be put back into physical stock (no
+  // reservation, allocations short) must not be reported as restocked.
+  // The strongest honest state the schema supports without a migration:
+  // the return stays RECEIVED with stockReconciled = false — visible in
+  // every received-returns list, still counted as arrived for exchange
+  // readiness, and RETRYABLE: this guard only no-ops on reconciled /
+  // RESTOCKED rows, and the item-level restore is cumulative + ledger-
+  // resume-safe, so a later mark-received re-attempts exactly the missing
+  // units without double-restoring the ones that did land. A loud warning
+  // is logged and a note is appended to the ORDER timeline (the Return
+  // model has no note/timeline field of its own).
+  const unrestored = Array.isArray((restoreResult as any)?.unrestored)
+    ? ((restoreResult as any).unrestored as Array<{ quantity: number }>)
+    : [];
+  const unrestoredQty = unrestored.reduce(
+    (s, u) => s + Math.max(0, Math.floor(Number(u?.quantity ?? 0) || 0)),
+    0,
+  );
+  if (unrestoredQty > 0) {
+    const detail = unrestored
+      .map(
+        (u: any) =>
+          `${u.quantity} × ${u.productId}${u.variantId ? ` (${u.variantId})` : ''}`,
+      )
+      .join(', ');
+    guardLogger.warn(
+      `Return ${(ret as any).displayId ?? returnId}: ${unrestoredQty} received unit(s) ` +
+        `could NOT be restored to physical stock (${detail}) — return left RECEIVED, ` +
+        `stockReconciled=false; retry mark-received after fixing the reservation data.`,
+    );
+    try {
+      if (typeof db?.$executeRaw === 'function') {
+        await appendOrderTimeline(db, (ret as any).orderId as string, [
+          {
+            type: 'return-stock-shortfall',
+            visibility: 'private',
+            timestamp: new Date().toISOString(),
+            note:
+              `Return ${(ret as any).displayId ?? returnId} was received, but ` +
+              `${unrestoredQty} unit(s) could not be restored to physical stock (${detail}). ` +
+              `The return stays RECEIVED (not restocked) — retry receiving it after the stock data is fixed.`,
+            performedBy: opts?.performedBy ?? null,
+          },
+        ]);
+      }
+    } catch (e) {
+      // The timeline note is visibility, not settlement — never fail the
+      // receive over it. The RECEIVED status + warning log still stand.
+      guardLogger.warn(
+        `Return ${(ret as any).displayId ?? returnId}: failed to append shortfall timeline note: ${(e as Error).message}`,
+      );
+    }
+    return db.return.update({
+      where: { id: returnId },
+      data: {
+        status: 'RECEIVED',
+        items: receivedItems as unknown as any,
+        receivedAt,
+        receivedById,
+      },
+    });
+  }
+
   return db.return.update({
     where: { id: returnId },
     data: {

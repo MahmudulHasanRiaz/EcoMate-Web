@@ -40,7 +40,7 @@ export function PhysicalStockTable() {
     queryFn: () => apiClient.get('/warehouses').then(r => r.data?.data || r.data),
   })
 
-  const { data: stock, isLoading } = useQuery<PhysicalStock[]>({
+  const { data: stock, isLoading, isError, refetch } = useQuery<PhysicalStock[]>({
     queryKey: ['physical-stock', selectedWarehouse],
     queryFn: () =>
       apiClient.get('/inventory/physical', {
@@ -113,6 +113,13 @@ export function PhysicalStockTable() {
                   <TableRow>
                     <TableCell colSpan={7} className='text-center py-8'>
                       <Loader2 className='animate-spin h-6 w-6 mx-auto' />
+                    </TableCell>
+                  </TableRow>
+                ) : isError ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className='text-center py-12'>
+                      <p className='text-sm text-destructive mb-2'>Failed to load physical stock.</p>
+                      <Button variant='outline' size='sm' onClick={() => refetch()}>Retry</Button>
                     </TableCell>
                   </TableRow>
                 ) : filteredStock.length === 0 ? (

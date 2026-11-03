@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DollarSign, AlertTriangle, Package, TrendingDown, FileEdit } from 'lucide-react'
+import { AlertTriangle, Package, TrendingDown, FileEdit } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { MOVEMENT_TYPE_LABELS } from './utils/movement-type-labels'
 import { UserBadge } from '@/components/user-badge'
@@ -78,23 +78,23 @@ function formatTimeAgo(dateStr: string): string {
 }
 
 function formatCurrency(value: number): string {
-  return `৳${value.toLocaleString('en-BD')}`
+  return `৳${value.toLocaleString('en-BD', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export function StockOverview() {
-  const { data: lowStock, isLoading: lowStockLoading } = useQuery<LowStockResponse>({
+  const { data: lowStock, isLoading: lowStockLoading, isError: lowStockError, refetch: refetchLowStock } = useQuery<LowStockResponse>({
     queryKey: ['inventory', 'low-stock'],
     queryFn: () => apiClient.get('/inventory/low-stock').then(r => r.data),
     refetchInterval: 60000,
   })
 
-  const { data: stockOverview, isLoading: stockLoading } = useQuery<StockOverviewResponse>({
+  const { data: stockOverview, isLoading: stockLoading, isError: stockError, refetch: refetchStock } = useQuery<StockOverviewResponse>({
     queryKey: ['inventory', 'stock-overview'],
     queryFn: () => apiClient.get('/inventory/stock-overview', { params: { perPage: 1 } }).then(r => r.data),
     refetchInterval: 60000,
   })
 
-  const { data: valuation, isLoading: valuationLoading } = useQuery<ValuationResponse>({
+  const { data: valuation, isLoading: valuationLoading, isError: valuationError, refetch: refetchValuation } = useQuery<ValuationResponse>({
     queryKey: ['inventory', 'valuation'],
     queryFn: () => apiClient.get('/inventory/valuation').then(r => r.data),
     refetchInterval: 60000,
@@ -108,7 +108,7 @@ export function StockOverview() {
     refetchInterval: 60000,
   })
 
-  const { data: logsData, isLoading: logsLoading } = useQuery<LogsResponse>({
+  const { data: logsData, isLoading: logsLoading, isError: logsError, refetch: refetchLogs } = useQuery<LogsResponse>({
     queryKey: ['inventory', 'logs'],
     queryFn: () => apiClient.get('/inventory/logs', { params: { perPage: 5, type: 'adjustment' } }).then(r => r.data),
     refetchInterval: 30000,
@@ -116,14 +116,22 @@ export function StockOverview() {
 
   const lowStockProducts = lowStock?.products ?? []
   // The low-stock list carries one entry per product OR variant, while the
-  // KPI math is per product — count DISTINCT products so "In Stock"
-  // (total products − low-stock products) uses consistent units.
+  // KPI math is per product — count DISTINCT products (rows now always
+  // carry productId) so "In Stock" (total products − low-stock products)
+  // uses consistent units.
   const lowStockCount = new Set(
     lowStockProducts.map((i) => i.productId ?? i.id),
   ).size
   const totalProducts = stockOverview?.meta.total ?? 0
-  const inStockCount = totalProducts - lowStockCount
+  // Defensive clamp: the difference must never render negative.
+  const inStockCount = Math.max(0, totalProducts - lowStockCount)
   const totalValue = valuation?.totalValue ?? 0
+  const kpiError = lowStockError || stockError || valuationError
+  const refetchKpis = () => {
+    refetchLowStock()
+    refetchStock()
+    refetchValuation()
+  }
 
   const loading = lowStockLoading || stockLoading || valuationLoading
   const logs = logsData?.data ?? []
@@ -158,6 +166,14 @@ export function StockOverview() {
               </Card>
             ))}
           </div>
+        ) : kpiError ? (
+          <Card>
+            <CardContent className='flex flex-col items-center justify-center py-10 text-center'>
+              <AlertTriangle className='h-8 w-8 text-destructive mb-2' />
+              <p className='text-sm text-destructive mb-3'>Failed to load inventory summary. The figures above are unavailable right now — not zero.</p>
+              <Button variant='outline' size='sm' onClick={refetchKpis}>Retry</Button>
+            </CardContent>
+          </Card>
         ) : (
           <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-4'>
             <Card>
@@ -173,12 +189,12 @@ export function StockOverview() {
 
             <Card>
               <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-                <CardTitle className='text-sm font-medium'>Low Stock Alerts</CardTitle>
+                <CardTitle className='text-sm font-medium'>Low Stock Products</CardTitle>
                 <AlertTriangle className='h-4 w-4 text-amber-500' />
               </CardHeader>
               <CardContent>
                 <div className='text-2xl font-bold text-amber-600'>{lowStockCount}</div>
-                <p className='text-xs text-muted-foreground'>Items below minimum threshold</p>
+                <p className='text-xs text-muted-foreground'>Distinct products below minimum threshold</p>
               </CardContent>
             </Card>
 
@@ -196,7 +212,7 @@ export function StockOverview() {
             <Card>
               <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                 <CardTitle className='text-sm font-medium'>Total Inventory Value</CardTitle>
-                <DollarSign className='h-4 w-4 text-muted-foreground' />
+                <span className='text-base font-bold leading-none text-muted-foreground'>৳</span>
               </CardHeader>
               <CardContent>
                 <div className='text-2xl font-bold'>{formatCurrency(totalValue)}</div>
@@ -223,6 +239,12 @@ export function StockOverview() {
                       <Skeleton className="h-4 w-16" />
                     </div>
                   ))}
+                </div>
+              ) : lowStockError ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <AlertTriangle className="h-8 w-8 text-destructive mb-2" />
+                  <p className="text-sm text-destructive mb-3">Failed to load low stock items.</p>
+                  <Button variant="outline" size="sm" onClick={() => refetchLowStock()}>Retry</Button>
                 </div>
               ) : lowStockProducts.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -251,7 +273,7 @@ export function StockOverview() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-medium text-amber-600">{item.stock} left</p>
+                        <p className="text-sm font-medium text-amber-600">{`${item.stock} left`}</p>
                         <p className="text-xs text-muted-foreground">Min: {item.lowStockQty ?? 5}</p>
                       </div>
                     </div>
@@ -282,6 +304,12 @@ export function StockOverview() {
                       <Skeleton className="h-3 w-16" />
                     </div>
                   ))}
+                </div>
+              ) : logsError ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <AlertTriangle className="h-8 w-8 text-destructive mb-2" />
+                  <p className="text-sm text-destructive mb-3">Failed to load recent adjustments.</p>
+                  <Button variant="outline" size="sm" onClick={() => refetchLogs()}>Retry</Button>
                 </div>
               ) : logs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -346,7 +374,7 @@ export function StockOverview() {
                       <p className="text-xs text-muted-foreground">{item.sku}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-medium text-blue-600">{Number(item.available)} available</p>
+                      <p className="text-sm font-medium text-blue-600">{`${Number(item.available)} available`}</p>
                       <p className="text-xs text-muted-foreground">Threshold: {Number(item.threshold)}</p>
                     </div>
                   </div>

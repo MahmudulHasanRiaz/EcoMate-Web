@@ -182,7 +182,14 @@ export class InventoryController {
   @Roles('superadmin', 'admin', 'employee')
   @Get('ledger')
   async getLedger(@Query() query: LedgerQueryDto) {
-    return this.inventoryService.getLedger(query);
+    // perPage was the one list input that skipped the clamp (2026-11-02
+    // audit): ?perPage=100000 reached the ledger query unbounded. Clamp to
+    // the same MAX_PER_PAGE ceiling as every other list endpoint; the
+    // fallback stays 50, the service's historical default page size here.
+    return this.inventoryService.getLedger({
+      ...query,
+      perPage: this.clampPerPage(query.perPage?.toString(), 50),
+    });
   }
 
   // Inventory Reports tabs (2026-11-02): real aggregations behind the
@@ -272,6 +279,7 @@ export class InventoryController {
    * is POST /inventory/reconcile/apply below, which applies ONLY
    * still-R1/R2 rows, never a blanket heal.)
    */
+  @Roles('superadmin', 'admin', 'employee')
   @Permissions('run_stock_reconciliation')
   @Post('reconcile')
   async reconcile(@CurrentUser() user: { email: string }) {
@@ -287,6 +295,7 @@ export class InventoryController {
    * STOCK_RECONCILE_ON_BOOT=true is present in the environment. The
    * acting user is recorded from the auth token, never from the body.
    */
+  @Roles('superadmin', 'admin', 'employee')
   @Permissions('run_stock_reconciliation')
   @Post('reconcile/apply')
   async reconcileApply(
@@ -306,6 +315,7 @@ export class InventoryController {
     return this.reconApply.apply({
       performedBy: user?.email ?? 'unknown',
       backupId: body.backupId,
+      confirmed: body.confirmed,
       rowIds: body.rowIds ?? [],
     });
   }

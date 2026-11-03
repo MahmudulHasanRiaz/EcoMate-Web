@@ -214,6 +214,11 @@ export function WarehouseHierarchy() {
                 <Plus className="h-3.5 w-3.5 mr-1" /> Add
               </Button>
             </CardHeader>
+            {!selectedZone && (
+              <p className="px-4 pb-2 text-xs text-muted-foreground">
+                Select a zone first — the Add button activates once a zone is selected.
+              </p>
+            )}
             <CardContent className="p-0">
               {!selectedZone ? (
                 <div className="py-8 text-center text-sm text-muted-foreground">Select a zone to view racks.</div>
@@ -257,6 +262,11 @@ export function WarehouseHierarchy() {
                 <Plus className="h-3.5 w-3.5 mr-1" /> Add
               </Button>
             </CardHeader>
+            {!selectedRack && (
+              <p className="px-4 pb-2 text-xs text-muted-foreground">
+                Select a rack first — the Add button activates once a rack is selected.
+              </p>
+            )}
             <CardContent className="p-0">
               {!selectedRack ? (
                 <div className="py-8 text-center text-sm text-muted-foreground">Select a rack to view shelves.</div>
@@ -306,6 +316,16 @@ export function WarehouseHierarchy() {
                 placeholder={`${dialog.type} name`}
                 onKeyDown={e => { if (e.key === 'Enter') handleDialogSubmit() }}
               />
+              {/* Each dialog names its OWN entity — this text used to be
+                  copy-pasted between the zone/rack/shelf dialogs. */}
+              <p className="text-xs text-muted-foreground">
+                {dialog.type === 'zone' &&
+                  'A zone is a large area inside the warehouse (e.g. "Ground Floor"). Racks stand inside a zone.'}
+                {dialog.type === 'rack' &&
+                  'A rack is a shelving unit inside the selected zone. Shelves are the levels on a rack.'}
+                {dialog.type === 'shelf' &&
+                  'A shelf is one level of the selected rack. Bin locations are placed on shelves.'}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <input

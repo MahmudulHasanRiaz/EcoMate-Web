@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Building2, Package, MapPin, ArrowLeftRight, ExternalLink, Loader2, Plus, Pencil, Trash2 } from 'lucide-react'
 import { UserBadge } from '@/components/user-badge'
 import { Link } from '@tanstack/react-router'
@@ -74,6 +75,7 @@ function BinFormDialog({
   const [zoneId, setZoneId] = useState(editBin?.zoneId || '')
   const [rackId, setRackId] = useState(editBin?.rackId || '')
   const [shelfId, setShelfId] = useState(editBin?.shelfId || '')
+  const [isActive, setIsActive] = useState(editBin?.isActive ?? true)
   const [pending, setPending] = useState(false)
 
   const isEdit = !!editBin
@@ -96,6 +98,7 @@ function BinFormDialog({
       zoneId: zoneId || undefined,
       rackId: rackId || undefined,
       shelfId: shelfId || undefined,
+      isActive,
     }
     try {
       if (isEdit) {
@@ -174,6 +177,13 @@ function BinFormDialog({
               </Select>
             </div>
           </div>
+          <div className='flex items-center justify-between'>
+            <div>
+              <Label>Active</Label>
+              <p className='text-xs text-muted-foreground'>Inactive bins are hidden from stock operations.</p>
+            </div>
+            <Switch checked={isActive} onCheckedChange={setIsActive} />
+          </div>
         </div>
         <DialogFooter>
           <Button variant='outline' onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
@@ -184,6 +194,114 @@ function BinFormDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * Details tab edit form. Rendered with key={warehouse.id} by the drawer so
+ * the form state always initializes from the warehouse actually open.
+ * Update stays disabled until a field actually changes (dirty check against
+ * the warehouse's current values).
+ */
+function WarehouseDetailsForm({ warehouse }: { warehouse: any }) {
+  const queryClient = useQueryClient()
+  // Baseline the dirty check compares against; refreshed after a successful
+  // save so the Update button disables again.
+  const [initial, setInitial] = useState({
+    name: warehouse.name || '',
+    type: (warehouse.type || 'main') as string,
+    address: warehouse.address || '',
+    city: warehouse.city || '',
+    phone: warehouse.phone || '',
+    email: warehouse.email || '',
+    isActive: !!warehouse.isActive,
+  })
+  const [form, setForm] = useState(initial)
+  const dirty =
+    form.name !== initial.name ||
+    form.type !== initial.type ||
+    form.address !== initial.address ||
+    form.city !== initial.city ||
+    form.phone !== initial.phone ||
+    form.email !== initial.email ||
+    form.isActive !== initial.isActive
+
+  const updateMut = useMutation({
+    mutationFn: () =>
+      apiClient.put(`/warehouses/${warehouse.id}`, {
+        ...form,
+        name: form.name.trim(),
+        // Slug is not edited here; send the current one so the update
+        // payload matches the Warehouses page's full-form shape.
+        slug: warehouse.slug,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['warehouses'] })
+      setInitial(form)
+      toast.success('Warehouse updated')
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to update warehouse'),
+  })
+
+  const handleUpdate = () => {
+    if (!form.name.trim()) { toast.error('Name is required'); return }
+    updateMut.mutate()
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Warehouse Details</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className='space-y-1.5'>
+          <Label>Name</Label>
+          <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+        </div>
+        <div className='space-y-1.5'>
+          <Label>Type</Label>
+          <Select value={form.type} onValueChange={(v) => setForm(f => ({ ...f, type: v }))}>
+            <SelectTrigger><SelectValue placeholder='Select type' /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value='main'>Main Warehouse</SelectItem>
+              <SelectItem value='showroom'>Showroom</SelectItem>
+              <SelectItem value='storage'>Storage</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className='space-y-1.5'>
+          <Label>Address</Label>
+          <Input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder='e.g. 123, Industrial Area' />
+        </div>
+        <div className='grid grid-cols-2 gap-3'>
+          <div className='space-y-1.5'>
+            <Label>City</Label>
+            <Input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} placeholder='e.g. Dhaka' />
+          </div>
+          <div className='space-y-1.5'>
+            <Label>Phone</Label>
+            <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder='e.g. +880 1234 567890' />
+          </div>
+        </div>
+        <div className='space-y-1.5'>
+          <Label>Email</Label>
+          <Input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder='e.g. warehouse@example.com' />
+        </div>
+        <div className='flex items-center justify-between'>
+          <div>
+            <Label>Active</Label>
+            <p className='text-xs text-muted-foreground'>Inactive warehouses are hidden from stock operations.</p>
+          </div>
+          <Switch checked={form.isActive} onCheckedChange={(v) => setForm(f => ({ ...f, isActive: v }))} />
+        </div>
+        <div className='flex justify-end pt-1'>
+          <Button size='sm' onClick={handleUpdate} disabled={!dirty || updateMut.isPending}>
+            {updateMut.isPending && <Loader2 className='animate-spin h-4 w-4 mr-1' />}
+            Update
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -241,10 +359,13 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
   const bins = binLocations || []
   const activityData = activityRes?.data || []
   const stats = Array.isArray(warehouseStats) ? warehouseStats : []
-  const totalItems = stats.length
-  const totalValue = stats.reduce((sum: number, pi: any) => {
-    const price = pi.product?.basePrice || 0
-    return sum + (pi.quantity * Number(price))
+  const totalUnits = stats.reduce((sum: number, pi: any) => sum + (pi.quantity || 0), 0)
+  // Value is computed from each product's BASE PRICE. Only rows whose
+  // payload actually carries a base price can be totalled — when none do,
+  // the card shows '—' instead of a fabricated ৳0.
+  const pricedRows = stats.filter((pi: any) => typeof pi.product?.basePrice === 'number')
+  const totalValue = pricedRows.reduce((sum: number, pi: any) => {
+    return sum + (pi.quantity * Number(pi.product.basePrice))
   }, 0)
 
   return (
@@ -287,12 +408,12 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
 
             <div className="grid grid-cols-3 gap-4">
               <div className="rounded-lg border bg-card p-3">
-                <div className="text-xs font-medium text-muted-foreground">Total Items</div>
-                <div className="text-xl font-bold mt-1">{statsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : totalItems}</div>
+                <div className="text-xs font-medium text-muted-foreground">Units on Hand</div>
+                <div className="text-xl font-bold mt-1">{statsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : totalUnits.toLocaleString()}</div>
               </div>
               <div className="rounded-lg border bg-card p-3">
-                <div className="text-xs font-medium text-muted-foreground">Inventory Value</div>
-                <div className="text-xl font-bold mt-1">{statsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : `৳${totalValue.toLocaleString()}`}</div>
+                <div className="text-xs font-medium text-muted-foreground">Inventory Value (Base Price)</div>
+                <div className="text-xl font-bold mt-1">{statsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : pricedRows.length ? `৳${totalValue.toLocaleString()}` : '—'}</div>
               </div>
               <div className="rounded-lg border bg-card p-3">
                 <div className="text-xs font-medium text-muted-foreground">Bin Locations</div>
@@ -427,29 +548,7 @@ export function WarehouseWorkspaceDrawer({ open, onOpenChange, warehouse }: Ware
               </TabsContent>
 
               <TabsContent value="details" className="space-y-4 pt-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">Contact & Location</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Address</span>
-                      <span>{warehouse.address || '—'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">City</span>
-                      <span>{warehouse.city || '—'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Phone</span>
-                      <span>{warehouse.phone || '—'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Email</span>
-                      <span>{warehouse.email || '—'}</span>
-                    </div>
-                  </CardContent>
-                </Card>
+                <WarehouseDetailsForm key={warehouse.id} warehouse={warehouse} />
               </TabsContent>
             </Tabs>
           </div>

@@ -70,7 +70,15 @@ describe('StockReconciliationService', () => {
       $transaction: jest.fn(async (cb: any) => cb(prisma)),
     };
     cancelReturnStock = { restoreForOrder: jest.fn().mockResolvedValue(undefined) };
-    orderStockDeduct = { deductForOrder: jest.fn().mockResolvedValue(undefined) };
+    // deductForOrder now reports movement (DeductForOrderResult); the heal
+    // labels 'deducted' only when it moved. Default mock: one unit moved.
+    orderStockDeduct = {
+      deductForOrder: jest.fn().mockResolvedValue({
+        moved: true,
+        managedDeductedUnits: 1,
+        physicalFulfilledUnits: 0,
+      }),
+    };
     stockService = {
       release: jest.fn().mockResolvedValue(undefined),
       deduct: jest.fn().mockResolvedValue(undefined),
@@ -256,6 +264,10 @@ describe('StockReconciliationService', () => {
   });
 
   it('restores stock for Cancelled orders', async () => {
+    // Pending restore work: a unit still flagged deducted.
+    prisma.orderItem.findMany.mockResolvedValue([
+      { managedStockReserved: false, managedStockDeducted: true, comboComponents: [] },
+    ]);
     const result = await service.healOrder('order-1', 'Cancelled');
     expect(result).toBe('restored');
     expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
@@ -264,10 +276,38 @@ describe('StockReconciliationService', () => {
   });
 
   it('restores stock (return prefix) for Returned orders', async () => {
+    prisma.orderItem.findMany.mockResolvedValue([
+      { managedStockReserved: true, managedStockDeducted: false, comboComponents: [] },
+    ]);
     const result = await service.healOrder('order-1', 'Returned');
     expect(result).toBe('restored');
     expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
       expect.objectContaining({ orderId: 'order-1', referencePrefix: 'return' }),
+    );
+  });
+
+  // ── Heal-label honesty (inventory audit fix round, WS1 item 8) ──────
+
+  it('reports noop for a Delivered order whose deduction moves nothing', async () => {
+    prisma.orderItem.findMany.mockResolvedValue([]);
+    orderStockDeduct.deductForOrder.mockResolvedValue({
+      moved: false,
+      managedDeductedUnits: 0,
+      physicalFulfilledUnits: 0,
+    });
+
+    const result = await service.healOrder('order-1', 'Delivered');
+
+    expect(result).toBe('noop');
+    expect(orderStockDeduct.deductForOrder).toHaveBeenCalled();
+  });
+
+  it('reports noop for a Cancelled order with no pending restore work (restore still runs)', async () => {
+    // Default mocks: no flagged items, no ACTIVE cycle/reservations.
+    const result = await service.healOrder('order-1', 'Cancelled');
+    expect(result).toBe('noop');
+    expect(cancelReturnStock.restoreForOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ orderId: 'order-1', referencePrefix: 'cancel' }),
     );
   });
 
@@ -395,6 +435,11 @@ describe('StockReconciliationService', () => {
     );
     prisma.order.findFirst.mockResolvedValue({ status: { name: 'Cancelled' } });
     prisma.order.findUnique.mockResolvedValue({ status: { name: 'Cancelled' } });
+    // healOrder's pending-work probe reads the order's items: the scanned
+    // order carries a deducted unit, so the first heal has work to do.
+    prisma.orderItem.findMany.mockResolvedValue([
+      { managedStockReserved: false, managedStockDeducted: true, comboComponents: [] },
+    ]);
     cancelReturnStock.restoreForOrder.mockImplementation(async () => {
       healed = true;
     });

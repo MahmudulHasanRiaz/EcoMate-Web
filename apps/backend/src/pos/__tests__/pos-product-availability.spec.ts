@@ -51,6 +51,13 @@ describe('PosOrdersService.getProductAvailability — network lookup', () => {
 
   async function build(physicalRows: any[], showroomStock = 0) {
     prisma = {
+      // WS4: getProductAvailability reads the product's availabilityMode
+      // first; the physical network lookup is the INVENTORY_CONTROLLED path.
+      product: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ availabilityMode: 'INVENTORY_CONTROLLED' }),
+      },
       physicalInventory: {
         findMany: jest.fn().mockImplementation(async ({ where }: any) => {
           // Mirror the real query: productId, warehouseId != showroom, qty > 0.

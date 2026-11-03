@@ -14,9 +14,33 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent } from '@/components/ui/card'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
-import { Loader2, Calendar, User, Search, RefreshCw, FileText, Check, ChevronsUpDown, X, Package } from 'lucide-react'
+import { Loader2, Calendar, User, Search, RefreshCw, FileText, Check, ChevronsUpDown, X, Package, Download } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { UserBadge } from '@/components/user-badge'
+import { MOVEMENT_TYPE_LABELS } from './utils/movement-type-labels'
+
+/** Client-side CSV download (same helper shape as the reports page). */
+function downloadCsv(
+  filename: string,
+  headers: string[],
+  rows: Array<Array<string | number | null | undefined>>,
+) {
+  const esc = (v: string | number | null | undefined) => {
+    const s = v == null ? '' : String(v)
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const csv = [headers.map(esc).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
 
 interface Product {
   id: string
@@ -123,6 +147,72 @@ export function MovementHistory() {
 
   const logs = logsRes?.data ?? []
   const meta = logsRes?.meta
+
+  const [exporting, setExporting] = useState(false)
+
+  /**
+   * Export the FULL filtered set, not just the visible page: both ledger
+   * endpoints paginate (the physical /inventory/logs caps perPage at 100),
+   * so walk the pages with the same filters until every matching row is
+   * collected (hard stop at 50 pages = 5,000 rows, reported if hit).
+   */
+  const exportCsv = async () => {
+    setExporting(true)
+    try {
+      const endpoint = ledgerMode === 'PHYSICAL' ? '/inventory/logs' : '/inventory/ledger'
+      const baseParams: Record<string, any> = {
+        perPage: 100,
+        productId: selectedProduct?.id || undefined,
+      }
+      if (typeFilter !== 'all') baseParams.type = typeFilter
+      // The managed ledger endpoint accepts NO warehouse param — the
+      // warehouse filter exists (and is sent) in Physical mode only.
+      if (ledgerMode === 'PHYSICAL' && warehouseFilter !== 'all') {
+        baseParams.warehouseId = warehouseFilter
+      }
+      const rows: LogEntry[] = []
+      let p = 1
+      let totalPages = 1
+      do {
+        const res = await apiClient
+          .get<ApiResponse>(endpoint, { params: { ...baseParams, page: p } })
+          .then((r) => r.data)
+        rows.push(...(res.data ?? []))
+        totalPages = res.meta?.totalPages ?? 1
+        p += 1
+      } while (p <= totalPages && p <= 50)
+      if (rows.length === 0) {
+        toast.error('Nothing to export for the current filters')
+        return
+      }
+      downloadCsv(
+        ledgerMode === 'PHYSICAL' ? 'movement-history-physical.csv' : 'movement-history-managed.csv',
+        ['Date', 'Product', 'SKU', ...(ledgerMode === 'PHYSICAL' ? ['Warehouse'] : []), 'Type', 'Direction', 'Qty', 'On Hand Before', 'On Hand After', 'Performed By', 'Reason / Note'],
+        rows.map((log) => [
+          new Date(log.performedAt).toISOString(),
+          log.productName,
+          log.sku,
+          ...(ledgerMode === 'PHYSICAL' ? [log.warehouseName ?? ''] : []),
+          MOVEMENT_TYPE_LABELS[log.type] ?? log.type,
+          log.direction,
+          log.quantity,
+          log.stockBefore,
+          log.stockAfter,
+          log.performedBy ?? '',
+          log.reason || log.note || '',
+        ]),
+      )
+      if (p > totalPages) {
+        toast.success(`Exported ${rows.length} movements`)
+      } else {
+        toast.warning(`Export capped at ${rows.length} rows (5,000-row limit)`)
+      }
+    } catch {
+      toast.error('Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const formatDateTime = (dateStr: string) => {
     return new Date(dateStr).toLocaleString('en-US', {
@@ -310,6 +400,18 @@ export function MovementHistory() {
             title="Refresh history"
           >
             <RefreshCw className="h-4 w-4" />
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportCsv}
+            disabled={exporting || logs.length === 0}
+            className="h-9 sm:mt-5 bg-background shrink-0"
+            title="Export the full filtered set as CSV"
+          >
+            {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            Export CSV
           </Button>
         </div>
 

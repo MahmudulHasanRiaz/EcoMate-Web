@@ -7,9 +7,12 @@
  *   - --apply writes, and ONLY the finder's still-R1/R2 rows, through the
  *     same guarded ReconciliationApplyService the admin page uses.
  *   - --apply REQUIRES --client=<stack> (informational scope label,
- *     recorded on the ReconciliationRun audit record). The database is
- *     whatever DATABASE_URL points at — the operator MUST confirm it
- *     matches the named stack before applying.
+ *     recorded on the ReconciliationRun audit record), --backup=<dump-id>
+ *     naming the restore-tested backup taken immediately before, and an
+ *     explicit --confirm flag. The service re-enforces backup + confirmed
+ *     server-side, so these flags are the operator's deliberate act, not
+ *     a formality. The database is whatever DATABASE_URL points at — the
+ *     operator MUST confirm it matches the named stack before applying.
  *   - REFUSES to run at all while STOCK_RECONCILE_ON_BOOT=true is present
  *     in the environment (the removed auto-heal must not race a manual run
  *     during the transition).
@@ -24,7 +27,7 @@
  * Usage:
  *   cd apps/backend
  *   npx tsx prisma/scripts/reconcile-stock.ts [--client=<stack>]
- *   npx tsx prisma/scripts/reconcile-stock.ts --apply --client=<stack> [--backup=<dump-id>]
+ *   npx tsx prisma/scripts/reconcile-stock.ts --apply --client=<stack> --backup=<dump-id> --confirm
  */
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
@@ -63,6 +66,7 @@ function printReport(report: ReconReport): void {
 async function main() {
   const args = process.argv.slice(2);
   const apply = args.includes('--apply');
+  const confirm = args.includes('--confirm');
   const clientArg = args.find((a) => a.startsWith('--client='));
   const client = clientArg ? clientArg.split('=')[1] : null;
   const backupArg = args.find((a) => a.startsWith('--backup='));
@@ -80,6 +84,20 @@ async function main() {
     console.error(
       '[reconcile] REFUSED: --apply requires --client=<stack> so the run is ' +
         'recorded against the stack it was meant for.',
+    );
+    process.exit(1);
+  }
+  if (apply && (!backupId || !backupId.trim())) {
+    console.error(
+      '[reconcile] REFUSED: --apply requires --backup=<dump-id> naming the ' +
+        'restore-tested backup taken immediately before the run.',
+    );
+    process.exit(1);
+  }
+  if (apply && !confirm) {
+    console.error(
+      '[reconcile] REFUSED: --apply requires --confirm — review the dry-run ' +
+        'report first, then re-run with --confirm to apply.',
     );
     process.exit(1);
   }
@@ -119,6 +137,7 @@ async function main() {
     const result = await applyService.apply({
       performedBy: `reconcile-script:${client}`,
       backupId,
+      confirmed: confirm,
       rowIds: targets.map((r) => r.id),
       clientLabel: client,
     });

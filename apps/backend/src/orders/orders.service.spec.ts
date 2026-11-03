@@ -168,6 +168,12 @@ describe('OrdersService', () => {
                 isActive: true,
                 availabilityMode: 'MANAGED_STOCK',
                 warehouseId: 'wh-1',
+                // WS3: addItem/create now run the managed availability
+                // gate against these counters (the findMany fixtures
+                // already carry 25/0; findUnique was missing them, which
+                // read as available=0 and blocked every add).
+                managedStockQuantity: 25,
+                reservedStock: 0,
               }),
               findMany: jest.fn().mockImplementation(async (args) => {
                 if (args?.where?.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
@@ -3027,6 +3033,8 @@ describe('OrdersService', () => {
         };
         (prisma.physicalInventory as any) = {
           findFirst: jest.fn().mockResolvedValue(null),
+          // WS3: verifyStockForOrder reads SUMMED availability via findMany.
+          findMany: jest.fn().mockResolvedValue([]),
         };
       };
 
@@ -3118,6 +3126,9 @@ describe('OrdersService', () => {
             quantity: 2,
             reservedQuantity: 2,
           }),
+          findMany: jest.fn().mockResolvedValue([
+            { warehouseId: 'wh-1', quantity: 2, reservedQuantity: 2 },
+          ]),
         };
 
         await expect(
@@ -3149,6 +3160,9 @@ describe('OrdersService', () => {
             quantity: 2,
             reservedQuantity: 5,
           }),
+          findMany: jest.fn().mockResolvedValue([
+            { warehouseId: 'wh-1', quantity: 2, reservedQuantity: 5 },
+          ]),
         };
 
         await expect(

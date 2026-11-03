@@ -13,7 +13,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, TrendingDown, TrendingUp, ArchiveX, Package, Loader2, DollarSign, Download } from 'lucide-react'
+import { AlertCircle, TrendingDown, TrendingUp, ArchiveX, Package, Loader2, Download } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { PageInfo } from '@/components/page-info'
 
 interface StockItem {
@@ -167,6 +169,19 @@ export function Reports() {
   const [agingPage, setAgingPage] = useState(1)
   const [fastPage, setFastPage] = useState(1)
   const [deadPage, setDeadPage] = useState(1)
+  // Dead-stock window: the endpoint accepts a `days` param (default 180) —
+  // expose it instead of hardcoding the window in the query.
+  const [deadDays, setDeadDays] = useState(180)
+  const [deadDaysInput, setDeadDaysInput] = useState('180')
+  const commitDeadDays = () => {
+    const parsed = parseInt(deadDaysInput, 10)
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      setDeadDaysInput(String(deadDays))
+      return
+    }
+    setDeadDays(parsed)
+    setDeadPage(1)
+  }
 
   // Negative stock is a client-side filter, so EVERY stock-overview page
   // must be loaded first — page 1 alone silently missed negatives beyond
@@ -217,11 +232,11 @@ export function Reports() {
     isLoading: deadLoading,
     error: deadError,
   } = useQuery({
-    queryKey: ['inventory-reports', 'dead-stock'],
+    queryKey: ['inventory-reports', 'dead-stock', deadDays],
     queryFn: () =>
       apiClient
         .get<{ data: DeadStockRow[]; days: number; total: number }>('/inventory/reports/dead-stock', {
-          params: { days: 180 },
+          params: { days: deadDays },
         })
         .then((r) => r.data),
   })
@@ -316,6 +331,21 @@ export function Reports() {
       ]),
     )
 
+  const valuationItems: any[] = physValuation?.items ?? []
+  const exportValuation = () =>
+    downloadCsv(
+      'inventory-valuation.csv',
+      ['Product', 'SKU', 'Physical Qty', 'Lot Remaining', 'FIFO Value', 'Status'],
+      valuationItems.map((item: any) => [
+        item.name,
+        item.sku ?? '',
+        item.physicalQty,
+        item.lotRemainingQty,
+        item.fifoValue,
+        item.reconciliationStatus === 'OK' ? 'OK' : 'Reconcile',
+      ]),
+    )
+
   return (
     <>
       <Header fixed>
@@ -335,7 +365,7 @@ export function Reports() {
             <TabsTrigger value='aging'><TrendingDown className='h-4 w-4 mr-2' /> Aging</TabsTrigger>
             <TabsTrigger value='fast'><TrendingUp className='h-4 w-4 mr-2' /> Fast Moving</TabsTrigger>
             <TabsTrigger value='dead'><ArchiveX className='h-4 w-4 mr-2' /> Dead Stock</TabsTrigger>
-            <TabsTrigger value='valuation'><DollarSign className='h-4 w-4 mr-2' /> Valuation</TabsTrigger>
+            <TabsTrigger value='valuation'><span className='text-sm font-bold leading-none mr-2'>৳</span> Valuation</TabsTrigger>
           </TabsList>
 
           <TabsContent value='negative' className='space-y-4'>
@@ -343,7 +373,7 @@ export function Reports() {
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <div>
                   <CardTitle>Negative Stock Report</CardTitle>
-                  <CardDescription>Items that have a stock quantity below zero, usually indicating missing receipts or over-shipment.</CardDescription>
+                  <CardDescription>Items that have a stock quantity below zero, usually indicating missing receipts or over-shipment. Results are product-level and capped — the scan covers at most the first 2,000 products.</CardDescription>
                 </div>
                 <Button variant="outline" size="sm" onClick={exportNegative} disabled={negativeStock.length === 0}>
                   <Download className="h-4 w-4 mr-2" /> Export CSV
@@ -477,7 +507,7 @@ export function Reports() {
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <div>
                   <CardTitle>Fast Moving Items</CardTitle>
-                  <CardDescription>Products ranked by total quantity sold — high-turnover items that require frequent replenishment.</CardDescription>
+                  <CardDescription>Products ranked by total quantity sold — high-turnover items that require frequent replenishment. Showing the top 50 products.</CardDescription>
                 </div>
                 <Button variant="outline" size="sm" onClick={exportFast} disabled={fastRows.length === 0}>
                   <Download className="h-4 w-4 mr-2" /> Export CSV
@@ -541,11 +571,26 @@ export function Reports() {
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <div>
                   <CardTitle>Dead Stock</CardTitle>
-                  <CardDescription>Products holding stock with no movement in the last 180 days — candidates for clearance or liquidation.</CardDescription>
+                  <CardDescription>Products holding stock with no movement in the last {deadDays} days — candidates for clearance or liquidation.</CardDescription>
                 </div>
-                <Button variant="outline" size="sm" onClick={exportDead} disabled={deadRows.length === 0}>
-                  <Download className="h-4 w-4 mr-2" /> Export CSV
-                </Button>
+                <div className="flex items-end gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="dead-days" className="text-xs">No movement for (days)</Label>
+                    <Input
+                      id="dead-days"
+                      type="number"
+                      min={1}
+                      className="h-9 w-24"
+                      value={deadDaysInput}
+                      onChange={(e) => setDeadDaysInput(e.target.value)}
+                      onBlur={commitDeadDays}
+                      onKeyDown={(e) => { if (e.key === 'Enter') commitDeadDays() }}
+                    />
+                  </div>
+                  <Button variant="outline" size="sm" onClick={exportDead} disabled={deadRows.length === 0}>
+                    <Download className="h-4 w-4 mr-2" /> Export CSV
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {deadLoading ? (
@@ -613,6 +658,9 @@ export function Reports() {
                   <CardTitle>Physical Inventory Valuation</CardTitle>
                   <CardDescription>FIFO valuation based on CostingLot remaining quantities.</CardDescription>
                 </div>
+                <Button variant="outline" size="sm" onClick={exportValuation} disabled={valuationItems.length === 0}>
+                  <Download className="h-4 w-4 mr-2" /> Export CSV
+                </Button>
               </CardHeader>
               <CardContent>
                 {physValuation?.items?.length ? (

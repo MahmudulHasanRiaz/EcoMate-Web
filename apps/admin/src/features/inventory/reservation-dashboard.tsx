@@ -29,9 +29,19 @@ interface Reservation {
   warehouseId: string
   quantity: number
   reservedQuantity: number
+  /** The reservation's own creation time (falls back to updatedAt on old payloads). */
+  createdAt?: string
   updatedAt: string
+  /** Order display id (e.g. ORD-261102-0001) when the reservation is order-backed. */
+  orderDisplayId?: string | null
+  order?: { displayId: string } | null
+  isManaged?: boolean
   product: { id: string; name: string; sku: string }
   warehouse: { id: string; name: string }
+}
+
+function orderRefOf(r: Reservation): string | null {
+  return r.orderDisplayId ?? r.order?.displayId ?? null
 }
 
 export function ReservationDashboard() {
@@ -45,7 +55,7 @@ export function ReservationDashboard() {
     queryFn: () => apiClient.get('/warehouses').then(r => r.data?.data || r.data),
   })
 
-  const { data: reservations, isLoading } = useQuery<Reservation[]>({
+  const { data: reservations, isLoading, isError, refetch } = useQuery<Reservation[]>({
     queryKey: ['physical-reservations', selectedWarehouse],
     queryFn: () =>
       apiClient.get('/inventory/physical/reservations', {
@@ -67,6 +77,8 @@ export function ReservationDashboard() {
   const filtered = (reservations || []).filter((r) =>
     !search || r.product.name.toLowerCase().includes(search.toLowerCase()) || r.product.sku.toLowerCase().includes(search.toLowerCase())
   )
+
+  const releaseTarget = releaseId ? (reservations || []).find((r) => r.id === releaseId) ?? null : null
 
   const totalReserved = filtered.reduce((sum, r) => sum + r.reservedQuantity, 0)
 
@@ -118,6 +130,7 @@ export function ReservationDashboard() {
                 <TableHead>Product</TableHead>
                 <TableHead>SKU</TableHead>
                 <TableHead>Warehouse</TableHead>
+                <TableHead>Order</TableHead>
                 <TableHead className='text-right'>Reserved</TableHead>
                 <TableHead className='text-right'>On Hand</TableHead>
                 <TableHead className='text-right'>Reserved Since</TableHead>
@@ -127,13 +140,20 @@ export function ReservationDashboard() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className='text-center py-8'>
+                  <TableCell colSpan={8} className='text-center py-8'>
                     <Loader2 className='animate-spin h-6 w-6 mx-auto' />
+                  </TableCell>
+                </TableRow>
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={8} className='text-center py-12'>
+                    <p className='text-sm text-destructive mb-2'>Failed to load reservations.</p>
+                    <Button variant='outline' size='sm' onClick={() => refetch()}>Retry</Button>
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className='text-center py-12 text-muted-foreground'>
+                  <TableCell colSpan={8} className='text-center py-12 text-muted-foreground'>
                     No active reservations.
                   </TableCell>
                 </TableRow>
@@ -143,10 +163,11 @@ export function ReservationDashboard() {
                     <TableCell className='font-medium'>{r.product.name}</TableCell>
                     <TableCell className='text-sm text-muted-foreground'>{r.product.sku}</TableCell>
                     <TableCell><Badge variant='outline'>{r.warehouse.name}</Badge></TableCell>
+                    <TableCell className='text-sm font-medium'>{orderRefOf(r) ?? '—'}</TableCell>
                     <TableCell className='text-right font-medium'>{r.reservedQuantity}</TableCell>
                     <TableCell className='text-right'>{r.quantity}</TableCell>
                     <TableCell className='text-right text-sm text-muted-foreground'>
-                      {new Date(r.updatedAt).toLocaleDateString()}
+                      {new Date(r.createdAt ?? r.updatedAt).toLocaleString()}
                     </TableCell>
                     <TableCell className='text-right'>
                       <Button variant='ghost' size='sm' className='text-destructive' onClick={() => setReleaseId(r.id)}>
@@ -166,7 +187,18 @@ export function ReservationDashboard() {
           <AlertDialogHeader>
             <AlertDialogTitle>Release Reservation?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will free the reserved stock. The order allocation will be removed.
+              {releaseTarget ? (
+                <>
+                  Release <strong>{releaseTarget.reservedQuantity} × {releaseTarget.product.name}</strong> reserved
+                  in <strong>{releaseTarget.warehouse.name}</strong>
+                  {orderRefOf(releaseTarget) ? (
+                    <> for order <strong>{orderRefOf(releaseTarget)}</strong></>
+                  ) : null}
+                  . This will free the reserved stock and remove the order allocation.
+                </>
+              ) : (
+                'This will free the reserved stock. The order allocation will be removed.'
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

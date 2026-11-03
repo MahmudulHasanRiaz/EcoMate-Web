@@ -15,6 +15,7 @@ describe('InventoryController', () => {
       logs: jest.fn(),
       listTransfers: jest.fn(),
       stockOverview: jest.fn(),
+      getLedger: jest.fn(),
     };
     const controller = new InventoryController(service as any, {} as any);
 
@@ -43,6 +44,25 @@ describe('InventoryController', () => {
     it('keeps normal page sizes untouched', async () => {
       await controller.transfers('3', '50');
       expect(service.listTransfers).toHaveBeenCalledWith(3, 50, undefined, undefined);
+    });
+
+    it('caps ledger perPage at 100 (it used to skip the clamp entirely)', async () => {
+      await controller.getLedger({ perPage: 100000 } as any);
+      expect(service.getLedger).toHaveBeenCalledWith(
+        expect.objectContaining({ perPage: 100 }),
+      );
+    });
+
+    it('keeps the ledger default page size at 50 and normal sizes untouched', async () => {
+      await controller.getLedger({} as any);
+      expect(service.getLedger).toHaveBeenCalledWith(
+        expect.objectContaining({ perPage: 50 }),
+      );
+
+      await controller.getLedger({ perPage: 25 } as any);
+      expect(service.getLedger).toHaveBeenCalledWith(
+        expect.objectContaining({ perPage: 25 }),
+      );
     });
   });
 });

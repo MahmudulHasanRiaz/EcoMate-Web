@@ -102,7 +102,7 @@ export class FeedService {
     const storeName = await this.getStoreName();
     const startTime = Date.now();
 
-    const filter = this.buildProductFilter(config);
+    const filter = await this.buildProductFilter(config);
     const ns = PLATFORM_NAMESPACES[platform] || PLATFORM_NAMESPACES.meta;
 
     const res = reply.raw || reply;
@@ -334,6 +334,24 @@ export class FeedService {
 
     for (const p of products) {
       const phys = invByProduct.get(p.id);
+      // Product-level availability mirrors products.service's aggregation:
+      // a VARIABLE product's stock lives on its variants, so the product
+      // total is the sum of the per-variant available figures — never the
+      // variantId-null rows alone (physical) and never the parent's
+      // reservedStock (managed). The feed query loads active variants only,
+      // so summing p.variants is already the active-only aggregation.
+      const variantPhysicalAvailable = (p.variants ?? []).reduce(
+        (sum: number, v: any) => {
+          const vp = invByVariant.get(v.id);
+          return sum + ((vp?.qty ?? 0) - (vp?.reserved ?? 0));
+        },
+        0,
+      );
+      const variantManagedAvailable = (p.variants ?? []).reduce(
+        (sum: number, v: any) =>
+          sum + ((v.managedStockQuantity ?? 0) - (v.reservedStock ?? 0)),
+        0,
+      );
 
       p._availableStock =
         p.availabilityMode === 'ALWAYS_IN_STOCK'
@@ -341,16 +359,13 @@ export class FeedService {
           : p.availabilityMode === 'ALWAYS_OUT_OF_STOCK'
             ? 0
             : p.availabilityMode === 'INVENTORY_CONTROLLED'
-              ? (phys?.qty ?? 0) - (phys?.reserved ?? 0)
+              ? p.type === 'variable'
+                ? variantPhysicalAvailable
+                : (phys?.qty ?? 0) - (phys?.reserved ?? 0)
               : // MANAGED_STOCK (default)
-                (p.type === 'variable'
-                  ? (p.variants ?? []).reduce(
-                      (sum: number, v: any) =>
-                        sum + (v.managedStockQuantity ?? 0),
-                      0,
-                    )
-                  : (p.managedStockQuantity ?? 0)) -
-                  (p.reservedStock ?? 0);
+                p.type === 'variable'
+                ? variantManagedAvailable
+                : (p.managedStockQuantity ?? 0) - (p.reservedStock ?? 0);
 
       if (p.variants) {
         for (const v of p.variants) {
@@ -369,25 +384,48 @@ export class FeedService {
     }
   }
 
-  private buildProductFilter(config: any): any {
+  /**
+   * Product ids with genuinely sellable stock, per each product's own
+   * availabilityMode (owner rule): MANAGED_STOCK counts managed AVAILABLE
+   * (quantity − reserved), INVENTORY_CONTROLLED counts physical AVAILABLE
+   * across warehouses, ALWAYS_IN_STOCK always qualifies,
+   * ALWAYS_OUT_OF_STOCK never does. Availability is a cross-field
+   * computation (quantity − reserved), which Prisma's where API cannot
+   * express — hence the id set via raw SQL, same approach as
+   * products.service's hasStock filter.
+   */
+  private async findInStockProductIds(): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT p.id
+      FROM "Product" p
+      WHERE p."availabilityMode" = 'ALWAYS_IN_STOCK'
+         OR (p."availabilityMode" = 'MANAGED_STOCK' AND p.type <> 'variable'
+             AND p."stock" - p."reservedStock" > 0)
+         OR (p."availabilityMode" = 'MANAGED_STOCK' AND p.type = 'variable'
+             AND EXISTS (SELECT 1 FROM "ProductVariant" v
+                         WHERE v."productId" = p.id AND v."isActive" = true
+                           AND v."stock" - v."reservedStock" > 0))
+         OR (p."availabilityMode" = 'INVENTORY_CONTROLLED' AND p.type <> 'variable'
+             AND EXISTS (SELECT 1 FROM "PhysicalInventory" pi
+                         WHERE pi."productId" = p.id AND pi."variantId" IS NULL
+                           AND pi."quantity" - pi."reservedQuantity" > 0))
+         OR (p."availabilityMode" = 'INVENTORY_CONTROLLED' AND p.type = 'variable'
+             AND EXISTS (SELECT 1 FROM "PhysicalInventory" pi
+                         JOIN "ProductVariant" v ON v.id = pi."variantId"
+                         WHERE pi."productId" = p.id AND v."isActive" = true
+                           AND pi."quantity" - pi."reservedQuantity" > 0))
+    `;
+    return rows.map((r) => r.id);
+  }
+
+  private async buildProductFilter(config: any): Promise<any> {
     const filter: any = { isActive: true };
 
     if (config.excludeOutOfStock) {
-      filter.OR = [
-        { availabilityMode: 'ALWAYS_IN_STOCK' as any },
-        {
-          availabilityMode: 'MANAGED_STOCK' as any,
-          type: 'simple',
-          managedStockQuantity: { gt: 0 },
-        },
-        {
-          availabilityMode: 'MANAGED_STOCK' as any,
-          type: 'variable',
-          variants: {
-            some: { managedStockQuantity: { gt: 0 } },
-          },
-        },
-      ];
+      // Mode-aware: previously this filter had NO INVENTORY_CONTROLLED
+      // branch at all, so every IC product vanished from feeds that
+      // excluded out-of-stock items, however much physical stock it had.
+      filter.id = { in: await this.findInStockProductIds() };
     }
 
     if (config.minPriceFilter) {
@@ -563,7 +601,7 @@ export class FeedService {
     if (!config) throw new NotFoundException('Feed config not found');
 
     const storeName = await this.getStoreName();
-    const filter = this.buildProductFilter(config);
+    const filter = await this.buildProductFilter(config);
     const totalProducts = await this.prisma.product.count({ where: filter });
 
     const products = (await this.prisma.product.findMany({

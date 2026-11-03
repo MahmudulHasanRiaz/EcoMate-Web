@@ -7,9 +7,10 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
-import { InitialPhysicalStockService } from '../stock/initial-physical-stock.service';
+import { CostingLotService } from '../stock/costing-lot.service';
 import {
   ReconciliationFinderService,
+  RECEIVED_RETURN_STATUSES,
   ReconCheck,
   ReconRow,
 } from './reconciliation-finder.service';
@@ -23,10 +24,20 @@ import {
  * receive path uses:
  *   managed  — StockService.operate('add', ledgerType RETURN,
  *              referenceType RETURN, reference `return-<returnId>`)
- *   physical — PhysicalInventory increment + PhysicalInventoryLedger
- *              RESTORATION row with reason `return-<returnId>`
+ *   physical — restore into the order's own reservation ALLOCATION rows
+ *              (guarded PhysicalInventory increments + release of the held
+ *              reservedQuantity for the restored portion) +
+ *              PhysicalInventoryLedger RESTORATION rows with reason
+ *              `return-<returnId>`, plus CostingLotService.restoreForReturn
+ *              where FULFILLMENT consumptions exist
  * so an applied row is indistinguishable from a receive-path restore and
  * the post-run finder re-run sees the matching ledger add (idempotency).
+ *
+ * The service itself enforces the §2.8 gates (restore-tested backupId +
+ * confirmed === true) — callers (admin controller, CLI script) validate
+ * too, but the write path never trusts them. The physical leg NEVER
+ * invents a warehouse: with no reservation allocation to restore into,
+ * the physical part is skipped as not-applicable.
  *
  * NEVER blanket healAll() — that would also heal R3 + orphan releases,
  * which are out of scope here. R3 is report-only; R4 is never applied.
@@ -35,6 +46,8 @@ import {
 export interface ReconcileApplyInput {
   performedBy: string;
   backupId?: string | null;
+  /** Must be exactly true — enforced here, not only by callers. */
+  confirmed?: boolean;
   rowIds: string[];
   /** Informational scope label for script runs (e.g. the --client value). */
   clientLabel?: string | null;
@@ -59,10 +72,23 @@ export class ReconciliationApplyService {
     private readonly prisma: PrismaService,
     private readonly finder: ReconciliationFinderService,
     private readonly stockService: StockService,
-    private readonly initialPhysicalStock: InitialPhysicalStockService,
+    private readonly costingLotService: CostingLotService,
   ) {}
 
   async apply(input: ReconcileApplyInput): Promise<ReconcileApplyResult> {
+    // §2.8 gates enforced HERE, in the write path itself — the admin
+    // controller and the CLI script validate too, but a caller that skips
+    // its own validation must still not get a write through.
+    if (!input.backupId || !input.backupId.trim()) {
+      throw new BadRequestException(
+        'Apply requires the id of a restore-tested backup taken immediately before the run.',
+      );
+    }
+    if (input.confirmed !== true) {
+      throw new BadRequestException(
+        'Apply requires confirmed=true — preview the report and confirm first.',
+      );
+    }
     if (process.env['STOCK_RECONCILE_ON_BOOT'] === 'true') {
       throw new BadRequestException(
         'STOCK_RECONCILE_ON_BOOT=true is present in the environment — refusing ' +
@@ -71,27 +97,33 @@ export class ReconciliationApplyService {
       );
     }
 
-    const staleBefore = new Date(Date.now() - RUNNING_STALE_MS);
-    await this.prisma.reconciliationRun.updateMany({
-      where: { status: 'RUNNING', createdAt: { lt: staleBefore } },
-      data: { status: 'FAILED', finishedAt: new Date() },
-    });
-    const running = await this.prisma.reconciliationRun.findFirst({
-      where: { status: 'RUNNING' },
-      select: { id: true },
-    });
-    if (running) {
-      throw new ConflictException(
-        'Another reconciliation Apply is already RUNNING — wait for it to finish.',
-      );
-    }
-
-    const run = await this.prisma.reconciliationRun.create({
-      data: {
-        performedBy: input.performedBy,
-        backupId: input.backupId ?? null,
-        status: 'RUNNING',
-      },
+    // Concurrency: the stale sweep + RUNNING check + run create run inside
+    // ONE transaction holding a transaction-scoped advisory lock, so two
+    // simultaneous applies cannot both pass the check (the old
+    // check-then-create outside a lock let both through).
+    const run = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(7272, 6301)`;
+      const staleBefore = new Date(Date.now() - RUNNING_STALE_MS);
+      await tx.reconciliationRun.updateMany({
+        where: { status: 'RUNNING', createdAt: { lt: staleBefore } },
+        data: { status: 'FAILED', finishedAt: new Date() },
+      });
+      const running = await tx.reconciliationRun.findFirst({
+        where: { status: 'RUNNING' },
+        select: { id: true },
+      });
+      if (running) {
+        throw new ConflictException(
+          'Another reconciliation Apply is already RUNNING — wait for it to finish.',
+        );
+      }
+      return tx.reconciliationRun.create({
+        data: {
+          performedBy: input.performedBy,
+          backupId: input.backupId ?? null,
+          status: 'RUNNING',
+        },
+      });
     });
 
     const applied: string[] = [];
@@ -193,6 +225,16 @@ export class ReconciliationApplyService {
         select: { id: true, orderId: true, items: true, status: true },
       });
       if (!ret) return { applied: false, reason: 'Return record no longer exists.' };
+      // Re-validate the return is STILL in a received state at apply time —
+      // the report may be stale (return re-opened / deleted since preview).
+      if (
+        !(RECEIVED_RETURN_STATUSES as readonly string[]).includes(ret.status)
+      ) {
+        return {
+          applied: false,
+          reason: `Return status is now ${ret.status} — only RECEIVED/RESTOCKED/CLOSED returns are restored.`,
+        };
+      }
       const item = ((ret.items as any[]) ?? []).find(
         (i) => i?.productId === row.productId && (i?.variantId ?? null) === row.variantId,
       );
@@ -204,25 +246,51 @@ export class ReconciliationApplyService {
 
       const product = await tx.product.findUnique({
         where: { id: row.productId },
-        select: { availabilityMode: true, warehouseId: true },
+        select: { availabilityMode: true, warehouseId: true, manageStock: true },
       });
       if (!product) return { applied: false, reason: 'Product no longer exists.' };
       const mode = product.availabilityMode as string;
 
-      const [managedMap, physicalMap] = await Promise.all([
-        this.finder.managedRestoredByReturn([returnId], tx),
-        this.finder.physicalRestoredByReturn([returnId], tx),
-      ]);
+      // Ordered quantity caps every restore (a return can never restore
+      // more than the order line sold).
+      const order = await tx.order.findUnique({
+        where: { id: ret.orderId },
+        select: {
+          items: { select: { productId: true, variantId: true, quantity: true } },
+        },
+      });
+      const orderedQty =
+        order?.items.find(
+          (li) => li.productId === row.productId && (li.variantId ?? null) === row.variantId,
+        )?.quantity ?? good;
+
+      // Evidence includes BOTH key shapes: the per-return adds AND the
+      // blanket restore path's order-keyed adds — a blanket-restored return
+      // must never be restored a second time from here.
+      const [managedMap, physicalMap, managedBlanket, physicalBlanket] =
+        await Promise.all([
+          this.finder.managedRestoredByReturn([returnId], tx),
+          this.finder.physicalRestoredByReturn([returnId], tx),
+          this.finder.managedRestoredByOrder([ret.orderId], tx),
+          this.finder.physicalRestoredByOrder([ret.orderId], tx),
+        ]);
       const key = `return-${returnId}|${row.productId}|${row.variantId ?? ''}`;
-      const restoredManaged = managedMap.get(key) ?? 0;
-      const restoredPhysical = physicalMap.get(key) ?? 0;
+      const blanketKey = `return-${ret.orderId}|${row.productId}|${row.variantId ?? ''}`;
+      const restoredManaged =
+        (managedMap.get(key) ?? 0) + (managedBlanket.get(blanketKey) ?? 0);
+      const restoredPhysical =
+        (physicalMap.get(key) ?? 0) + (physicalBlanket.get(blanketKey) ?? 0);
 
       const missingManaged =
-        mode === 'MANAGED_STOCK' ? Math.max(0, good - restoredManaged) : 0;
+        mode === 'MANAGED_STOCK' && product.manageStock !== false
+          ? Math.min(Math.max(0, good - restoredManaged), orderedQty)
+          : 0;
       // Physical expectation mirrors the finder: only when the row says a
       // physical layer is missing (the row was produced under IM-on rules).
       const missingPhysical =
-        row.missingPhysicalQty > 0 ? Math.max(0, good - restoredPhysical) : 0;
+        row.missingPhysicalQty > 0
+          ? Math.min(Math.max(0, good - restoredPhysical), orderedQty)
+          : 0;
 
       if (missingManaged <= 0 && missingPhysical <= 0) {
         return {
@@ -231,6 +299,7 @@ export class ReconciliationApplyService {
         };
       }
 
+      let wroteManaged = false;
       if (missingManaged > 0) {
         await this.stockService.operate('add', {
           productId: row.productId,
@@ -242,53 +311,33 @@ export class ReconciliationApplyService {
           ledgerType: 'RETURN',
           referenceType: 'RETURN',
         });
+        wroteManaged = true;
       }
 
       if (missingPhysical > 0) {
-        const target = await this.resolvePhysicalTarget(tx, {
+        const outcome = await this.restorePhysicalIntoAllocations(tx, {
           orderId: ret.orderId,
+          returnId,
           productId: row.productId,
           variantId: row.variantId,
-          productWarehouseId: product.warehouseId,
           quantity: missingPhysical,
+          performedBy,
         });
-        if (!target) {
-          if (missingManaged > 0) {
-            // Managed layer written; physical skipped — surface as skipped
-            // with the managed part noted. (Throwing would roll back the
-            // managed write too; a partial repair with a clear reason is
-            // the safer outcome and the row stays in the next report.)
-            return {
-              applied: false,
-              reason:
-                'Managed layer restored, but no warehouse could be resolved ' +
-                'for the physical layer — physical part NOT written.',
-            };
-          }
+        if (outcome.restored < missingPhysical) {
+          const partialNote = wroteManaged
+            ? 'Managed layer restored. '
+            : outcome.restored > 0
+              ? `Physical layer partially restored (${outcome.restored}/${missingPhysical}). `
+              : '';
           return {
             applied: false,
-            reason: 'No warehouse could be resolved for the physical restore.',
+            reason:
+              partialNote +
+              (outcome.restored === 0
+                ? 'No reservation allocation exists to restore the physical layer into — NOT written (a warehouse is never invented).'
+                : 'Remaining physical quantity has no allocation target — NOT written (a warehouse is never invented).'),
           };
         }
-        const before = target.row.quantity;
-        await tx.physicalInventory.update({
-          where: { id: target.row.id },
-          data: { quantity: before + missingPhysical },
-        });
-        await tx.physicalInventoryLedger.create({
-          data: {
-            productId: row.productId,
-            variantId: row.variantId,
-            warehouseId: target.row.warehouseId,
-            quantity: missingPhysical,
-            direction: 'IN',
-            stockBefore: before,
-            stockAfter: before + missingPhysical,
-            type: 'RESTORATION',
-            reason: `return-${returnId}`,
-            performedBy,
-          },
-        });
       }
 
       return { applied: true };
@@ -296,88 +345,168 @@ export class ReconciliationApplyService {
   }
 
   /**
-   * Which PhysicalInventory row receives a physical restore, best evidence
-   * first: (1) the exact row the order's reservation allocated from,
-   * (2) warehouse-level row at the reservation's warehouse,
-   * (3) the product's own warehouse, (4) an existing row for the product,
-   * (5) the stack's default warehouse resolution. Creates the
-   * warehouse-level row when the warehouse is known but no row exists.
+   * The physical leg: restore into the order's OWN reservation allocation
+   * rows — the exact PhysicalInventory rows the stock was deducted from.
+   * Both reservation tables are consulted; only CONSUMED / RESTORED
+   * reservations are targets (an ACTIVE hold means the stock never left;
+   * a RELEASED one was already settled). When no allocation target
+   * exists the caller skips the row as not-applicable — a warehouse is
+   * NEVER invented (the old resolver fell back to the product warehouse,
+   * any existing row, or the stack default, fabricating stock location).
+   *
+   * Per allocation: guarded quantity increment, release of the held
+   * reservedQuantity for the restored portion (guarded decrement — the
+   * Return-Pending re-hold), and a RESTORATION ledger row carrying the
+   * row's true before/after. Costing lots are restored per warehouse via
+   * CostingLotService.restoreForReturn where FULFILLMENT consumptions
+   * exist for that warehouse.
    */
-  private async resolvePhysicalTarget(
+  private async restorePhysicalIntoAllocations(
     tx: Prisma.TransactionClient,
     params: {
       orderId: string;
+      returnId: string;
       productId: string;
       variantId: string | null;
-      productWarehouseId: string | null;
       quantity: number;
+      performedBy: string;
     },
-  ): Promise<{ row: { id: string; quantity: number; warehouseId: string } } | null> {
-    const reservations = await tx.physicalReservation.findMany({
-      where: {
-        orderId: params.orderId,
-        productId: params.productId,
-        variantId: params.variantId,
-      },
-      select: {
-        warehouseId: true,
-        allocations: { select: { physicalInventoryId: true } },
-      },
-    });
-
-    const warehouseLevel = async (warehouseId: string) => {
-      const existing = await tx.physicalInventory.findFirst({
+  ): Promise<{ restored: number }> {
+    const [standalone, combo] = await Promise.all([
+      tx.physicalReservation.findMany({
         where: {
+          orderId: params.orderId,
+          productId: params.productId,
+          variantId: params.variantId,
+          status: { in: ['CONSUMED', 'RESTORED'] },
+        },
+        select: {
+          allocations: { select: { physicalInventoryId: true, quantity: true } },
+        },
+      }),
+      tx.comboComponentPhysicalReservation.findMany({
+        where: {
+          orderId: params.orderId,
+          productId: params.productId,
+          variantId: params.variantId,
+          status: { in: ['CONSUMED', 'RESTORED'] },
+        },
+        select: {
+          allocations: { select: { physicalInventoryId: true, quantity: true } },
+        },
+      }),
+    ]);
+    const allocations = [...standalone, ...combo].flatMap((r) => r.allocations);
+    if (allocations.length === 0) return { restored: 0 };
+
+    // Distribute the restore across allocations, capped per allocation at
+    // what that allocation originally held (merged per inventory row, so
+    // each row gets one increment + one ledger entry).
+    const planByRow = new Map<string, number>();
+    let remaining = params.quantity;
+    for (const a of allocations) {
+      if (remaining <= 0) break;
+      const n = Math.min(remaining, a.quantity);
+      if (n <= 0) continue;
+      planByRow.set(
+        a.physicalInventoryId,
+        (planByRow.get(a.physicalInventoryId) ?? 0) + n,
+      );
+      remaining -= n;
+    }
+    const plan = [...planByRow.entries()].map(([physicalInventoryId, quantity]) => ({
+      physicalInventoryId,
+      quantity,
+    }));
+    if (plan.length === 0) return { restored: 0 };
+
+    // Costing lots first, grouped per warehouse: if a warehouse's lots
+    // cannot cover its portion, restoreForReturn throws and the whole row
+    // transaction rolls back (skip with reason) instead of leaving the
+    // physical and cost layers diverged.
+    const restoredByWarehouse = new Map<string, number>();
+    const piRows = new Map<
+      string,
+      { quantity: number; reservedQuantity: number; warehouseId: string }
+    >();
+    for (const step of plan) {
+      const pi = await tx.physicalInventory.findUnique({
+        where: { id: step.physicalInventoryId },
+        select: { quantity: true, reservedQuantity: true, warehouseId: true },
+      });
+      if (!pi) continue;
+      piRows.set(step.physicalInventoryId, pi);
+      restoredByWarehouse.set(
+        pi.warehouseId,
+        (restoredByWarehouse.get(pi.warehouseId) ?? 0) + step.quantity,
+      );
+    }
+    if (piRows.size === 0) return { restored: 0 };
+
+    for (const [warehouseId, qty] of restoredByWarehouse) {
+      const consumption = await tx.costingLotConsumption.findFirst({
+        where: {
+          type: 'FULFILLMENT',
+          referenceType: 'ORDER_ITEM',
+          costingLot: {
+            productId: params.productId,
+            variantId: params.variantId,
+            warehouseId,
+          },
+        },
+        select: { id: true },
+      });
+      if (consumption) {
+        await this.costingLotService.restoreForReturn({
+          returnReferenceId: params.returnId,
           productId: params.productId,
           variantId: params.variantId,
           warehouseId,
-          binLocationId: null,
-        },
-        select: { id: true, quantity: true, warehouseId: true },
+          returnQty: qty,
+          tx,
+        });
+      }
+    }
+
+    let restored = 0;
+    for (const step of plan) {
+      const pi = piRows.get(step.physicalInventoryId);
+      if (!pi) continue;
+      const n = step.quantity;
+      await tx.physicalInventory.update({
+        where: { id: step.physicalInventoryId },
+        data: { quantity: { increment: n } },
       });
-      if (existing) return existing;
-      return tx.physicalInventory.create({
+      // Release the held reservedQuantity for the restored portion — the
+      // same guarded decrement the receive path's restore uses; a no-op
+      // when the row does not currently hold that much.
+      const released = await tx.physicalInventory.updateMany({
+        where: {
+          id: step.physicalInventoryId,
+          reservedQuantity: { gte: n },
+        },
+        data: { reservedQuantity: { decrement: n } },
+      });
+      const reservedAfter =
+        released.count > 0 ? pi.reservedQuantity - n : pi.reservedQuantity;
+      await tx.physicalInventoryLedger.create({
         data: {
           productId: params.productId,
           variantId: params.variantId,
-          warehouseId,
-          quantity: 0,
+          warehouseId: pi.warehouseId,
+          quantity: n,
+          direction: 'IN',
+          stockBefore: pi.quantity,
+          stockAfter: pi.quantity + n,
+          reservedBefore: pi.reservedQuantity,
+          reservedAfter,
+          type: 'RESTORATION',
+          reason: `return-${params.returnId}`,
+          performedBy: params.performedBy,
         },
-        select: { id: true, quantity: true, warehouseId: true },
       });
-    };
-
-    for (const r of reservations) {
-      for (const a of r.allocations) {
-        const row = await tx.physicalInventory.findUnique({
-          where: { id: a.physicalInventoryId },
-          select: { id: true, quantity: true, warehouseId: true },
-        });
-        if (row) return { row };
-      }
+      restored += n;
     }
-    for (const r of reservations) {
-      if (r.warehouseId) return { row: await warehouseLevel(r.warehouseId) };
-    }
-    if (params.productWarehouseId) {
-      return { row: await warehouseLevel(params.productWarehouseId) };
-    }
-    const anyRow = await tx.physicalInventory.findFirst({
-      where: { productId: params.productId, variantId: params.variantId },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, quantity: true, warehouseId: true },
-    });
-    if (anyRow) return { row: anyRow };
-
-    try {
-      const resolved = await this.initialPhysicalStock.resolveWarehouse(
-        'MANAGED_STOCK',
-        params.quantity,
-      );
-      if (resolved) return { row: await warehouseLevel(resolved) };
-    } catch {
-      // fall through — no warehouse resolvable
-    }
-    return null;
+    return { restored };
   }
 }

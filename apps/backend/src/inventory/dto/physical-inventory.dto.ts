@@ -1,4 +1,4 @@
-import { IsString, IsInt, IsOptional, IsNumber, IsBoolean, Min, Max, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsNumber, IsBoolean, Min, Max, IsArray, ArrayMinSize, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class AdjustPhysicalDto {
@@ -74,7 +74,10 @@ export class BulkAdjustPhysicalDto {
   @IsString()
   reason: string;
 
+  // An empty items array used to sail through and return { ok: true }
+  // having adjusted nothing (2026-11-02 audit §B) — reject it at the edge.
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => BulkAdjustPhysicalItemDto)
   items: BulkAdjustPhysicalItemDto[];
