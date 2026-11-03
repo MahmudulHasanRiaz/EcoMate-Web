@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { usePrefersReducedMotion } from "@/hooks/useReducedMotion";
 
 interface Slide {
   image: string;
@@ -14,6 +15,7 @@ interface Slide {
 
 export default function HeroSlideshow({ slides }: { slides: Slide[] }) {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const reducedMotion = usePrefersReducedMotion();
   // P3: the first slide is rendered active (opacity-100) on first paint,
   // so a CSS transition cannot delay LCP — but keep the enter transition
   // off slide 0 until the show has actually rotated once, so no future
@@ -40,12 +42,15 @@ export default function HeroSlideshow({ slides }: { slides: Slide[] }) {
   }, [currentSlide, slides]);
 
   useEffect(() => {
+    // No autoplay under reduced motion; pause while the tab is hidden.
+    if (reducedMotion) return;
     const timer = setInterval(() => {
+      if (document.hidden) return;
       nextSlide();
     }, 5000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slides.length]);
+  }, [slides.length, reducedMotion]);
 
   return (
     <>
