@@ -71,10 +71,10 @@ async function fetchSectionProducts(sec: any, config: any): Promise<SectionData>
 }
 
 /** One homepage product section, streamed in behind its own Suspense boundary. */
-async function HomeSection({ sec, config }: { sec: any; config: any }) {
+async function HomeSection({ sec, config, prioritizeFirstCards = false }: { sec: any; config: any; prioritizeFirstCards?: boolean }) {
   const data = await fetchSectionProducts(sec, config);
   if (!data) return null;
-  return <ProductSection title={data.title} products={data.products} href={data.href} />;
+  return <ProductSection title={data.title} products={data.products} href={data.href} prioritizeFirstCards={prioritizeFirstCards} />;
 }
 
 async function HomeBrands() {
@@ -114,7 +114,14 @@ export default async function HomePage() {
       {enabledSections.map((sec: any, idx: number) => (
         <Fragment key={sec.title + idx}>
           <Suspense fallback={<ProductSectionSkeleton cards={sec.limit || 4} />}>
-            <HomeSection sec={sec} config={config} />
+            {/* Card-image priority only when this first section is the
+                LCP zone — i.e. the hero above it has no slides. With a
+                hero present, its image owns the priority budget. */}
+            <HomeSection
+              sec={sec}
+              config={config}
+              prioritizeFirstCards={idx === 0 && !(config?.hero?.slides?.length > 0)}
+            />
           </Suspense>
           {idx === 0 && (
             <Suspense fallback={null}>

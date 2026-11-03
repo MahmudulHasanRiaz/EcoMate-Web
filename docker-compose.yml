@@ -191,7 +191,12 @@ services:
       NEXT_PUBLIC_GA_ADS_CONVERSION_ID: ${NEXT_PUBLIC_GA_ADS_CONVERSION_ID:-}
       POS_URL: ${POS_URL:-http://pos:80}
     depends_on:
-      - backend
+      backend:
+        # Wait until the backend has finished its boot migrations and
+        # /api/health passes — starting earlier leaves the storefront
+        # serving pages whose API is still down (post-redeploy PDP
+        # errors, 2026-11-03).
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
       interval: 30s
@@ -222,7 +227,12 @@ services:
       # auto-detect (admin.* host -> pos.* host, localhost -> :5174).
       VITE_POS_URL: ${ADMIN_VITE_POS_URL:-}
     depends_on:
-      - backend
+      backend:
+        # Wait until the backend has finished its boot migrations and
+        # /api/health passes — starting earlier leaves the storefront
+        # serving pages whose API is still down (post-redeploy PDP
+        # errors, 2026-11-03).
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80${ADMIN_VITE_BASE:-/admin/}"]
       interval: 30s
@@ -247,7 +257,12 @@ services:
     ports:
       - "${POS_PORT:-8081}:80"
     depends_on:
-      - backend
+      backend:
+        # Wait until the backend has finished its boot migrations and
+        # /api/health passes — starting earlier leaves the storefront
+        # serving pages whose API is still down (post-redeploy PDP
+        # errors, 2026-11-03).
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/pos/"]
       interval: 30s

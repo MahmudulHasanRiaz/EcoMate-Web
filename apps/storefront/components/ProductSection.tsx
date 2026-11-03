@@ -6,12 +6,20 @@ interface ProductSectionProps {
   title: string;
   products: ProductCardData[];
   href?: string;
+  /**
+   * Grant image priority to this section's first cards. Only correct when
+   * the section is the page's LCP zone (e.g. homepage with NO hero above
+   * it). Default false: sections sit below the hero, whose image is the
+   * LCP — priority cards there only compete with it.
+   */
+  prioritizeFirstCards?: boolean;
 }
 
 export default function ProductSection({
   title,
   products,
   href = "/products",
+  prioritizeFirstCards = false,
 }: ProductSectionProps) {
   return (
     <section className="py-10 md:py-14 bg-white border-b border-gray-50">
@@ -32,10 +40,14 @@ export default function ProductSection({
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           {products.map((product, index) => (
-            // P3: pass index so the first cards get priority/eager like
-            // the PLP already does — previously defaulted to 99, so no
-            // homepage section image was ever prioritised.
-            <ProductCard key={product.id} product={product} index={index} />
+            // Priority is budgeted by the page (see ProductCard): only a
+            // section that IS the LCP zone prioritises its first row.
+            <ProductCard
+              key={product.id}
+              product={product}
+              index={index}
+              priority={prioritizeFirstCards ? index < 2 : false}
+            />
           ))}
         </div>
       </div>

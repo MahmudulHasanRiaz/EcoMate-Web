@@ -44,12 +44,21 @@ interface ProductCardProps {
    */
   product: Product | ProductCardData;
   index?: number;
+  /**
+   * Explicit image-priority budget. Priority images load eager with
+   * fetchPriority="high" and get preloaded — every surface that grants it
+   * to many cards makes them compete with the page's real LCP image.
+   * Callers that know their position on the page (e.g. homepage sections
+   * below a hero) should pass this explicitly; when omitted, the first
+   * cards by index get priority (archive grids).
+   */
+  priority?: boolean;
 }
 
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 3000;
 
-export default function ProductCard({ product, index = 99 }: ProductCardProps) {
+export default function ProductCard({ product, index = 99, priority }: ProductCardProps) {
   const { items, addToCart, updateQuantity } = useCart();
   const { config } = useStorefrontConfig();
   const { isWishlisted, toggle } = useWishlist();
@@ -116,7 +125,10 @@ const isVar = product.type === 'variable' && (
   const cartItem = items.find((item) => item.id === product.id);
   const inCart = !!cartItem && !isVar;
   const quantity = cartItem?.quantity ?? 0;
-  const isPriority = index < 6;
+  // Priority budget: at most the first row (4) by default — was 6, and
+  // homepage sections each granted their own 6, flooding the hero's
+  // bandwidth with competing high-priority images.
+  const isPriority = priority ?? index < 4;
 
   const [variantPickerOpen, setVariantPickerOpen] = React.useState(false);
   const [variantPickerEverOpened, setVariantPickerEverOpened] = React.useState(false);
