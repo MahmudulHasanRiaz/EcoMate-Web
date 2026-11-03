@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { render, screen, act } from '@testing-library/react';
-import { StorefrontConfigProvider } from '@/context/StorefrontConfigContext';
 import type { StorefrontConfig } from '@/lib/api/storefront-config';
 import Footer from '../Footer';
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/orders' }));
-vi.mock('../StoreBrand', () => ({ StoreBrand: () => <span>brand</span> }));
+// P5: Footer is a Server Component taking config as a prop; the platform
+// behaviour under test now lives in the FooterAppLinks client island, which
+// Footer renders — the assertions below are unchanged.
 vi.mock('../EcoMateAttribution', () => ({
   default: () => <span>attribution</span>,
 }));
@@ -47,19 +47,10 @@ describe('Footer hydration safety', () => {
     setUserAgent(originalUA);
   });
 
-  const renderFooter = () =>
-    render(
-      <StorefrontConfigProvider initialConfig={CONFIG}>
-        <Footer />
-      </StorefrontConfigProvider>,
-    );
+  const renderFooter = () => render(<Footer config={CONFIG} />);
 
   it('server renders no platform-specific store link', () => {
-    const html = renderToString(
-      <StorefrontConfigProvider initialConfig={CONFIG}>
-        <Footer />
-      </StorefrontConfigProvider>,
-    );
+    const html = renderToString(<Footer config={CONFIG} />);
 
     expect(html).not.toContain('/mobile-download/storefront/android');
     expect(html).not.toContain('/mobile-download/storefront/ios');
@@ -87,13 +78,7 @@ describe('Footer hydration safety', () => {
     });
 
     try {
-      expect(() =>
-        renderToString(
-          <StorefrontConfigProvider initialConfig={CONFIG}>
-            <Footer />
-          </StorefrontConfigProvider>,
-        ),
-      ).not.toThrow();
+      expect(() => renderToString(<Footer config={CONFIG} />)).not.toThrow();
     } finally {
       Object.defineProperty(window, 'navigator', {
         value: realNavigator,
@@ -137,11 +122,7 @@ describe('Footer hydration safety', () => {
       playStoreUrl: 'https://play.google.com/store/apps/details?id=ecomate',
     } as unknown as StorefrontConfig;
 
-    render(
-      <StorefrontConfigProvider initialConfig={config}>
-        <Footer />
-      </StorefrontConfigProvider>,
-    );
+    render(<Footer config={config} />);
 
     // Configured explicitly, so it renders on the server too — no divergence.
     expect(screen.getByText('Download on')).toBeTruthy();

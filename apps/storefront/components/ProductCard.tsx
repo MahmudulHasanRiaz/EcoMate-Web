@@ -11,7 +11,25 @@ import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { PLACEHOLDER_IMAGE, PRODUCT_BLUR_DATA_URL } from "@/lib/constants";
 import { trackAddToCart } from "@/lib/tracking";
 import { getAspectStyle } from "@/lib/utils/image-ratio";
-import { VariantPickerModal } from '@/components/VariantPickerModal';
+import dynamic from 'next/dynamic';
+
+// P5 (JS diet): the variant picker used to be statically imported, so it
+// shipped in the bundle graph of every product card on every listing page.
+// It is now loaded on first open intent only (see the everOpened latch
+// below, which keeps the modal mounted after its first open so picker state
+// persists across close/reopen exactly as it did when statically imported).
+// The loading fallback mirrors the PDP SheetLoading spinner.
+const VariantPickerModal = dynamic(
+  () => import('@/components/VariantPickerModal').then((m) => m.VariantPickerModal),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="fixed inset-0 z-[100] flex items-end justify-center min-[901px]:items-center" aria-hidden="true">
+        <div className="w-8 h-8 m-auto border-2 border-gray-200 border-t-brand-blue rounded-full animate-spin" />
+      </div>
+    ),
+  },
+);
 import { useAuth } from '@/context/AuthContext';
 import { resolveCatalogId } from '@/lib/catalog-id';
 
@@ -83,12 +101,14 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
   const isPriority = index < 6;
 
   const [variantPickerOpen, setVariantPickerOpen] = React.useState(false);
+  const [variantPickerEverOpened, setVariantPickerEverOpened] = React.useState(false);
   const [flyTarget, setFlyTarget] = React.useState<{ x: number; y: number } | undefined>(undefined);
 
   const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (isVar) {
       const rect = e.currentTarget.getBoundingClientRect();
       setFlyTarget({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+      setVariantPickerEverOpened(true);
       setVariantPickerOpen(true);
       return;
     }
@@ -232,12 +252,14 @@ const isVar = product.type === 'variable' && (product.variants?.length ?? 0) > 0
           )}
         </div>
       </div>
-      <VariantPickerModal
-        product={product}
-        open={variantPickerOpen}
-        onClose={() => setVariantPickerOpen(false)}
-        flyTarget={flyTarget}
-      />
+      {variantPickerEverOpened && (
+        <VariantPickerModal
+          product={product}
+          open={variantPickerOpen}
+          onClose={() => setVariantPickerOpen(false)}
+          flyTarget={flyTarget}
+        />
+      )}
     </div>
   );
 }

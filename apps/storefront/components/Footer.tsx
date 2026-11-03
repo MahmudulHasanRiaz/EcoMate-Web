@@ -1,51 +1,54 @@
-"use client";
+// P5 (JS diet): Footer is now a SERVER Component. It used to be a client
+// only to read the storefront config from context and the current pathname —
+// both boundary-too-high reasons. The config now arrives as a prop from the
+// (main) layout (which reads the React-cached server config fetch, so no
+// extra request), the /checkout suppression lives in the tiny HideOnCheckout
+// client island in the layout, and the one genuinely browser-dependent part
+// (platform-specific app-store links) is the FooterAppLinks client island.
+// The brand block below replicates StoreBrand's markup/logic server-side
+// from the same config (StoreBrand itself stays a hook-based component for
+// the client Header).
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { MapPin, Phone, Mail } from 'lucide-react';
-import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
-import { StoreBrand } from "./StoreBrand";
 import EcoMateAttribution from "./EcoMateAttribution";
-import { usePathname } from "next/navigation";
+import FooterAppLinks from "./FooterAppLinks";
+import type { StorefrontConfig } from "@/lib/api/storefront-config";
 import Link from 'next/link';
 
-/**
- * Which app store link to offer, or null while still unknown.
- *
- * This must NOT be resolved during render. The user agent is only available in
- * the browser, so the server rendered the "other" branch while an Android
- * phone rendered the Google Play anchor on the first client render. React saw
- * different markup for the same element, threw away the server tree and
- * regenerated it — the hydration error Next.js surfaced as an overlay on
- * mobile. Guarding with `typeof navigator !== 'undefined'` is not enough: that
- * makes the read safe, not the resulting markup identical.
- *
- * So the value stays null through the first render and is resolved in an
- * effect. Server and client render the same placeholder, then it corrects.
- */
-type Platform = 'android' | 'ios' | 'other' | null;
+function FooterBrand({ config }: { config: StorefrontConfig }) {
+  const display = config.systems?.[0]?.display || 'name';
 
-function usePlatform(): Platform {
-  const [platform, setPlatform] = useState<Platform>(null);
+  if (display === 'logo') {
+    return config.branding.storeLogo ? (
+      <img
+        src={config.branding.storeLogo}
+        alt={config.store.name}
+        className="h-8 w-auto object-contain"
+      />
+    ) : (
+      <span className="text-xl font-black text-brand-blue tracking-tight">{config.store.name}</span>
+    );
+  }
 
-  useEffect(() => {
-    const ua = window.navigator.userAgent.toLowerCase();
-    if (ua.includes('android')) setPlatform('android');
-    else if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod')) setPlatform('ios');
-    else setPlatform('other');
-  }, []);
+  if (display === 'name+logo') {
+    return (
+      <div className="flex items-center gap-2">
+        {config.branding.storefrontFavicon ? (
+          <img src={config.branding.storefrontFavicon} alt="" className="w-8 h-8 rounded object-contain" />
+        ) : null}
+        <span className="text-xl font-black text-brand-blue tracking-tight">{config.store.name}</span>
+      </div>
+    );
+  }
 
-  return platform;
+  return <span className="text-xl font-black text-brand-blue tracking-tight">{config.store.name}</span>;
 }
 
-export default function Footer({}: {}) {
-  const pathname = usePathname();
-  const { config } = useStorefrontConfig();
-  const platform = usePlatform();
-  if (pathname && pathname.startsWith('/checkout')) return null;
+export default function Footer({ config }: { config: StorefrontConfig }) {
   const { store, social, footer: footerConfig } = config;
   const playStoreUrl = (config as any).playStoreUrl || '';
   const appStoreUrl = (config as any).appStoreUrl || '';
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
 
   const footerColumns = config.menu?.footer?.columns || [];
 
@@ -110,7 +113,7 @@ export default function Footer({}: {}) {
           {/* Brand Info */}
           <div className="md:col-span-2">
             <div className="flex items-center gap-2 mb-6">
-              <StoreBrand />
+              <FooterBrand config={config} />
             </div>
             <p className="text-[13px] text-gray-500 leading-relaxed mb-6 max-w-sm">
               {footerConfig.description || `${store.name} — delivering quality products and service.`}
@@ -165,65 +168,7 @@ export default function Footer({}: {}) {
 
         </div>
 
-        {/* Apps Download Section — 100% matching Storefront AppCard behavior */}
-        <div className="pt-10 border-t border-gray-100 mb-10">
-          <p className="font-bold text-[13px] text-gray-800 mb-4">Download App on Mobile :</p>
-          <div className="flex flex-wrap items-center gap-3">
-            {playStoreUrl ? (
-              <a href={playStoreUrl} target="_blank" rel="noreferrer"
-                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
-                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-                  <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/>
-                </svg>
-                <div className="text-left">
-                  <p className="text-[10px] leading-none text-gray-400">Download on</p>
-                  <p className="text-[14px] font-bold leading-tight">Google Play</p>
-                </div>
-              </a>
-            ) : platform === 'android' ? (
-              <a href={`${apiBase}/mobile-download/storefront/android`}
-                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
-                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-                  <path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/>
-                </svg>
-                <div className="text-left">
-                  <p className="text-[10px] leading-none text-gray-400">Get it on</p>
-                  <p className="text-[14px] font-bold leading-tight">Google Play</p>
-                </div>
-              </a>
-            ) : (<></>)}
-            {appStoreUrl ? (
-              <a href={appStoreUrl} target="_blank" rel="noreferrer"
-                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
-                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-                  <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-111.3-59.9-121.2z"/>
-                </svg>
-                <div className="text-left">
-                  <p className="text-[10px] leading-none text-gray-400">Download on</p>
-                  <p className="text-[14px] font-bold leading-tight">App Store</p>
-                </div>
-              </a>
-            ) : platform === 'ios' ? (
-              <a href={`${apiBase}/mobile-download/storefront/ios`}
-                className="bg-[#1a1a1a] p-1.5 px-3 rounded-md flex items-center gap-2 text-white border border-gray-800 hover:bg-black transition-colors">
-                <svg width="24" height="24" viewBox="0 0 512 512" fill="currentColor">
-                  <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-111.3-59.9-121.2z"/>
-                </svg>
-                <div className="text-left">
-                  <p className="text-[10px] leading-none text-gray-400">Get it on</p>
-                  <p className="text-[14px] font-bold leading-tight">App Store</p>
-                </div>
-              </a>
-            ) : (<></>)}
-            {/* Shown until the platform is known, and on desktop where neither
-                store applies — one identical branch on both sides of hydration. */}
-            {(platform === 'other' || platform === null) && (
-              <span className="text-[11px] text-gray-400">
-                Open on your phone to install the app
-              </span>
-            )}
-          </div>
-        </div>
+        <FooterAppLinks playStoreUrl={playStoreUrl} appStoreUrl={appStoreUrl} />
 
         <EcoMateAttribution storeName={store.name} />
       </div>

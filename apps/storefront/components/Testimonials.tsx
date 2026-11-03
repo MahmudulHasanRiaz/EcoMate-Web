@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api-server";
-import TestimonialsCarousel from "./TestimonialsCarousel";
+import TestimonialsCarousel from "./TestimonialsCarouselLazy";
 
 interface ReviewItem {
   id: string;
