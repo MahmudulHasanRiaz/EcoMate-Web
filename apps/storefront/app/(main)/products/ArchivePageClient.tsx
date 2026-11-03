@@ -5,14 +5,14 @@ import { ChevronRight, Filter, ChevronDown, LayoutGrid, List, Search, X, Loader2
 import ProductCard from '@/components/ProductCard';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
-import { getProducts } from '@/lib/api/products';
+import { getProductCards } from '@/lib/api/products';
 import { useInfiniteScroll } from '@/lib/hooks/useInfiniteScroll';
 import { trackSearch, normalizeSearchQuery } from '@/lib/tracking';
 import { useAuth } from '@/context/AuthContext';
-import type { Product, Category } from '@/lib/types';
+import type { ProductCardData, Category } from '@/lib/types';
 
 export interface ArchivePageClientProps {
-  initialItems: Product[];
+  initialItems: ProductCardData[];
   initialCursor: string | null;
   initialHasMore: boolean;
   initialTotal?: number;
@@ -281,13 +281,13 @@ export default function ArchivePageClient({
   // product) fires the event.
 
   const { items, isLoading, hasMore, sentinelRef, error, retry, loadMore, requiresManualLoad } =
-    useInfiniteScroll<Product>({
+    useInfiniteScroll<ProductCardData>({
       initialItems,
       initialCursor,
       initialHasMore,
       pageSize: PAGE_SIZE,
       fetchPage: async (cursor, signal) => {
-        const res = await getProducts({
+        const res = await getProductCards({
           isActive: true,
           hasStock: hasStock || undefined,
           search: filters.search || undefined,

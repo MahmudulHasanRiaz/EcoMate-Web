@@ -3,12 +3,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, X, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { getProducts } from '@/lib/api/products';
+import { getProductCards } from '@/lib/api/products';
 import { trackSearch, normalizeSearchQuery } from '@/lib/tracking';
 import { useAuth } from '@/context/AuthContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
 import Link from 'next/link';
-import type { Product } from '@/lib/types';
+import type { ProductCardData } from '@/lib/types';
 
 /**
  * HeaderSearch — premium search bar with autocomplete.
@@ -32,7 +32,7 @@ const AUTOCOMPLETE_DEBOUNCE_MS = 250;
 const MIN_AUTOCOMPLETE_CHARS = 2;
 const AUTOCOMPLETE_CACHE_MAX = 50;
 
-const autocompleteCache = new Map<string, Product[]>();
+const autocompleteCache = new Map<string, ProductCardData[]>();
 
 /** Test-only helper: clears the shared autocomplete cache between tests. */
 export function _resetAutocompleteCache() {
@@ -50,7 +50,7 @@ export function HeaderSearch({
   const { user } = useAuth();
   const router = useRouter();
   const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<Product[]>([]);
+  const [suggestions, setSuggestions] = useState<ProductCardData[]>([]);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -88,7 +88,7 @@ export function HeaderSearch({
 
     const timer = setTimeout(async () => {
       try {
-        const res = await getProducts({ search: trimmed, perPage: 5, signal: controller.signal });
+        const res = await getProductCards({ search: trimmed, perPage: 5, signal: controller.signal });
         if (controller.signal.aborted) return;
         autocompleteCache.set(cacheKey, res.data || []);
         if (autocompleteCache.size > AUTOCOMPLETE_CACHE_MAX) {
@@ -138,7 +138,7 @@ export function HeaderSearch({
 
   /** Suggestion selection: committed search (typed query) + product navigation. */
   const openProduct = useCallback(
-    (product: Product) => {
+    (product: ProductCardData) => {
       trackSearch({ query, currency, email, country: 'BD' });
       setIsOpen(false);
       setActiveIndex(-1);

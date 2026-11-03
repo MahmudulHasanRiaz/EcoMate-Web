@@ -4,6 +4,19 @@ import { PHASE_PRODUCTION_SERVER, PHASE_PRODUCTION_BUILD } from "next/constants"
 const nextConfig: NextConfig = {
   output: 'standalone',
   allowedDevOrigins: ['mac.riaz.com.bd'],
+  // P2: client-router cache lifetimes. Verified against the bundled
+  // Next 16.4.1 docs (node_modules/next/dist/docs/.../staleTimes.md):
+  // `experimental.staleTimes` is still the current API in 16.4, shape
+  // { dynamic, static } in seconds (defaults: dynamic 0, static 300).
+  // dynamic: 30 reuses a visited dynamic page segment for 30s instead
+  // of refetching on every navigation; static: 180 trims the default
+  // 5-minute reuse for static segments to 3 minutes.
+  experimental: {
+    staleTimes: {
+      dynamic: 30,
+      static: 180,
+    },
+  },
   images: {
     loader: 'custom',
     loaderFile: './lib/image-loader.ts',

@@ -11,6 +11,7 @@ import { PageViewTracker } from "@/components/PageViewTracker";
 import OfflineBanner from "@/components/OfflineBanner";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer, StorefrontConfigError } from "@/lib/api/storefront-config-server";
+import { pickCriticalConfig } from "@/lib/api/storefront-config-split";
 import { siteUrl } from "@/lib/site-url";
 import { hasLicenseFeature } from "@/lib/api/storefront-config";
 import type { CSSProperties } from "react";
@@ -176,9 +177,11 @@ export default async function RootLayout({
           />
         )}
 
-        {initialConfig && (
-          <script id="__INITIAL_CONFIG__" type="application/json" dangerouslySetInnerHTML={{ __html: stringifyForScript(initialConfig) }} />
-        )}
+        {/* P2: the full StorefrontConfig used to be serialized here as
+            __INITIAL_CONFIG__ AND again as the provider prop below —
+            twice per page. It is now serialized ONCE (provider prop,
+            first-paint subset only; deferred fields load on mount via
+            the provider — see lib/api/storefront-config-split.ts). */}
 
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: stringifyForScript(jsonLd) }} />
         <script
@@ -208,7 +211,7 @@ export default async function RootLayout({
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-            <StorefrontConfigProvider initialConfig={initialConfig}>
+            <StorefrontConfigProvider initialConfig={initialConfig ? pickCriticalConfig(initialConfig) : undefined} needsDeferredConfig={!!initialConfig}>
             <TrackingScripts />
             {configError ? (
               <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8f9fa] text-center p-6 w-full">

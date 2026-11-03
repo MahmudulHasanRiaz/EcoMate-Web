@@ -19,7 +19,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
   useSearchParams: () => searchParamsMock(),
 }));
-vi.mock('@/lib/api/products', () => ({ getProducts: getProductsMock }));
+vi.mock('@/lib/api/products', () => ({ getProducts: getProductsMock, getProductCards: getProductsMock }));
 vi.mock('@/lib/api/auth', () => ({ getMe: vi.fn().mockResolvedValue(null) }));
 
 const CONFIG = {

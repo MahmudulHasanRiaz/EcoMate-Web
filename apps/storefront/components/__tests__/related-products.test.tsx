@@ -64,9 +64,10 @@ describe('RelatedProducts initialItems (P0/P1-7)', () => {
     mockedGet.mockClear();
     renderWithProviders(<RelatedProducts product={baseProduct} initialItems={initialItems} />);
 
-    // mobile carousel + desktop grid both render the same items
-    expect(screen.getAllByText('SSR Related One')).toHaveLength(2);
-    expect(screen.getAllByText('SSR Related Two')).toHaveLength(2);
+    // P2 DOM dedupe: one responsive container renders each item ONCE
+    // (pre-P2 a mobile carousel AND a desktop grid both rendered them).
+    expect(screen.getAllByText('SSR Related One')).toHaveLength(1);
+    expect(screen.getAllByText('SSR Related Two')).toHaveLength(1);
     expect(mockedGet).not.toHaveBeenCalled();
   });
 
@@ -77,7 +78,7 @@ describe('RelatedProducts initialItems (P0/P1-7)', () => {
     } as any);
     renderWithProviders(<RelatedProducts product={baseProduct} />);
 
-    await waitFor(() => expect(screen.getAllByText('Client Related')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText('Client Related')).toHaveLength(1));
     expect(mockedGet).toHaveBeenCalledTimes(1);
   });
 });

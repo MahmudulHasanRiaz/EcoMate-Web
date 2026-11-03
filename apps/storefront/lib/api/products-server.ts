@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { serverFetch } from "../api-server";
-import type { Product, Variant, Category, Review } from "../types";
-import { transformBackendProduct } from "./products";
+import type { Product, ProductCardData, Variant, Category, Review } from "../types";
+import { transformBackendProduct, transformBackendProductCard } from "./products";
 import { getStorefrontConfigServer } from "./storefront-config-server";
 
 export interface ServerProductsResponse {
@@ -94,6 +94,54 @@ export const fetchProductsServer = cache(async function fetchProductsServer(
   }
 });
 
+export interface ServerProductCardsResponse {
+  data: ProductCardData[];
+  meta: ServerProductsResponse['meta'];
+}
+
+/**
+ * P2: card-projection twin of fetchProductsServer for list surfaces
+ * (homepage sections, PLP, related). Same URL/query construction, same
+ * ISR fetch options (revalidate: 60 — do not restructure; the P4/tag
+ * work composes on these options), plus the backend's opt-in
+ * `fields=card` slim response. The client-of-this-fetcher projection
+ * (transformBackendProductCard) slims the payload even when an older
+ * backend ignores `fields`, so the RSC payload shrinks either way.
+ * PDP / full-product callers keep using fetchProductsServer.
+ */
+export const fetchProductCardsServer = cache(async function fetchProductCardsServer(
+  opts: FetchProductsServerOpts = {},
+): Promise<ServerProductCardsResponse> {
+  const url = `/products${buildQuery(opts)}${buildQuery(opts).includes('?') ? '&' : '?'}fields=card`;
+  try {
+    const data = await serverFetch<any>(url, {
+      revalidate: 60,
+      maxRetries: 1,
+      timeout: 5000,
+    });
+    return {
+      data: (data.data || []).map(transformBackendProductCard),
+      meta: {
+        total: data.meta?.total ?? 0,
+        perPage: data.meta?.perPage ?? opts.perPage ?? 24,
+        nextCursor: data.meta?.nextCursor ?? null,
+        hasMore: Boolean(data.meta?.hasMore),
+      },
+    };
+  } catch (err) {
+    console.error(`Failed to fetch product cards from backend: ${url}`, err);
+    return {
+      data: [],
+      meta: {
+        total: 0,
+        perPage: opts.perPage ?? 24,
+        nextCursor: null,
+        hasMore: false,
+      },
+    };
+  }
+});
+
 export async function getCategoriesServer(): Promise<Category[]> {
   try {
     const data = await serverFetch<any>("/categories", { revalidate: 300 });
@@ -114,10 +162,10 @@ export async function getBrandsServer(): Promise<any[]> {
   }
 }
 
-export async function getFeaturedProductsServer(perPage = 50): Promise<Product[]> {
+export async function getFeaturedProductsServer(perPage = 50): Promise<ProductCardData[]> {
   const config = await getStorefrontConfigServer().catch(() => null);
   const hideOos = config?.features?.hideOosFromArchive === true;
-  const res = await fetchProductsServer({
+  const res = await fetchProductCardsServer({
     isActive: true,
     isFeatured: true,
     perPage,
@@ -126,10 +174,10 @@ export async function getFeaturedProductsServer(perPage = 50): Promise<Product[]
   return res.data;
 }
 
-export async function getNewArrivalsServer(perPage = 8): Promise<Product[]> {
+export async function getNewArrivalsServer(perPage = 8): Promise<ProductCardData[]> {
   const config = await getStorefrontConfigServer().catch(() => null);
   const hideOos = config?.features?.hideOosFromArchive === true;
-  const res = await fetchProductsServer({
+  const res = await fetchProductCardsServer({
     isActive: true,
     perPage,
     sort: 'createdAt',
@@ -139,10 +187,10 @@ export async function getNewArrivalsServer(perPage = 8): Promise<Product[]> {
   return res.data;
 }
 
-export async function getPopularItemsServer(perPage = 8): Promise<Product[]> {
+export async function getPopularItemsServer(perPage = 8): Promise<ProductCardData[]> {
   const config = await getStorefrontConfigServer().catch(() => null);
   const hideOos = config?.features?.hideOosFromArchive === true;
-  const res = await fetchProductsServer({
+  const res = await fetchProductCardsServer({
     isActive: true,
     perPage,
     sort: 'popularity',
@@ -183,11 +231,11 @@ function shuffleArray<T>(arr: T[]): T[] {
 // items without a browser waterfall (see page.tsx Promise.all).
 export const getRelatedProductsServer = cache(async function getRelatedProductsServer(
   product: Product,
-): Promise<Product[]> {
+): Promise<ProductCardData[]> {
   try {
     const config = await getStorefrontConfigServer().catch(() => null);
     const hideOos = config?.features?.hideOosFromArchive === true;
-    const res = await fetchProductsServer({
+    const res = await fetchProductCardsServer({
       isActive: true,
       perPage: 20,
       category: product.categorySlug || product.category || undefined,
@@ -215,7 +263,7 @@ export const getTopProductSlugsServer = cache(async function getTopProductSlugsS
   limit = 200,
 ): Promise<string[]> {
   try {
-    const res = await fetchProductsServer({
+    const res = await fetchProductCardsServer({
       isActive: true,
       perPage: limit,
       sort: 'popularity',

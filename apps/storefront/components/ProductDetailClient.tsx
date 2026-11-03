@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useStorefrontConfig } from '@/context/StorefrontConfigContext';
-import type { Product, Variant, Review } from "@/lib/types";
+import type { Product, ProductCardData, Variant, Review } from "@/lib/types";
 import { trackAddToCart, trackViewContent } from "@/lib/tracking";
 import { resolveCatalogId } from '@/lib/catalog-id';
 import { resolveVariantImage, parentImage } from '@/lib/variant-image';
@@ -146,7 +146,7 @@ export default function ProductDetailClient({ product, defaultColor, initialRela
   defaultColor?: string;
   // SSR-provided data (page.tsx fetches these in parallel with the product).
   // When present, the matching client fetch is skipped — no browser waterfall.
-  initialRelatedItems?: Product[];
+  initialRelatedItems?: ProductCardData[];
   initialReviews?: Review[];
   // Server-sanitized HTML (required — keeps dompurify out of the client bundle).
   sanitizedDescription: string;

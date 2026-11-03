@@ -7,7 +7,7 @@ import { useCart, getItemKey, VariantAttribute } from "@/context/CartContext";
 import { useStorefrontConfig } from "@/context/StorefrontConfigContext";
 import { useAutoDiscounts } from "@/hooks/useAutoDiscounts";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
-import { getProducts } from "@/lib/api/products";
+import { getProductCards } from "@/lib/api/products";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { trackAddToCart } from "@/lib/tracking";
@@ -136,7 +136,7 @@ export default function CartDrawer() {
   const [upsells, setUpsells] = useState<any[] | null>(null);
   useEffect(() => {
     let cancelled = false;
-    getProducts({ isFeatured: true, perPage: 6, isActive: true })
+    getProductCards({ isFeatured: true, perPage: 6, isActive: true })
       .then(res => { if (!cancelled) setUpsells(res.data || []); })
       .catch(() => { if (!cancelled) setUpsells([]); });
     return () => { cancelled = true; };

@@ -1,5 +1,5 @@
 import apiClient from "../api-client";
-import type { Product, Variant, Category } from "../types";
+import type { Product, ProductCardData, Variant, Category } from "../types";
 import { sanitizeDefinition } from "../customization";
 
 export interface ProductsResponse {
@@ -116,6 +116,109 @@ export function transformBackendProduct(raw: any): Product {
     reviewCount: raw._count?.reviews ?? raw.reviewCount,
     averageRating: raw.averageRating || raw.rating || 0,
     brand: raw.brand ? { id: raw.brand.id, name: raw.brand.name, slug: raw.brand.slug } : null,
+  };
+}
+
+/**
+ * P2: project a fully-transformed product down to the list-card shape.
+ * Runs the SAME transform first, so every derived value the card shows
+ * (display price / price range, original price, save amount, badge,
+ * available stock, variant stock) is byte-identical to the full product —
+ * only the payload shrinks. Heavy fields never cross this boundary:
+ * description HTML, sections, customizations, gallery images, the full
+ * variant tree, and every derivative URL except the primary image's
+ * `small` derivative (the only one ProductCard renders).
+ */
+export function toCardProduct(product: Product): ProductCardData {
+  const variants = product.variants || [];
+  const primaryMeta = product.image ? product.mediaMeta?.[product.image] : undefined;
+  const small = primaryMeta?.derivativeManifest?.small;
+  return {
+    id: product.id,
+    // Only the `small` derivative survives: it is the single derivative
+    // URL ProductCard renders. (The card's blur placeholder is a shared
+    // constant, not the per-image blurUrl — so that URL is dropped too.)
+    mediaMeta:
+      product.image && small
+        ? {
+            [product.image]: {
+              derivativeManifest: { small },
+              blurUrl: null,
+            },
+          }
+        : undefined,
+    name: product.name,
+    slug: product.slug,
+    price: product.price,
+    originalPrice: product.originalPrice,
+    priceRange: product.priceRange,
+    image: product.image,
+    category: product.category,
+    categoryId: product.categoryId,
+    categorySlug: product.categorySlug,
+    brand: product.brand ?? null,
+    badge: product.badge,
+    saveAmount: product.saveAmount,
+    isFeatured: product.isFeatured,
+    stock: product.stock,
+    sku: product.sku,
+    type: product.type,
+    tags: product.tags,
+    availabilityMode: product.availabilityMode,
+    hasVariants: variants.length > 0,
+    variantCount: variants.length,
+    anyVariantInStock: variants.some((v) => v.isActive && v.stock > 0),
+    rating: product.rating,
+    reviewCount: product.reviewCount,
+    averageRating: product.averageRating,
+  };
+}
+
+/** Card projection straight from a raw backend list row. */
+export function transformBackendProductCard(raw: any): ProductCardData {
+  return toCardProduct(transformBackendProduct(raw));
+}
+
+export interface ProductCardsResponse {
+  data: ProductCardData[];
+  meta: ProductsResponse['meta'];
+}
+
+export type ProductListParams = {
+  page?: number;
+  perPage?: number;
+  search?: string;
+  categoryId?: string;
+  category?: string;
+  tagSlug?: string;
+  brandSlug?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  isActive?: boolean;
+  isFeatured?: boolean;
+  hasStock?: boolean;
+  ids?: string;
+  sort?: string;
+  order?: string;
+  cursor?: string;
+  signal?: AbortSignal;
+};
+
+/**
+ * List fetch for card surfaces. Asks the backend for its opt-in
+ * `fields=card` slim response (older backends ignore the unknown param
+ * and return the full payload — the client-side projection below slims
+ * it either way, so mixed-version deploys stay correct).
+ */
+export async function getProductCards(params?: ProductListParams): Promise<ProductCardsResponse> {
+  const { signal: abortSignal, ...queryParams } = params || {};
+  const { data } = await apiClient.get("/products", {
+    params: { ...queryParams, fields: 'card' },
+    signal: abortSignal,
+  });
+  return {
+    data: (data.data || []).map(transformBackendProductCard),
+    meta: data.meta,
   };
 }
 

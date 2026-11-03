@@ -463,6 +463,77 @@ export class ProductsService {
     return p;
   }
 
+  /**
+   * P2 (speed plan §5) — OPT-IN card projection for the public list.
+   *
+   * The shared list endpoint also serves authenticated admin consumers
+   * (orders create, inventory, coupons — they need variants/stock/sku),
+   * so the default response is UNCHANGED. A caller that only renders
+   * product cards passes `fields=card` and gets the same rows slimmed
+   * to card inputs, in the same raw shape the storefront transform
+   * already consumes:
+   *  - heavy content dropped: description HTML, shortDesc,
+   *    descriptionSections, customizations, detailRows, videoUrl, seo;
+   *  - gallery collapsed to the primary image;
+   *  - variants collapsed to price/stock stubs (the storefront transform
+   *    derives display price range + any-variant-in-stock from them,
+   *    then drops them — attribute values/images never leave here);
+   *  - `_mediaMeta` narrowed to the primary image's `small` derivative
+   *    (the only derivative a card renders).
+   * Applied AFTER stripPublicProduct, so the security strip still runs
+   * first for non-staff callers.
+   */
+  private toCardProduct(p: any) {
+    if (!p || typeof p !== 'object') return p;
+    const images = Array.isArray(p.images) ? p.images : [];
+    const primary = p.image || images[0];
+    const meta = primary ? p._mediaMeta?.[primary] : undefined;
+    const small = meta?.derivativeManifest?.small;
+    return {
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      basePrice: p.basePrice,
+      salePrice: p.salePrice,
+      originalPrice: p.originalPrice,
+      type: p.type,
+      image: primary,
+      images: primary ? [primary] : [],
+      categoryId: p.categoryId,
+      category: p.category,
+      brand: p.brand ? { id: p.brand.id, name: p.brand.name, slug: p.brand.slug } : p.brand,
+      isFeatured: p.isFeatured,
+      isActive: p.isActive,
+      sku: p.sku,
+      tags: p.tags,
+      availabilityMode: p.availabilityMode,
+      manageStock: p.manageStock,
+      codAvailable: p.codAvailable,
+      availableStock: p.availableStock,
+      averageRating: p.averageRating,
+      rating: p.rating,
+      _count: p._count,
+      variants: Array.isArray(p.variants)
+        ? p.variants.map((v: any) => ({
+            id: v.id,
+            price: v.price,
+            salePrice: v.salePrice,
+            isActive: v.isActive,
+            availableStock: v.availableStock,
+          }))
+        : p.variants,
+      _mediaMeta:
+        primary && small
+          ? {
+              [primary]: {
+                derivativeManifest: { small },
+                blurUrl: null,
+              },
+            }
+          : undefined,
+    };
+  }
+
   async findAll(query: {
     page?: number;
     perPage?: number;
@@ -481,6 +552,7 @@ export class ProductsService {
     cursor?: string;
     hasStock?: boolean;
     status?: 'active' | 'draft';
+    fields?: string;
   }, opts?: { isStaff?: boolean }) {
     const rawPage = query.page || 1;
     const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
@@ -666,7 +738,7 @@ export class ProductsService {
         ? this.encodeCursor(last.createdAt, last.id)
         : null;
     return {
-      data,
+      data: query.fields === 'card' ? data.map((p) => this.toCardProduct(p)) : data,
       meta: {
         total,
         page,
@@ -694,6 +766,7 @@ export class ProductsService {
     ids?: string[];
     hasStock?: boolean;
     status?: 'active' | 'draft';
+    fields?: string;
   }, opts?: { isStaff?: boolean }) {
     const perPage = this.clampListPerPage(query.perPage);
     if (query.ids && query.ids.length > 200) query.ids = query.ids.slice(0, 200);
@@ -811,7 +884,7 @@ export class ProductsService {
     const nextCursor =
       hasMore && last ? this.encodeCursor(last.createdAt, last.id) : null;
     return {
-      data,
+      data: query.fields === 'card' ? data.map((p) => this.toCardProduct(p)) : data,
       meta: {
         total,
         perPage,

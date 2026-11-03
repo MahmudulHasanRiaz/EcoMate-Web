@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { fetchProductsServer, getBrandsServer, getCategoriesServer } from "@/lib/api/products-server";
+import { fetchProductCardsServer, getBrandsServer, getCategoriesServer } from "@/lib/api/products-server";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { getMetaStoreName, metaBaseUrl, prettySlug } from "@/lib/archive-meta";
 import ArchivePageClient from "./ArchivePageClient";
@@ -123,7 +123,7 @@ export default async function ProductsPage({
 
   const hideOos = config?.features?.hideOosFromArchive === true && !sp.search;
 
-  const { data, meta } = await fetchProductsServer({
+  const { data, meta } = await fetchProductCardsServer({
     perPage: 24,
     isActive: true,
     hasStock: hideOos || undefined,
