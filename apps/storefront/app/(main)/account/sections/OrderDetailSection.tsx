@@ -55,7 +55,7 @@ export function OrderDetailSection({ orderId, onBack }: { orderId: string; onBac
         {order.items?.map((item: any) => (
           <div key={item.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
             {item.product?.images?.[0] && (
-              <img src={item.product.images[0]} alt="" className="w-12 h-12 rounded-lg object-cover" />
+              <img src={item.product.images[0]} alt="" width={48} height={48} className="w-12 h-12 rounded-lg object-cover" />
             )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-800 truncate">{item.product?.name || 'Product'}</p>

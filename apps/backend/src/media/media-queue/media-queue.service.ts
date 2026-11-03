@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import { CacheService } from '../../cache/cache.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
+import { manifestMissingAvif } from './derivatives';
 
 const BACKUP_MAINTENANCE_CACHE_KEY = 'system:backup-maintenance';
 
@@ -220,5 +221,54 @@ export class MediaQueueService implements OnModuleInit {
 
     this.logger.log(`Backfill queued ${queued} media for processing`);
     return { queued };
+  }
+
+  /**
+   * P3 backfill: re-queue READY image media whose manifest predates AVIF
+   * (no `*_avif` keys) through the SAME 'process' job — the processor
+   * regenerates identical WebP keys plus the AVIF siblings, so this is
+   * idempotent and never clears the existing manifest first (WebP keeps
+   * serving while a row waits). dryRun counts without queueing.
+   */
+  async backfillAvif(
+    opts: { batchSize?: number; max?: number; dryRun?: boolean } = {},
+  ): Promise<{ queued: number; scanned: number; missing: number }> {
+    const batchSize = Math.min(opts.batchSize ?? 50, 100);
+    const maxEnqueue = opts.max ?? 10_000;
+    let cursor: string | undefined;
+    let queued = 0;
+    let scanned = 0;
+    let missing = 0;
+
+    for (;;) {
+      const batch = await this.prisma.media.findMany({
+        where: { processingStatus: 'READY', mimeType: { startsWith: 'image/' } },
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        take: batchSize,
+        orderBy: { id: 'asc' },
+        select: { id: true, derivativeManifest: true },
+      });
+      if (batch.length === 0) break;
+      scanned += batch.length;
+      cursor = batch[batch.length - 1].id;
+
+      for (const media of batch) {
+        const manifest = media.derivativeManifest as
+          | Record<string, unknown>
+          | null;
+        if (!manifestMissingAvif(manifest)) continue;
+        missing++;
+        if (!opts.dryRun && queued < maxEnqueue) {
+          await this.schedule(media.id, { priority: 100 });
+          queued++;
+        }
+      }
+      if (!opts.dryRun && queued >= maxEnqueue) break;
+    }
+
+    this.logger.log(
+      `AVIF backfill: scanned=${scanned} missing=${missing} queued=${queued} dryRun=${!!opts.dryRun}`,
+    );
+    return { queued, scanned, missing };
   }
 }

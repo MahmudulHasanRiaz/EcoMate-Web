@@ -301,6 +301,7 @@ export function HeaderSearch({
                         <img
                           src={product.image}
                           alt=""
+                          width={36} height={36}
                           className="w-9 h-9 object-cover rounded-md border border-gray-100 flex-shrink-0"
                         />
                       ) : (

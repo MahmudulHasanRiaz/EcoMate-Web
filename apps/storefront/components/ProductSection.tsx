@@ -31,8 +31,11 @@ export default function ProductSection({
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          {products.map((product) => (
-            <ProductCard key={product.id} product={product} />
+          {products.map((product, index) => (
+            // P3: pass index so the first cards get priority/eager like
+            // the PLP already does — previously defaulted to 99, so no
+            // homepage section image was ever prioritised.
+            <ProductCard key={product.id} product={product} index={index} />
           ))}
         </div>
       </div>

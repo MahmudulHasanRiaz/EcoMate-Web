@@ -107,6 +107,15 @@ export class MediaController {
     return this.svc.backfill(dto);
   }
 
+  /** P3: queue AVIF generation for READY media with pre-AVIF manifests. */
+  @Post('backfill-avif')
+  @Permissions('maintain_media')
+  backfillAvif(
+    @Body() dto: { batchSize?: number; max?: number; dryRun?: boolean },
+  ) {
+    return this.svc.backfillAvif(dto ?? {});
+  }
+
   @Post('recover-stuck')
   @Permissions('maintain_media')
   recoverStuck(@Body() dto: { sinceMinutes?: number }) {

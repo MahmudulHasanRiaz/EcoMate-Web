@@ -16,6 +16,14 @@ interface Slide {
 export default function HeroSlideshow({ slides }: { slides: Slide[] }) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const reducedMotion = usePrefersReducedMotion();
+  // P3: the first slide is rendered active (opacity-100) on first paint,
+  // so a CSS transition cannot delay LCP — but keep the enter transition
+  // off slide 0 until the show has actually rotated once, so no future
+  // mount-state change can ever start it from opacity-0 in a transition.
+  const [hasRotated, setHasRotated] = useState(false);
+  useEffect(() => {
+    if (currentSlide !== 0) setHasRotated(true);
+  }, [currentSlide]);
 
   const nextSlide = () => {
     setCurrentSlide((prev) => (prev === slides.length - 1 ? 0 : prev + 1));
@@ -56,6 +64,8 @@ export default function HeroSlideshow({ slides }: { slides: Slide[] }) {
             fill
             sizes="(max-width: 768px) 100vw, 66vw"
             priority={index === 0}
+            fetchPriority={index === 0 ? "high" : "auto"}
+            loading={index === 0 ? "eager" : "lazy"}
             className="object-cover"
           />
         ) : (
@@ -64,7 +74,7 @@ export default function HeroSlideshow({ slides }: { slides: Slide[] }) {
         return (
           <div
             key={index}
-            className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${isActive ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}
+            className={`absolute inset-0 ${index === 0 && !hasRotated ? '' : 'transition-opacity duration-700 ease-in-out'} ${isActive ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}
           >
             {href ? (
               <Link href={href} aria-label={slide.alt || `Slide ${index + 1}`} className="relative block w-full h-full">{inner}</Link>

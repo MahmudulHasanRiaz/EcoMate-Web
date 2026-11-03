@@ -2,6 +2,7 @@ import Image from "next/image";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import type { MediaMeta } from "@/lib/types";
 import HeroSlideshow from "./HeroSlideshow";
+import { resolveDerivativeUrl } from "@/lib/image-derivative";
 
 interface HeroSlide {
   image: string;
@@ -11,7 +12,7 @@ interface HeroSlide {
 
 function resolveDerivative(url: string, mediaMeta: MediaMeta | undefined, variant: string): string {
   if (!url) return '';
-  return mediaMeta?.[url]?.derivativeManifest?.[variant] || url;
+  return resolveDerivativeUrl(mediaMeta, url, variant);
 }
 
 export default function Hero({

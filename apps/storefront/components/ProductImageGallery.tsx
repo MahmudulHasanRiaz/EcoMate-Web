@@ -5,6 +5,7 @@ import { X, ChevronLeft, ChevronRight, Pause, Play, ZoomIn, ZoomOut } from 'luci
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { prefersReducedMotion } from "@/hooks/useReducedMotion";
+import { resolveDerivativeUrl } from "@/lib/image-derivative";
 import type { MediaMeta } from "@/lib/types";
 
 interface Props {
@@ -16,7 +17,7 @@ interface Props {
 }
 
 function resolveDerivative(url: string, mediaMeta: MediaMeta | undefined, variant: string): string {
-  return mediaMeta?.[url]?.derivativeManifest?.[variant] || url;
+  return resolveDerivativeUrl(mediaMeta, url, variant);
 }
 
 function displayUrl(
@@ -280,6 +281,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                     onError={() => setImgErrors(prev => ({ ...prev, [i]: true }))}
                     draggable={false}
                     priority={i === 0}
+                    fetchPriority={i === 0 ? "high" : "auto"}
                   />
                 </div>
               ))}
@@ -349,7 +351,16 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                   src={displayUrl(img, mediaMeta, 'small', !!imgErrors[i], fallbackImage, i)}
                   alt={`${productName} image ${i + 1}`}
                   fill
-                  priority={i === 0}
+                  // P3: exactly ONE priority preload in the gallery.
+                  // Desktop (first in DOM, `medium`) keeps priority; this
+                  // mobile carousel used to ALSO priority-preload the
+                  // `small` variant, so the LCP image was preloaded twice
+                  // in two sizes. Mobile's first image stays eager/high
+                  // so it still fetches immediately on mobile — it just
+                  // no longer emits a second preload.
+                  {...(i === 0
+                    ? { loading: "eager" as const, fetchPriority: "high" as const }
+                    : {})}
                   sizes="(max-width: 900px) 100vw, 50vw"
                   className={`object-contain img-fade-in ${imgLoaded[i] ? 'opacity-100' : 'opacity-0'}`}
                   onLoad={() => setImgLoaded(prev => ({ ...prev, [i]: true }))}

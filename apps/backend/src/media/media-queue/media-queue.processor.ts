@@ -4,13 +4,7 @@ import { Job } from 'bullmq';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 import { MediaQueueService } from './media-queue.service';
-
-const DERIVATIVE_SIZES = [
-  { name: 'thumbnail', width: 150 },
-  { name: 'small', width: 320 },
-  { name: 'medium', width: 640 },
-  { name: 'large', width: 1200 },
-] as const;
+import { generateDerivatives } from './derivatives';
 
 const NON_NATIVE_FORMATS = new Set([
   'image/heic',
@@ -76,38 +70,22 @@ export class MediaQueueProcessor extends WorkerHost {
       const metadata = await sharp(original).metadata();
       const needsJpegFallback = NON_NATIVE_FORMATS.has(media.mimeType);
 
-      const manifest: Record<string, string> = {};
-      let blurUrl: string | null = null;
-
-      for (const size of DERIVATIVE_SIZES) {
-        const webpBuf = await sharp(original)
-          .resize({ width: size.width, withoutEnlargement: true })
-          .webp({ quality: 80 })
-          .toBuffer();
-        const key = `derivatives/${mediaId}/${size.name}.webp`;
-        const url = await this.storage.store(key, webpBuf, 'image/webp');
-        manifest[size.name] = url;
-
-        if (needsJpegFallback) {
-          const jpegBuf = await sharp(original)
-            .resize({ width: size.width, withoutEnlargement: true })
-            .jpeg({ quality: 85, mozjpeg: true })
-            .toBuffer();
-          const jpegKey = `derivatives/${mediaId}/${size.name}.jpg`;
-          const jpegUrl = await this.storage.store(
-            jpegKey,
-            jpegBuf,
-            'image/jpeg',
-          );
-          manifest[`${size.name}_jpg`] = jpegUrl;
-        }
-      }
-
-      const blurWebp = await sharp(original)
-        .resize(16, 16, { fit: 'cover' })
-        .webp({ quality: 20 })
-        .toBuffer();
-      blurUrl = `data:image/webp;base64,${blurWebp.toString('base64')}`;
+      // WebP (unchanged) + additive AVIF siblings + optional JPEG
+      // fallback — see derivatives.ts for the manifest contract and the
+      // measured AVIF settings. Re-running this job (backfill-avif)
+      // regenerates the same storage keys, so it is idempotent.
+      const { manifest, blurUrl } = await generateDerivatives({
+        sharp: sharp as never,
+        original,
+        mediaId,
+        needsJpegFallback,
+        store: (key, buf, contentType) =>
+          this.storage.store(key, buf, contentType),
+        onAvifError: (size, err) =>
+          this.logger.warn(
+            `AVIF derivative failed for media ${mediaId} (${size}): ${err.message} — WebP remains available`,
+          ),
+      });
 
       await this.prisma.media.update({
         where: { id: mediaId },

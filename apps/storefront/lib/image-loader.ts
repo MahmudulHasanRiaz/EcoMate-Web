@@ -8,7 +8,13 @@ const DERIVATIVE_SIZES = [
   { name: "large", maxWidth: Infinity },
 ] as const;
 
-const DERIVATIVE_REGEX = /^(.*\/derivatives\/[^/]+\/)(\w+)\.(webp|jpg|jpeg|png)$/;
+// P3: `avif` added — the extension of the incoming derivative URL is
+// PRESERVED, never blindly swapped. Format selection happens upstream
+// in lib/image-derivative.ts, which only hands us an .avif URL when
+// the media's manifest actually carries an AVIF sibling; a blind
+// webp→avif rewrite here would 404 pre-backfill media whose .avif
+// file does not exist yet. Old media therefore keep loading WebP.
+const DERIVATIVE_REGEX = /^(.*\/derivatives\/[^/]+\/)(\w+)\.(webp|avif|jpg|jpeg|png)$/;
 
 function closestVariant(width: number): string {
   for (const v of DERIVATIVE_SIZES) {

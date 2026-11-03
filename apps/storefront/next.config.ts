@@ -30,10 +30,19 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: '**.cloudfront.net' },
       { protocol: 'https', hostname: 'images.unsplash.com' },
     ],
-    formats: ['image/webp', 'image/avif'],
+    // P3 dead-config removal (verified against the bundled Next 16.4
+    // docs, node_modules/next/dist/docs/.../config/images.md +
+    // components/image.md): `formats` and `minimumCacheTTL` only apply
+    // to the BUILT-IN Image Optimization API. With `loader: 'custom'`
+    // above, that API never runs, so both were unread — removed.
+    // Format + caching live in our own pipeline instead: the backend
+    // generates WebP + AVIF derivatives (apps/backend/src/media) and
+    // lib/image-loader.ts + lib/image-derivative.ts select them.
+    // `deviceSizes`/`imageSizes` are KEPT: they define the width
+    // candidates next/image passes to the custom loader, i.e. they
+    // drive which derivative variant the loader picks.
     deviceSizes: [640, 768, 1024, 1280, 1536],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    minimumCacheTTL: 31536000,
   },
 };
 
