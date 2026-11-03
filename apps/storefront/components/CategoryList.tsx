@@ -6,12 +6,14 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
 import { getMenuCategories } from "@/lib/api/products";
+import { usePrefersReducedMotion } from "@/hooks/useReducedMotion";
 import type { Category } from "@/lib/types";
 
 export default function CategoryList() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isPaused, setIsPaused] = useState(false);
+  const reducedMotion = usePrefersReducedMotion();
   const [imgErrors, setImgErrors] = useState<{ [key: string]: boolean }>({});
 
   useEffect(() => {
@@ -45,8 +47,10 @@ export default function CategoryList() {
   }, [categories]);
 
   useEffect(() => {
-    if (isPaused || categories.length === 0) return;
+    // No auto-scroll under reduced motion; pause while the tab is hidden.
+    if (isPaused || reducedMotion || categories.length === 0) return;
     const interval = setInterval(() => {
+      if (document.hidden) return;
       const el = scrollRef.current;
       if (!el) return;
       const { scrollWidth, clientWidth } = dimsRef.current;
@@ -58,7 +62,7 @@ export default function CategoryList() {
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [isPaused, categories.length]);
+  }, [isPaused, reducedMotion, categories.length]);
 
   return (
     <section className="py-6 md:py-10 bg-[#f8f9fa] min-h-[100px] md:min-h-[140px]">
@@ -126,14 +130,14 @@ function CategoryItem({ category, imgErrors, setImgErrors }: {
       href={`/products?category=${category.slug}`}
       className="flex flex-col items-center gap-3 min-w-[85px] md:min-w-[120px] snap-center group cursor-pointer"
     >
-      <div className="relative w-[85px] h-[85px] md:w-[100px] md:h-[100px] bg-white rounded-lg shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-gray-100 flex items-center justify-center overflow-hidden group-hover:shadow-md group-hover:border-brand-blue/30 transition-all duration-300 transform group-hover:-translate-y-1">
-        <div className="absolute inset-0 bg-gradient-to-tr from-brand-blue/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+      <div className="relative w-[85px] h-[85px] md:w-[100px] md:h-[100px] bg-white rounded-lg shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-gray-100 flex items-center justify-center overflow-hidden group-hover:shadow-md group-hover:border-brand-blue/30 transition-[transform,box-shadow,border-color] duration-[var(--duration-med)] ease-out transform group-hover:-translate-y-1">
+        <div className="absolute inset-0 bg-gradient-to-tr from-brand-blue/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-[var(--duration-med)] ease-out" />
         <Image
           src={imgErrors[category.id] ? PLACEHOLDER_IMAGE : (catImg || PLACEHOLDER_IMAGE)}
           alt=""
           fill
           sizes="100px"
-          className="object-cover group-hover:scale-110 transition-transform duration-500 ease-out relative z-10"
+          className="object-cover group-hover:scale-[1.03] transition-transform duration-[var(--duration-med)] ease-out relative z-10"
           onError={() => setImgErrors(prev => ({ ...prev, [category.id]: true }))}
         />
       </div>

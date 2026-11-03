@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SheetShell } from '../SheetShell';
 
+// P7: close is animated (300ms exit) — the parent's onClose (unmount)
+// fires only after the exit transition, so close assertions wait for it.
 describe('SheetShell', () => {
-  it('renders children in a dialog with a close button', () => {
+  it('renders children in a dialog with a close button', async () => {
     const onClose = vi.fn();
     render(
       <SheetShell title="Size Guide" onClose={onClose}>
@@ -15,10 +17,10 @@ describe('SheetShell', () => {
     expect(screen.getByText('body text')).toBeDefined();
     expect(screen.getByText('Size Guide')).toBeDefined();
     fireEvent.click(screen.getByLabelText('Close'));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
-  it('closes on ESC but not on content click', () => {
+  it('closes on ESC but not on content click', async () => {
     const onClose = vi.fn();
     render(
       <SheetShell title="T" onClose={onClose}>
@@ -28,18 +30,31 @@ describe('SheetShell', () => {
     fireEvent.click(screen.getByText('inner'));
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
-  it('closes on backdrop click', () => {
+  it('closes on backdrop click', async () => {
     const onClose = vi.fn();
-    const { container } = render(
+    render(
       <SheetShell title="T" onClose={onClose}>
         <div>inner</div>
       </SheetShell>,
     );
-    fireEvent.click(container.firstChild as HTMLElement);
-    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId('sheet-backdrop'));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps the sheet mounted during the exit animation', () => {
+    const onClose = vi.fn();
+    render(
+      <SheetShell title="T" onClose={onClose}>
+        <div>inner</div>
+      </SheetShell>,
+    );
+    fireEvent.click(screen.getByLabelText('Close'));
+    // Still mounted (animating out); the parent is not told to unmount yet.
+    expect(screen.getByRole('dialog')).toBeDefined();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 
@@ -72,7 +87,7 @@ describe('SheetShell focus (P1-6)', () => {
     expect(document.activeElement?.textContent).toBe('inner action');
   });
 
-  it('still closes on Escape with the latest onClose', () => {
+  it('still closes on Escape with the latest onClose', async () => {
     const onClose = vi.fn();
     render(
       <SheetShell title="Sheet" onClose={onClose}>
@@ -80,6 +95,6 @@ describe('SheetShell focus (P1-6)', () => {
       </SheetShell>,
     );
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });

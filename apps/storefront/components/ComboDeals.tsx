@@ -57,7 +57,7 @@ export default function ComboDeals() {
 
               return (
                 <Link key={combo.id} href={`/combos/${combo.id}`}
-                  className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm group hover:shadow-xl transition-all duration-300 flex flex-col cursor-pointer">
+                  className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm group hover:shadow-xl transition-shadow duration-[var(--duration-med)] ease-out flex flex-col cursor-pointer">
                   <div className={`relative ${aspect.className} p-1 bg-[#fcfcfc]`}
                     style={'style' in aspect ? aspect.style : undefined}>
                     <Image
@@ -71,7 +71,7 @@ export default function ComboDeals() {
                       decoding="async"
                       placeholder={useUnoptimized ? "empty" : "blur"}
                       blurDataURL={COMBO_BLUR_DATA_URL}
-                      className="object-contain transition-transform duration-500 group-hover:scale-105"
+                      className="object-contain transition-transform duration-[var(--duration-med)] ease-out group-hover:scale-[1.03]"
                       onError={() => setImgErrors(prev => ({ ...prev, [combo.id]: true }))}
                       unoptimized={useUnoptimized}
                     />
