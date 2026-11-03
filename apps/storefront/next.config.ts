@@ -63,6 +63,13 @@ export default async function (phase: string) {
   // normalize to the backend origin — otherwise /api/* resolves to
   // /api/api/* and every proxied browser API call 404s.
   const apiOrigin = apiUrl.replace(/\/api\/?$/, '');
+  // Round-3 perf: /uploads bytes come from the media-static nginx service
+  // (sendfile) when UPLOADS_URL is set, so image traffic never enters the
+  // backend Node process. Unset/empty → the backend origin, exactly the
+  // pre-Round-3 behaviour (existing stacks are unaffected).
+  const uploadsOrigin = process.env.UPLOADS_URL
+    ? process.env.UPLOADS_URL.replace(/\/+$/, '')
+    : apiOrigin;
   const posUrl = process.env.POS_URL || (isProd ? 'http://pos:80' : 'http://localhost:5174');
 
   return {
@@ -197,7 +204,7 @@ export default async function (phase: string) {
         },
         {
           source: '/uploads/:path*',
-          destination: `${apiOrigin}/uploads/:path*`,
+          destination: `${uploadsOrigin}/uploads/:path*`,
         },
         {
           source: '/assets/:path*',
