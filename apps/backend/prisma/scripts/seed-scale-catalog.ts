@@ -15,11 +15,13 @@
  *   docker exec -it <backend-container> sh -c \
  *     "cd /app && npx tsx prisma/scripts/seed-scale-catalog.ts --apply"
  *
- * It NEVER runs automatically — nothing in startup, seed, or any redeploy
- * path invokes it. And it refuses to write unless BOTH production guards
- * pass (see PROD_DOMAINS / assertSeedAllowed below): the stack must not
- * be a known client production domain, and ALLOW_SCALE_SEED=1 must be set
- * in the stack env (staging only, added deliberately via Portainer).
+ * Invocation: (a) manually via container console, or (b) automatically in
+ * the background at container startup — startup.sh does that ONLY when
+ * ALLOW_SCALE_SEED=1 is set in the stack env (no stack sets it by
+ * default; staging only, added deliberately via Portainer). Either way
+ * it refuses to write unless BOTH production guards pass (see
+ * PROD_DOMAINS / assertSeedAllowed below): the stack must not be a known
+ * client production domain, and ALLOW_SCALE_SEED=1 must be present.
  *
  * LOCAL STORAGE ONLY: originals are written to <cwd>/uploads, mirroring
  * StorageService.uploadToLocal (`<uuid><ext>`, url `/uploads/<name>`).

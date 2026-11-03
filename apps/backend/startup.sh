@@ -52,6 +52,18 @@ if [ "$RUN_SEED" = "true" ]; then
   npx prisma db seed
 fi
 
+# Scale-test seeder (staging ONLY). Runs in the background after boot when
+# — and only when — ALLOW_SCALE_SEED=1 is set in the stack env; no stack
+# sets it by default. The script re-checks the same flag itself and
+# additionally refuses known client production domains unconditionally,
+# so this can never seed a client by accident. Fire-and-forget: output
+# goes to /tmp/scale-seed.log and a failure never blocks or fails startup.
+# Re-boots are safe: the script refuses to double-seed.
+if [ "$ALLOW_SCALE_SEED" = "1" ]; then
+  echo "[Startup] ALLOW_SCALE_SEED=1 — scale seeder scheduled in background (log: /tmp/scale-seed.log)"
+  ( sleep 20; su -s /bin/sh nestjs -c "cd /app && npx tsx prisma/scripts/seed-scale-catalog.ts --apply" >> /tmp/scale-seed.log 2>&1 || true ) &
+fi
+
 echo "[Startup] Starting server..."
 
 # Heap ceiling.
