@@ -6,6 +6,9 @@ import { Inventory } from '../index'
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: React.ReactNode }) => <a href="#">{children}</a>,
   useSearch: () => ({}),
+  // The Stock page now writes its filter state back into the route search
+  // params (state preservation) — navigation is a no-op in these tests.
+  useNavigate: () => () => {},
 }))
 vi.mock('@/components/layout/header', () => ({
   Header: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
@@ -21,6 +24,7 @@ vi.mock('@/features/inventory/hooks/use-inventory-management', () => ({
 }))
 vi.mock('../components/inventory-detail-drawer', () => ({ InventoryDetailDrawer: () => null }))
 vi.mock('../components/adjust-stock-modal', () => ({ AdjustStockModal: () => null }))
+vi.mock('../components/bulk-adjust-dialog', () => ({ BulkAdjustDialog: () => null }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 
 const mockGet = vi.hoisted(() => vi.fn())

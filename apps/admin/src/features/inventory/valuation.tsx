@@ -26,7 +26,10 @@ interface PhysicalValuationItem {
   physicalQty: number
   physicalReserved: number
   lotRemainingQty: number
+  /** True FIFO average cost of the remaining costing lots. */
   unitCost: number
+  /** The product's configured standard cost, when the payload carries it. */
+  standardCost?: number
   fifoValue: number
   reconciliationStatus: string
 }
@@ -38,6 +41,8 @@ interface ManagedValuationItem {
   sku: string
   stock: number
   unitCost: number
+  /** Standard cost, carried separately by the payload when available. */
+  standardCost?: number
   totalValue: number
 }
 
@@ -179,7 +184,19 @@ export function InventoryValuation() {
                       <TableHead>Product</TableHead>
                       <TableHead className='text-right'>Physical Qty</TableHead>
                       <TableHead className='text-right'>Lot Remaining</TableHead>
-                      <TableHead className='text-right'>Unit Cost</TableHead>
+                      <TableHead className='text-right'>
+                        <span className='inline-flex items-center gap-1'>
+                          Unit Cost (FIFO Avg)
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <HelpCircle className='h-3 w-3 text-muted-foreground cursor-help' />
+                              </TooltipTrigger>
+                              <TooltipContent>Average FIFO cost of the remaining costing lots</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </span>
+                      </TableHead>
                       <TableHead className='text-right'>FIFO Value</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
@@ -301,7 +318,7 @@ export function InventoryValuation() {
                             </div>
                           </TableCell>
                           <TableCell className='text-right font-medium'>{item.stock}</TableCell>
-                          <TableCell className='text-right'>৳{item.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                          <TableCell className='text-right'>৳{(item.standardCost ?? item.unitCost).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                           <TableCell className='text-right font-bold'>৳{item.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                         </TableRow>
                       ))

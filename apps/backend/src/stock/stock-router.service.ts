@@ -6,6 +6,13 @@ export type StockAction = 'reserve' | 'release' | 'deduct' | 'add' | 'scrap' | '
 export interface StockEngineDecision {
   ms: StockAction;
   pi: StockAction;
+  /**
+   * Retained for decision-shape compatibility. resolve() now evaluates the
+   * product's syncManagedStock flag itself (callers pass it in), so this is
+   * always false; callers that still gate on
+   * `!decision.msConditionalOnSync || product.syncManagedStock` behave
+   * exactly as before.
+   */
   msConditionalOnSync: boolean;
 }
 
@@ -31,7 +38,6 @@ export class StockRouterService {
     const SKIP: StockEngineDecision = { ms: 'skip', pi: 'skip', msConditionalOnSync: false };
     const MS_ONLY: StockEngineDecision = { ms: opType as StockAction, pi: 'skip', msConditionalOnSync: false };
     const PI_ONLY: StockEngineDecision = { ms: 'skip', pi: opType as StockAction, msConditionalOnSync: false };
-    const MS_COND: StockEngineDecision = { ms: opType as StockAction, pi: opType as StockAction, msConditionalOnSync: true };
 
     if (!mode || mode === 'ALWAYS_IN_STOCK') return SKIP;
     if (mode === 'ALWAYS_OUT_OF_STOCK') return SKIP;
@@ -43,14 +49,25 @@ export class StockRouterService {
       return MS_ONLY;
     }
 
-    // IM ON
+    // IM ON + INVENTORY_CONTROLLED
+    // Physical inventory is the governing layer. When the product opts into
+    // syncManagedStock (a merchant-settable flag on the product DTO), the
+    // managed counters MIRROR the physical legs so surfaces that read the
+    // managed quantity stay in step with physical stock:
+    //   reserve → managed hold placed alongside the physical allocation
+    //   allocate → no managed leg (the hold was already placed at reserve)
+    //   release/deduct/add → same managed action as the physical leg
+    //   scrap → managed-only (physical scrap is not routed for IC products)
+    // Without the flag the managed side stays untouched, exactly as before.
     if (mode === 'INVENTORY_CONTROLLED') {
-      if (opType === 'reserve') return { ms: 'skip', pi: 'allocate', msConditionalOnSync: false };
-      if (opType === 'release') return PI_ONLY;
-      if (opType === 'deduct') return { ms: 'skip', pi: 'fulfill', msConditionalOnSync: false };
-      if (opType === 'add') return PI_ONLY;
+      const sync = syncManagedStock === true;
+      if (opType === 'reserve') return { ms: sync ? 'reserve' : 'skip', pi: 'allocate', msConditionalOnSync: false };
+      if (opType === 'release') return { ms: sync ? 'release' : 'skip', pi: 'release', msConditionalOnSync: false };
+      if (opType === 'deduct') return { ms: sync ? 'deduct' : 'skip', pi: 'fulfill', msConditionalOnSync: false };
+      if (opType === 'add') return { ms: sync ? 'add' : 'skip', pi: 'add', msConditionalOnSync: false };
       if (opType === 'allocate') return { ms: 'skip', pi: 'allocate', msConditionalOnSync: false };
       if (opType === 'check') return { ms: 'skip', pi: 'check', msConditionalOnSync: false };
+      if (opType === 'scrap' && sync) return MS_ONLY;
       return SKIP;
     }
 

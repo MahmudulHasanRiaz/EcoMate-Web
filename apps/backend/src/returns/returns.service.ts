@@ -685,8 +685,8 @@ export class ReturnsService {
       ),
     );
     this.logger.log(
-      `Return ${(ret as any).displayId ?? id} RESTOCKED — ` +
-        `${effectiveItems.length} item line(s) restored` +
+      `Return ${(ret as any).displayId ?? id} ${(finalRow as any)?.status ?? 'RESTOCKED'} — ` +
+        `${effectiveItems.length} item line(s) processed` +
         `${performedBy ? ` by=${performedBy}` : ''}`,
     );
     return finalRow;

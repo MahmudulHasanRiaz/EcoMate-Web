@@ -25,6 +25,7 @@ import {
   resolvePaymentAccountId,
 } from '../payments/payment-account';
 import { PaymentJournalService } from '../accounting/payment-journal.service';
+import { OrdersService } from '../orders/orders.service';
 
 @Injectable()
 export class CheckoutLeadsService {
@@ -37,6 +38,10 @@ export class CheckoutLeadsService {
     private readonly trackingSettings: TrackingSettingsService,
     private readonly customerAddressService: CustomerAddressService,
     private readonly salesChannelService: SalesChannelService,
+    // Stock treatment for converted orders goes through OrdersService's
+    // public per-line entry (the same one Exchange uses) so conversion
+    // can never drift from order-create stock semantics.
+    private readonly ordersService: OrdersService,
     // Phase 2 — auto-journal for receipts recorded during a lead conversion.
     // Optional so existing unit tests keep working.
     @Optional() private readonly paymentJournal?: PaymentJournalService,
@@ -406,6 +411,57 @@ private async resolveCanonicalLead(
     };
   }
 
+  /**
+   * Managed availability pre-check for one converted line — the same gate
+   * order create runs (OrdersService.assertManagedAvailability, mirrored
+   * messages): MANAGED_STOCK lines check the product's counters, or the
+   * variant's counters for variant lines; ALWAYS_OUT_OF_STOCK is rejected
+   * outright. Physical-layer sufficiency is enforced by the reserve call
+   * itself (it throws on insufficient physical stock).
+   */
+  private async assertConvertedLineAvailability(
+    tx: Prisma.TransactionClient,
+    item: { productId: string; variantId?: string | null; quantity: number },
+  ): Promise<void> {
+    const product = await tx.product.findUnique({
+      where: { id: item.productId },
+      select: {
+        name: true,
+        availabilityMode: true,
+        managedStockQuantity: true,
+        reservedStock: true,
+      },
+    });
+    if (!product) return; // legacy line without a product row — the reserve path tolerates it the same way
+    if (product.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
+      throw new BadRequestException(
+        `Product "${product.name}" is out of stock and cannot be ordered`,
+      );
+    }
+    if (product.availabilityMode !== 'MANAGED_STOCK') return;
+    let managedStockQuantity = product.managedStockQuantity ?? 0;
+    let reservedStock = product.reservedStock ?? 0;
+    if (item.variantId) {
+      const variant = await tx.productVariant.findUnique({
+        where: { id: item.variantId },
+        select: { managedStockQuantity: true, reservedStock: true },
+      });
+      managedStockQuantity = variant?.managedStockQuantity ?? 0;
+      reservedStock = variant?.reservedStock ?? 0;
+    }
+    const available = managedStockQuantity - reservedStock;
+    if (available <= 0) {
+      throw new BadRequestException(
+        `Product "${product.name}" is out of stock and cannot be ordered`,
+      );
+    }
+    if (item.quantity > available) {
+      throw new BadRequestException(
+        `Only ${available} unit(s) of "${product.name}" are in stock (requested ${item.quantity})`,
+      );
+    }
+  }
+
   async convertToOrder(
     id: string,
     userId: string,
@@ -606,7 +662,50 @@ private async resolveCanonicalLead(
             },
           ] as any,
         },
+        include: {
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              variantId: true,
+              comboId: true,
+              quantity: true,
+            },
+          },
+        },
       });
+
+      // Stock treatment identical to order create. Conversion previously
+      // reserved NOTHING in either layer — the converted order sat at the
+      // initial status with its stock unheld, so the first stock check was
+      // a later confirm, which could fail against stock sold in the
+      // meantime (or silently pass for layers confirm doesn't cover).
+      // Now, inside this same transaction: managed availability pre-check
+      // per line, then the shared per-line reserve (managed + physical
+      // allocation + line flags) via OrdersService — any shortage rolls
+      // the whole conversion back, exactly like a failed order create.
+      // Combo parent lines are skipped: conversion creates no component
+      // snapshots for them (a pre-existing conversion gap — order create
+      // builds the snapshots conversion would need), so there is no
+      // component stock record to reserve against.
+      for (const createdItem of order.items ?? []) {
+        if (!createdItem.productId) continue;
+        const lineProductId: string = createdItem.productId;
+        await this.assertConvertedLineAvailability(tx, {
+          productId: lineProductId,
+          variantId: createdItem.variantId,
+          quantity: createdItem.quantity,
+        });
+        await this.ordersService.applyStockForLine(
+          'reserve',
+          createdItem.productId,
+          createdItem.variantId,
+          createdItem.quantity,
+          displayId,
+          tx,
+          { orderId: order.id, orderItemId: createdItem.id },
+        );
+      }
 
       // Customer-owned side effects of the order, inside the same transaction —
       // identical to the storefront order path (see orders.service.ts create()).

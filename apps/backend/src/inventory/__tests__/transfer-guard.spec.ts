@@ -136,6 +136,38 @@ describe('InventoryService — transfer guards', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('refuses a transfer whose source and destination are the same warehouse', async () => {
+    (prisma.product.findUnique as jest.Mock).mockResolvedValue(simpleProduct);
+
+    await expect(
+      service.transfer({
+        ...baseDto,
+        productId: 'prod-mug',
+        destinationLocation: 'Main Warehouse', // === sourceLocation
+      } as any),
+    ).rejects.toThrow(/different/i);
+    // Rejected before any idempotency lookup or write.
+    expect(prisma.stockTransfer.findUnique).not.toHaveBeenCalled();
+    expect(prisma.stockTransfer.create).not.toHaveBeenCalled();
+  });
+
+  it('generates an idempotency key when the caller supplies none', async () => {
+    (prisma.product.findUnique as jest.Mock).mockResolvedValue(simpleProduct);
+    (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue(null);
+
+    const { idempotencyKey: _omit, ...keyless } = baseDto as any;
+    // The movement itself fails later against these stubs — what matters is
+    // the idempotency lookup ran with a fresh non-empty key, never with
+    // undefined/'' (which would collapse into the first keyed transfer).
+    await service
+      .transfer({ ...keyless, productId: 'prod-mug' } as any)
+      .catch(() => undefined);
+
+    const arg = (prisma.stockTransfer.findUnique as jest.Mock).mock.calls[0][0];
+    expect(typeof arg.where.idempotencyKey).toBe('string');
+    expect(arg.where.idempotencyKey.length).toBeGreaterThan(0);
+  });
+
   it('still allows a product-level transfer for a SIMPLE product', async () => {
     (prisma.product.findUnique as jest.Mock).mockResolvedValue(simpleProduct);
     (prisma.stockTransfer.findUnique as jest.Mock).mockResolvedValue(null);

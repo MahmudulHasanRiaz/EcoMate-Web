@@ -15,6 +15,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Loader2, Plus, Pencil, Trash2, MapPin, Search, X, Warehouse } from 'lucide-react'
 import { PageInfo } from '@/components/page-info'
 
@@ -62,9 +63,10 @@ interface BinForm {
   rackId: string
   shelfId: string
   warehouseId: string
+  isActive: boolean
 }
 
-const emptyForm: BinForm = { code: '', zoneId: '', rackId: '', shelfId: '', warehouseId: '' }
+const emptyForm: BinForm = { code: '', zoneId: '', rackId: '', shelfId: '', warehouseId: '', isActive: true }
 
 export function BinLocations() {
   const queryClient = useQueryClient()
@@ -76,7 +78,7 @@ export function BinLocations() {
   const [deleteConfirm, setDeleteConfirm] = useState<BinLocation | null>(null)
   const [form, setForm] = useState<BinForm>(emptyForm)
 
-  const { data: bins, isLoading, isError, error } = useQuery<BinLocation[]>({
+  const { data: bins, isLoading, isError, error, refetch } = useQuery<BinLocation[]>({
     queryKey: ['all-bin-locations', warehouseFilter, statusFilter, search],
     queryFn: () => {
       const params: Record<string, string> = {}
@@ -139,13 +141,16 @@ export function BinLocations() {
     initializingRef.current = false
   })
 
+  const warehouseNameById = (id: string) => warehouses?.find(w => w.id === id)?.name || id
+
   const createMut = useMutation({
-    mutationFn: (data: { code: string; warehouseId: string; zoneId?: string; rackId?: string; shelfId?: string }) =>
+    mutationFn: (data: { code: string; warehouseId: string; zoneId?: string; rackId?: string; shelfId?: string; isActive: boolean }) =>
       apiClient.post(`/warehouses/${data.warehouseId}/bin-locations`, {
         code: data.code,
         zoneId: data.zoneId || undefined,
         rackId: data.rackId || undefined,
         shelfId: data.shelfId || undefined,
+        isActive: data.isActive,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['all-bin-locations'] })
@@ -158,14 +163,23 @@ export function BinLocations() {
   })
 
   const updateMut = useMutation({
-    mutationFn: ({ id, warehouseId, data }: { id: string; warehouseId: string; data: { code: string; zoneId?: string; rackId?: string; shelfId?: string } }) =>
+    mutationFn: ({ id, warehouseId, data }: { id: string; warehouseId: string; data: { code: string; zoneId?: string; rackId?: string; shelfId?: string; isActive: boolean; warehouseId?: string } }) =>
       apiClient.put(`/warehouses/${warehouseId}/bin-locations/${id}`, data),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['all-bin-locations'] })
+      // The bin may have moved warehouses — refresh both warehouses' bin
+      // lists (the drawer's per-warehouse query) and the warehouse list.
+      queryClient.invalidateQueries({ queryKey: ['warehouse-bins'] })
+      queryClient.invalidateQueries({ queryKey: ['warehouses'] })
       setOpen(false)
       setEditing(null)
       setForm(emptyForm)
-      toast.success('Bin location updated')
+      const movedTo = variables.data.warehouseId
+      if (movedTo && movedTo !== variables.warehouseId) {
+        toast.success(`Bin moved to ${warehouseNameById(movedTo)}`)
+      } else {
+        toast.success('Bin location updated')
+      }
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error updating bin'),
   })
@@ -196,9 +210,15 @@ export function BinLocations() {
       rackId: bin.rackId || '',
       shelfId: bin.shelfId || '',
       warehouseId: bin.warehouseId,
+      isActive: bin.isActive,
     })
     setOpen(true)
   }
+
+  // Editing a bin into a DIFFERENT warehouse is a move: the backend accepts
+  // warehouseId in the update payload, moves the bin, and clears its
+  // zone/rack/shelf (they belong to the old warehouse).
+  const isMove = !!editing && form.warehouseId !== editing.warehouseId
 
   const handleSubmit = () => {
     if (!form.code.trim()) { toast.error('Bin code is required'); return }
@@ -210,15 +230,22 @@ export function BinLocations() {
       zoneId: form.zoneId || undefined,
       rackId: form.rackId || undefined,
       shelfId: form.shelfId || undefined,
+      isActive: form.isActive,
     }
     if (editing) {
-      updateMut.mutate({ id: editing.id, warehouseId: editing.warehouseId, data: payload })
+      updateMut.mutate({
+        id: editing.id,
+        warehouseId: editing.warehouseId,
+        data: isMove
+          ? // A move clears the hierarchy server-side — don't send the old
+            // warehouse's zone/rack/shelf ids along with it.
+            { code: payload.code, isActive: payload.isActive, warehouseId: form.warehouseId }
+          : payload,
+      })
     } else {
       createMut.mutate({ ...payload, warehouseId: form.warehouseId })
     }
   }
-
-  const warehouseNameById = (id: string) => warehouses?.find(w => w.id === id)?.name || id
 
   const formatHierarchy = (bin: BinLocation) => {
     const parts: string[] = []
@@ -286,6 +313,15 @@ export function BinLocations() {
               <TableBody>
                 {isLoading ? (
                   <TableRow><TableCell colSpan={5} className="text-center py-8"><Loader2 className="animate-spin h-5 w-5 mx-auto" /></TableCell></TableRow>
+                ) : isError ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8">
+                      <p className="text-sm text-destructive mb-2">
+                        {error instanceof Error ? error.message : 'Failed to load bin locations.'}
+                      </p>
+                      <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+                    </TableCell>
+                  </TableRow>
                 ) : !bins?.length ? (
                   <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No bin locations found.</TableCell></TableRow>
                 ) : (
@@ -343,12 +379,18 @@ export function BinLocations() {
               <Label>Bin Code *</Label>
               <Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g. A-01-01" />
             </div>
+            {isMove && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Moving this bin to another warehouse clears its zone, rack and shelf — reassign them after the move.
+              </p>
+            )}
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Zone</Label>
                 <Select
                   value={form.zoneId || '__none__'}
                   onValueChange={(v) => setForm(f => ({ ...f, zoneId: v === '__none__' ? '' : v, rackId: '', shelfId: '' }))}
+                  disabled={isMove}
                 >
                   <SelectTrigger><SelectValue placeholder="Zone" /></SelectTrigger>
                   <SelectContent>
@@ -364,7 +406,7 @@ export function BinLocations() {
                 <Select
                   value={form.rackId || '__none__'}
                   onValueChange={(v) => setForm(f => ({ ...f, rackId: v === '__none__' ? '' : v, shelfId: '' }))}
-                  disabled={!form.zoneId}
+                  disabled={isMove || !form.zoneId}
                 >
                   <SelectTrigger><SelectValue placeholder="Rack" /></SelectTrigger>
                   <SelectContent>
@@ -380,7 +422,7 @@ export function BinLocations() {
                 <Select
                   value={form.shelfId || '__none__'}
                   onValueChange={(v) => setForm(f => ({ ...f, shelfId: v === '__none__' ? '' : v }))}
-                  disabled={!form.rackId}
+                  disabled={isMove || !form.rackId}
                 >
                   <SelectTrigger><SelectValue placeholder="Shelf" /></SelectTrigger>
                   <SelectContent>
@@ -391,6 +433,16 @@ export function BinLocations() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Active</Label>
+                <p className="text-xs text-muted-foreground">Inactive bins are hidden from stock operations.</p>
+              </div>
+              <Switch
+                checked={form.isActive}
+                onCheckedChange={(v) => setForm(f => ({ ...f, isActive: v }))}
+              />
             </div>
           </div>
           <DialogFooter>

@@ -5,6 +5,20 @@ import { StockRouterService } from './stock-router.service';
 import { Prisma } from '@prisma/client';
 
 /**
+ * Outcome of a deductForOrder pass. `moved` is true when at least one leg
+ * actually changed stock (a managed flag transitioned to deducted, or an
+ * ACTIVE physical reservation was fulfilled). Callers that report what
+ * happened — the reconciliation heal above all — must use this instead of
+ * assuming the call moved something: on an already-deducted order every
+ * leg is an idempotent no-op and `moved` is false.
+ */
+export interface DeductForOrderResult {
+  moved: boolean;
+  managedDeductedUnits: number;
+  physicalFulfilledUnits: number;
+}
+
+/**
  * OrderStockDeductService
  *
  * Idempotent per-item, per-engine stock deduction on delivery.
@@ -52,7 +66,7 @@ export class OrderStockDeductService {
     tx: Prisma.TransactionClient;
     strict?: boolean;
     skipManagedUnitIds?: Set<string>;
-  }): Promise<void> {
+  }): Promise<DeductForOrderResult> {
     const { orderId, reference, performedBy, tx } = params;
     const strict = params.strict !== false;
     const skipManagedUnitIds = params.skipManagedUnitIds ?? new Set<string>();
@@ -78,16 +92,28 @@ export class OrderStockDeductService {
       },
     });
 
+    const result: DeductForOrderResult = {
+      moved: false,
+      managedDeductedUnits: 0,
+      physicalFulfilledUnits: 0,
+    };
+    const absorb = (part: DeductForOrderResult) => {
+      result.managedDeductedUnits += part.managedDeductedUnits;
+      result.physicalFulfilledUnits += part.physicalFulfilledUnits;
+      result.moved = result.moved || part.moved;
+    };
+
     for (const oi of fullOrderItems) {
       if (!oi.productId && !oi.comboId) continue;
 
       if (oi.comboId) {
-        await this.deductComboItem(tx, oi, activeCycle?.id, imEnabled, reference, strict, performedBy, skipManagedUnitIds);
+        absorb(await this.deductComboItem(tx, oi, activeCycle?.id, imEnabled, reference, strict, performedBy, skipManagedUnitIds));
         continue;
       }
 
-      await this.deductStandaloneItem(tx, oi, activeCycle?.id, imEnabled, reference, strict, performedBy, skipManagedUnitIds);
+      absorb(await this.deductStandaloneItem(tx, oi, activeCycle?.id, imEnabled, reference, strict, performedBy, skipManagedUnitIds));
     }
+    return result;
   }
 
   private async deductComboItem(
@@ -99,7 +125,12 @@ export class OrderStockDeductService {
     strict: boolean,
     performedBy?: string,
     skipManagedUnitIds: Set<string> = new Set(),
-  ): Promise<void> {
+  ): Promise<DeductForOrderResult> {
+    const result: DeductForOrderResult = {
+      moved: false,
+      managedDeductedUnits: 0,
+      physicalFulfilledUnits: 0,
+    };
     const snapshots = await tx.orderItemComboComponent.findMany({
       where: { orderItemId: oi.id },
       include: { product: true },
@@ -128,6 +159,8 @@ export class OrderStockDeductService {
           where: { id: snap.id },
           data: { managedStockDeducted: true },
         });
+        result.managedDeductedUnits += 1;
+        result.moved = true;
       }
 
       if (decision.pi === 'fulfill' && cycleId) {
@@ -146,6 +179,8 @@ export class OrderStockDeductService {
             performedBy: performedBy || 'system',
             tx,
           });
+          result.physicalFulfilledUnits += 1;
+          result.moved = true;
         } else if (!compRes) {
           if (strict) {
             const hasPhysicalInventory = await tx.physicalInventory.findFirst({
@@ -171,6 +206,7 @@ export class OrderStockDeductService {
         }
       }
     }
+    return result;
   }
 
   private async deductStandaloneItem(
@@ -182,9 +218,14 @@ export class OrderStockDeductService {
     strict: boolean,
     performedBy?: string,
     skipManagedUnitIds: Set<string> = new Set(),
-  ): Promise<void> {
+  ): Promise<DeductForOrderResult> {
+    const result: DeductForOrderResult = {
+      moved: false,
+      managedDeductedUnits: 0,
+      physicalFulfilledUnits: 0,
+    };
     const product = oi.product;
-    if (!product || !oi.productId) return;
+    if (!product || !oi.productId) return result;
 
     const decision = this.stockRouter.resolve(
       product.availabilityMode,
@@ -207,6 +248,8 @@ export class OrderStockDeductService {
         where: { id: oi.id },
         data: { managedStockDeducted: true },
       });
+      result.managedDeductedUnits += 1;
+      result.moved = true;
     }
 
     if (decision.pi === 'fulfill' && cycleId) {
@@ -215,7 +258,7 @@ export class OrderStockDeductService {
         select: { id: true, status: true },
       });
 
-      if (reservation?.status === 'CONSUMED') return;
+      if (reservation?.status === 'CONSUMED') return result;
 
       if (reservation?.status === 'ACTIVE') {
         await this.stockService.fulfillPhysicalReservation({
@@ -227,6 +270,8 @@ export class OrderStockDeductService {
           performedBy: performedBy || 'system',
           tx,
         });
+        result.physicalFulfilledUnits += 1;
+        result.moved = true;
 
         const consumptions = await tx.costingLotConsumption.findMany({
           where: {
@@ -268,6 +313,7 @@ export class OrderStockDeductService {
         );
       }
     }
+    return result;
   }
 
   private async deductManaged(

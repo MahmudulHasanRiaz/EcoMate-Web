@@ -231,7 +231,7 @@ export class StockReconciliationService implements OnApplicationBootstrap {
         if (orphanIds.length > 0) {
           await this.releaseOrphanedReservations(tx, orphans, orderId);
         }
-        await this.orderStockDeduct.deductForOrder({
+        const deductResult = await this.orderStockDeduct.deductForOrder({
           orderId,
           reference: `Heal Deduct: ${orderId}`,
           performedBy: 'reconcile',
@@ -239,7 +239,11 @@ export class StockReconciliationService implements OnApplicationBootstrap {
           strict: false,
           skipManagedUnitIds: new Set(orphanIds),
         });
-        return orphanIds.length > 0 ? ('released' as const) : ('deducted' as const);
+        // Honest label: 'deducted' only when a leg actually moved. On an
+        // already-deducted order the deduction is an idempotent no-op and
+        // reporting 'deducted' again would fabricate a repair.
+        if (orphanIds.length > 0) return 'released' as const;
+        return deductResult?.moved ? ('deducted' as const) : ('noop' as const);
       });
     }
 
@@ -260,19 +264,77 @@ export class StockReconciliationService implements OnApplicationBootstrap {
       return 'noop';
     }
     if (['Cancelled', 'Returned'].includes(status)) {
-      await this.prisma.$transaction(async (tx) => {
+      const moved = await this.prisma.$transaction(async (tx) => {
         const prefix = status === 'Returned' ? 'return' : 'cancel';
+        // restoreForOrder returns void, so probe for pending restore work
+        // BEFORE running it: 'restored' is only honest when there were
+        // flags/reservations for it to clear. The restore itself always
+        // runs (it also terminates the stock cycle), even when the label
+        // ends up 'noop'.
+        const pending = await this.hasPendingRestoreWork(orderId, tx);
         await this.cancelReturnStock.restoreForOrder({
           orderId,
           referencePrefix: prefix,
           performedBy: 'reconcile',
           tx,
         });
+        return pending;
       });
-      return 'restored';
+      return moved ? 'restored' : 'noop';
     }
 
     return 'noop';
+  }
+
+  /**
+   * Is there anything restoreForOrder could actually move for this order?
+   * Pending restore work = a managed flag still set (reserved or deducted)
+   * on any item/combo component, or an ACTIVE physical reservation under
+   * the order's ACTIVE stock cycle.
+   */
+  private async hasPendingRestoreWork(
+    orderId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const items = await tx.orderItem.findMany({
+      where: { orderId },
+      select: {
+        managedStockReserved: true,
+        managedStockDeducted: true,
+        comboComponents: {
+          select: { managedStockReserved: true, managedStockDeducted: true },
+        },
+      },
+    });
+    for (const item of items) {
+      if (item.managedStockReserved || item.managedStockDeducted) return true;
+      if (
+        item.comboComponents?.some(
+          (c) => c.managedStockReserved || c.managedStockDeducted,
+        )
+      ) {
+        return true;
+      }
+    }
+    const cycles = await tx.orderStockCycle.findMany({
+      where: { orderId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (cycles.length === 0) return false;
+    const cycleIds = cycles.map((c) => c.id);
+    const [itemReservations, comboReservations] = await Promise.all([
+      tx.physicalReservation.findMany({
+        where: { orderId, cycleId: { in: cycleIds }, status: 'ACTIVE' },
+        select: { id: true },
+        take: 1,
+      }),
+      tx.comboComponentPhysicalReservation.findMany({
+        where: { orderId, cycleId: { in: cycleIds }, status: 'ACTIVE' },
+        select: { id: true },
+        take: 1,
+      }),
+    ]);
+    return itemReservations.length > 0 || comboReservations.length > 0;
   }
 
   /**

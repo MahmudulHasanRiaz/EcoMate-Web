@@ -17,15 +17,26 @@ import { StockReconciliationService } from '../stock/stock-reconciliation.servic
  *              referenceId = `return-<returnId>`
  *   physical — PhysicalInventoryLedger type='RESTORATION',
  *              reason = `return-<returnId>`
+ * The BLANKET restore path (CancelReturnStockService.restoreForOrder —
+ * cancel / heal / full-return restores) keys the same adds by ORDER
+ * instead: managed referenceId = `return-<orderId>` (referenceType
+ * defaults to 'MANUAL'), physical reason = `return-<orderId>`. Those adds
+ * are real restores of the order's returns, so the evidence sums accept
+ * BOTH key shapes — otherwise every blanket-restored return was flagged
+ * missing and an Apply would have restored it a second time.
  *
  * Categories:
  *   R1 — managed add missing for a return item that carries a variant
  *        (the pre-#134 stranded-variable class; simple-product managed
  *        misses and physical misses are R2).
  *   R2 — layer-missing restore (managed and/or physical) not in R1.
- *   R3 — lingering managed flags on Cancelled/Returned orders. Report
- *        ONLY: the normal receive path / healOrder owns these; applying
- *        them here would double-count against the idempotency proof.
+ *   R3 — lingering managed flags on Cancelled/Returned orders, and
+ *        physical shortages for lines whose order shows NO physical
+ *        reservation record and NO physical deduction evidence (the
+ *        physical layer was never engaged — nothing to restore). Report
+ *        ONLY: the normal receive path / healOrder owns the flag class;
+ *        applying them here would double-count against the idempotency
+ *        proof.
  *   R4 — human disposition only (quantity unknowable from records, or a
  *        courier-reported return with NO Return record at all). Never
  *        applied — a system cannot invent a quantity no record holds.
@@ -78,7 +89,7 @@ export interface ReconReport {
   checks: ReconCheck[];
 }
 
-const RECEIVED_RETURN_STATUSES = ['RECEIVED', 'RESTOCKED', 'CLOSED'] as const;
+export const RECEIVED_RETURN_STATUSES = ['RECEIVED', 'RESTOCKED', 'CLOSED'] as const;
 const TERMINAL_ORDER_STATUSES = ['Delivered', 'Partial', 'Cancelled', 'Returned'];
 
 @Injectable()
@@ -147,6 +158,60 @@ export class ReconciliationFinderService {
     return map;
   }
 
+  /**
+   * Σ managed RETURN adds written by the BLANKET restore path, keyed
+   * `return-<orderId>|product|variant`. Blanket adds carry the same
+   * type='RETURN' as the per-return path but key referenceId by ORDER
+   * (referenceType defaults to 'MANUAL'), so they are matched on
+   * referenceId alone — order ids and return ids never collide.
+   */
+  async managedRestoredByOrder(
+    orderIds: string[],
+    client: PrismaService | any = this.prisma,
+  ): Promise<Map<string, number>> {
+    const map = new Map<string, number>();
+    if (orderIds.length === 0) return map;
+    const rows = await client.managedStockLedger.findMany({
+      where: {
+        type: 'RETURN',
+        referenceId: { in: orderIds.map((id) => `return-${id}`) },
+        direction: 'IN',
+      },
+      select: { referenceId: true, productId: true, variantId: true, quantity: true },
+    });
+    for (const r of rows) {
+      const key = `${r.referenceId}|${r.productId}|${r.variantId ?? ''}`;
+      map.set(key, (map.get(key) ?? 0) + (r.quantity ?? 0));
+    }
+    return map;
+  }
+
+  /**
+   * Σ physical RESTORATION adds written by the BLANKET restore path,
+   * keyed `return-<orderId>|product|variant` (reason carries the order
+   * key, exactly as restoreForOrder writes it).
+   */
+  async physicalRestoredByOrder(
+    orderIds: string[],
+    client: PrismaService | any = this.prisma,
+  ): Promise<Map<string, number>> {
+    const map = new Map<string, number>();
+    if (orderIds.length === 0) return map;
+    const rows = await client.physicalInventoryLedger.findMany({
+      where: {
+        type: 'RESTORATION',
+        reason: { in: orderIds.map((id) => `return-${id}`) },
+        direction: 'IN',
+      },
+      select: { reason: true, productId: true, variantId: true, quantity: true },
+    });
+    for (const r of rows) {
+      const key = `${r.reason}|${r.productId}|${r.variantId ?? ''}`;
+      map.set(key, (map.get(key) ?? 0) + (r.quantity ?? 0));
+    }
+    return map;
+  }
+
   async buildReport(): Promise<ReconReport> {
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
     const rows: ReconRow[] = [];
@@ -165,12 +230,19 @@ export class ReconciliationFinderService {
       },
     });
     const returnIds = returns.map((r) => r.id);
-    const [managedRestored, physicalRestored] = await Promise.all([
+    const orderIds = [...new Set(returns.map((r) => r.orderId))];
+    const [
+      managedRestored,
+      physicalRestored,
+      managedBlanket,
+      physicalBlanket,
+    ] = await Promise.all([
       this.managedRestoredByReturn(returnIds),
       this.physicalRestoredByReturn(returnIds),
+      this.managedRestoredByOrder(orderIds),
+      this.physicalRestoredByOrder(orderIds),
     ]);
 
-    const orderIds = [...new Set(returns.map((r) => r.orderId))];
     const orders = orderIds.length
       ? await this.prisma.order.findMany({
           where: { id: { in: orderIds } },
@@ -192,10 +264,58 @@ export class ReconciliationFinderService {
     const products = productIds.size
       ? await this.prisma.product.findMany({
           where: { id: { in: [...productIds] } },
-          select: { id: true, name: true, availabilityMode: true },
+          select: { id: true, name: true, availabilityMode: true, manageStock: true },
         })
       : [];
     const productById = new Map(products.map((p) => [p.id, p]));
+
+    // Physical-layer applicability evidence, keyed order|product|variant:
+    // a physical reservation record (either reservation table, any status)
+    // or a physical DEDUCTION ledger row naming the order (the delivered
+    // path writes reason `Order Delivered: <displayId>`). When NEITHER
+    // exists for a line, the physical layer was never engaged for it —
+    // nothing was ever deducted, so nothing can be missing: a would-be
+    // physical shortage is report-only (R3), never an applicable R1/R2.
+    const physicalEvidence = new Set<string>();
+    if (orderIds.length) {
+      const [resv, comboResv] = await Promise.all([
+        this.prisma.physicalReservation.findMany({
+          where: { orderId: { in: orderIds } },
+          select: { orderId: true, productId: true, variantId: true },
+        }),
+        this.prisma.comboComponentPhysicalReservation.findMany({
+          where: { orderId: { in: orderIds } },
+          select: { orderId: true, productId: true, variantId: true },
+        }),
+      ]);
+      for (const r of [...resv, ...comboResv]) {
+        physicalEvidence.add(
+          `${r.orderId}|${r.productId}|${r.variantId ?? ''}`,
+        );
+      }
+      if (productIds.size) {
+        const deductions = await this.prisma.physicalInventoryLedger.findMany({
+          where: {
+            type: 'DEDUCTION',
+            direction: 'OUT',
+            productId: { in: [...productIds] },
+          },
+          select: { productId: true, variantId: true, reason: true },
+        });
+        for (const o of orders) {
+          for (const d of deductions) {
+            if (
+              d.reason &&
+              (d.reason.includes(o.displayId) || d.reason.includes(o.id))
+            ) {
+              physicalEvidence.add(
+                `${o.id}|${d.productId}|${d.variantId ?? ''}`,
+              );
+            }
+          }
+        }
+      }
+    }
 
     for (const r of returns) {
       const order = orderById.get(r.orderId);
@@ -212,10 +332,16 @@ export class ReconciliationFinderService {
           order?.items.find(
             (li) => li.productId === it.productId && (li.variantId ?? null) === variantId,
           )?.quantity ?? (qtyKnown ? it.quantity : 0);
+        const blanketManaged =
+          managedBlanket.get(`return-${r.orderId}|${it.productId}|${variantId ?? ''}`) ?? 0;
+        const blanketPhysical =
+          physicalBlanket.get(`return-${r.orderId}|${it.productId}|${variantId ?? ''}`) ?? 0;
         const restoredManaged =
-          managedRestored.get(`return-${r.id}|${it.productId}|${variantId ?? ''}`) ?? 0;
+          (managedRestored.get(`return-${r.id}|${it.productId}|${variantId ?? ''}`) ?? 0) +
+          blanketManaged;
         const restoredPhysical =
-          physicalRestored.get(`return-${r.id}|${it.productId}|${variantId ?? ''}`) ?? 0;
+          (physicalRestored.get(`return-${r.id}|${it.productId}|${variantId ?? ''}`) ?? 0) +
+          blanketPhysical;
 
         if (!qtyKnown) {
           rows.push({
@@ -244,7 +370,11 @@ export class ReconciliationFinderService {
         }
         if (good <= 0) continue; // damaged-only / zero — nothing to restore (Q7 rule)
 
-        const managedExpected = mode === 'MANAGED_STOCK';
+        // Managed expectation needs BOTH the mode and the product's
+        // manageStock flag — a MANAGED_STOCK product with stock tracking
+        // switched off has no managed counter to restore into.
+        const managedExpected =
+          mode === 'MANAGED_STOCK' && product?.manageStock !== false;
         const physicalExpected =
           imEnabled && (mode === 'MANAGED_STOCK' || mode === 'INVENTORY_CONTROLLED');
         const missingManaged = managedExpected
@@ -255,10 +385,50 @@ export class ReconciliationFinderService {
           : 0;
         if (missingManaged <= 0 && missingPhysical <= 0) continue;
 
+        // Physical applicability: with NO physical reservation record and
+        // NO physical deduction evidence for this line, the physical layer
+        // was never engaged — the shortage is not applicable. Report-only
+        // (R3) when it is the only shortage; otherwise the row stays
+        // R1/R2 on the managed layer alone.
+        const physicalApplicable = physicalEvidence.has(
+          `${r.orderId}|${it.productId}|${variantId ?? ''}`,
+        );
+        const missingPhysicalApplied =
+          missingPhysical > 0 && !physicalApplicable ? 0 : missingPhysical;
+        if (missingPhysicalApplied < missingPhysical && missingManaged <= 0) {
+          rows.push({
+            id: this.rowId('R3', r.id, r.orderId, it.productId, variantId, 'physical'),
+            category: 'R3',
+            orderId: r.orderId,
+            orderDisplayId: order?.displayId ?? '',
+            returnId: r.id,
+            returnDisplayId: r.displayId,
+            productId: it.productId,
+            productName: product?.name ?? it.productId,
+            variantId,
+            layer: 'physical',
+            orderedQty,
+            receivedGoodQty: good,
+            damagedQty: damaged,
+            alreadyRestoredManaged: restoredManaged,
+            alreadyRestoredPhysical: restoredPhysical,
+            missingManagedQty: 0,
+            missingPhysicalQty: 0,
+            evidence:
+              `return status=${r.status}; physical RESTORATION Σ=${restoredPhysical} ` +
+              `(reason return-${r.id} / blanket return-${r.orderId} Σ=${blanketPhysical}) ` +
+              `but the order shows NO physical reservation record and NO physical ` +
+              `deduction ledger evidence for this line — the physical layer was ` +
+              `never engaged, so the apparent shortage of ${missingPhysical} is not ` +
+              'applicable. Report only, never applied.',
+          });
+          continue;
+        }
+
         const category: ReconCategory =
           missingManaged > 0 && variantId ? 'R1' : 'R2';
         const layer: ReconLayer =
-          missingManaged > 0 && missingPhysical > 0
+          missingManaged > 0 && missingPhysicalApplied > 0
             ? 'both'
             : missingManaged > 0
               ? 'managed'
@@ -280,12 +450,15 @@ export class ReconciliationFinderService {
           alreadyRestoredManaged: restoredManaged,
           alreadyRestoredPhysical: restoredPhysical,
           missingManagedQty: missingManaged,
-          missingPhysicalQty: missingPhysical,
+          missingPhysicalQty: missingPhysicalApplied,
           evidence:
             `return status=${r.status} stockReconciled=${r.stockReconciled}; ` +
-            `managed RETURN ledger Σ=${restoredManaged} (ref return-${r.id}); ` +
-            `physical RESTORATION Σ=${restoredPhysical} (reason return-${r.id}); ` +
-            `mode=${mode} imEnabled=${imEnabled}`,
+            `managed RETURN ledger Σ=${restoredManaged} (ref return-${r.id} + blanket return-${r.orderId} Σ=${blanketManaged}); ` +
+            `physical RESTORATION Σ=${restoredPhysical} (reason return-${r.id} + blanket return-${r.orderId} Σ=${blanketPhysical}); ` +
+            `mode=${mode} manageStock=${product?.manageStock ?? 'unknown'} imEnabled=${imEnabled}` +
+            (missingPhysicalApplied < missingPhysical
+              ? '; physical shortage not applicable (no reservation/deduction evidence) — managed layer only'
+              : ''),
         });
       }
     }

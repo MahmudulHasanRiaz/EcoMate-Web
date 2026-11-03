@@ -443,6 +443,62 @@ export class OrdersService {
     );
   }
 
+  /**
+   * Physical availability for one product+variant, SUMMED across bin rows
+   * per warehouse (reservePhysicalAllocated allocates across bins, so every
+   * availability check must aggregate the same way). Shared by the allocate
+   * branch below, both combo reserve sites and verifyStockForOrder — the
+   * pre-#154 pinned single-warehouse/single-row checks read split stock as
+   * "Available: 0" and blocked (or silently skipped) lines that were in
+   * stock somewhere.
+   */
+  private async physicalAvailabilityByWarehouse(
+    tx: Prisma.TransactionClient,
+    productId: string,
+    variantId?: string | null,
+  ): Promise<{
+    rowCount: number;
+    totalAvailable: number;
+    byWarehouse: Map<string, number>;
+  }> {
+    const rows = await tx.physicalInventory.findMany({
+      where: { productId, variantId: variantId || null },
+      select: { warehouseId: true, quantity: true, reservedQuantity: true },
+    });
+    const byWarehouse = new Map<string, number>();
+    for (const r of rows) {
+      byWarehouse.set(
+        r.warehouseId,
+        (byWarehouse.get(r.warehouseId) ?? 0) +
+          (r.quantity - r.reservedQuantity),
+      );
+    }
+    return {
+      rowCount: rows.length,
+      totalAvailable: [...byWarehouse.values()].reduce((s, n) => s + n, 0),
+      byWarehouse,
+    };
+  }
+
+  /**
+   * Pick the warehouse an allocation draws from: candidates in preference
+   * order (the pinned/product warehouse first, then the rest in first-seen
+   * order); the first whose SUMMED availability covers the full quantity
+   * wins. Returns null when no single warehouse can satisfy the line.
+   */
+  private choosePhysicalWarehouse(
+    byWarehouse: Map<string, number>,
+    preferredWarehouseId: string | null | undefined,
+    quantity: number,
+  ): string | null {
+    const candidates = [...byWarehouse.keys()].sort((a, b) =>
+      a === preferredWarehouseId ? -1 : b === preferredWarehouseId ? 1 : 0,
+    );
+    return (
+      candidates.find((w) => (byWarehouse.get(w) ?? 0) >= quantity) ?? null
+    );
+  }
+
   private async resolveAndApplyStock(
     opType: 'reserve' | 'release' | 'deduct' | 'add',
     productId: string | null | undefined,
@@ -575,55 +631,43 @@ export class OrdersService {
         // pinned warehouse and a single row were consulted, so stock sitting
         // in another warehouse (or split across bins) read as "Available: 0"
         // and blocked orders/exchanges for products that were in stock.
-        const rows = await tx.physicalInventory.findMany({
-          where: { productId, variantId: variantId || null },
-          select: { warehouseId: true, quantity: true, reservedQuantity: true },
-        });
-        if (rows.length === 0) {
-          // Preserve the two long-standing behaviours: a resolved/pinned
-          // warehouse with no record anywhere is a hard failure; no
-          // warehouse and no record stays a silent skip.
-          if (wh) {
-            throw new BadRequestException(
-              `Insufficient physical stock. No physical inventory record found.`,
-            );
-          }
-        } else {
-          const availableByWarehouse = new Map<string, number>();
-          for (const r of rows) {
-            availableByWarehouse.set(
-              r.warehouseId,
-              (availableByWarehouse.get(r.warehouseId) ?? 0) +
-                (r.quantity - r.reservedQuantity),
-            );
-          }
-          const candidates = [...availableByWarehouse.keys()].sort((a, b) =>
-            a === wh ? -1 : b === wh ? 1 : 0,
+        const availability = await this.physicalAvailabilityByWarehouse(
+          tx,
+          productId,
+          variantId,
+        );
+        if (availability.rowCount === 0) {
+          // Zero physical records ANYWHERE for an IM-managed allocation is
+          // a hard failure — the router sent us here because physical stock
+          // is this line's selling layer, so silently reserving nothing
+          // would sell stock that does not exist. (Previously this threw
+          // only when a warehouse happened to be pinned/resolvable and
+          // silently skipped otherwise.)
+          throw new BadRequestException(
+            `Insufficient physical stock. No physical inventory record found.`,
           );
-          const chosen = candidates.find(
-            (w) => (availableByWarehouse.get(w) ?? 0) >= quantity,
-          );
-          if (!chosen) {
-            const totalAvailable = [...availableByWarehouse.values()].reduce(
-              (s, n) => s + n,
-              0,
-            );
-            throw new BadRequestException(
-              `Insufficient physical stock. Available: ${totalAvailable}, needed: ${quantity}.`,
-            );
-          }
-          wh = chosen;
-          await this.stockService.reservePhysicalAllocated({
-            orderId: options.orderId,
-            cycleId: cycle.id,
-            orderItemId: options.orderItemId,
-            productId: productId,
-            variantId: variantId ?? undefined,
-            warehouseId: wh,
-            quantity,
-            tx,
-          });
         }
+        const chosen = this.choosePhysicalWarehouse(
+          availability.byWarehouse,
+          wh,
+          quantity,
+        );
+        if (!chosen) {
+          throw new BadRequestException(
+            `Insufficient physical stock. Available: ${availability.totalAvailable}, needed: ${quantity}.`,
+          );
+        }
+        wh = chosen;
+        await this.stockService.reservePhysicalAllocated({
+          orderId: options.orderId,
+          cycleId: cycle.id,
+          orderItemId: options.orderItemId,
+          productId: productId,
+          variantId: variantId ?? undefined,
+          warehouseId: wh,
+          quantity,
+          tx,
+        });
       }
     }
 
@@ -2915,46 +2959,38 @@ export class OrdersService {
                       });
                     }
 
-                    let wh = snapshot.product.warehouseId;
-                    if (!wh) {
-                      const firstStock = await tx.physicalInventory.findFirst({
-                        where: {
-                          productId: snapshot.productId,
-                          variantId: snapshot.variantId || null,
-                        },
-                        select: { warehouseId: true },
-                      });
-                      if (firstStock) wh = firstStock.warehouseId;
+                    // Availability SUMMED across bin rows per warehouse,
+                    // candidates in preference order (product warehouse
+                    // first) — the same shape as the allocate branch of
+                    // resolveAndApplyStock. The old pinned single-row check
+                    // read split stock as unavailable and silently skipped
+                    // the reservation when the pinned warehouse had no row.
+                    const availability =
+                      await this.physicalAvailabilityByWarehouse(
+                        tx,
+                        snapshot.productId,
+                        snapshot.variantId,
+                      );
+                    const chosenWh = this.choosePhysicalWarehouse(
+                      availability.byWarehouse,
+                      snapshot.product.warehouseId,
+                      snapshot.totalQuantity,
+                    );
+                    if (!chosenWh) {
+                      throw new BadRequestException(
+                        `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availability.totalAvailable}, needed: ${snapshot.totalQuantity}.`,
+                      );
                     }
-
-                    if (wh) {
-                      const existingPi = await tx.physicalInventory.findFirst({
-                        where: {
-                          productId: snapshot.productId,
-                          variantId: snapshot.variantId || null,
-                          warehouseId: wh,
-                        },
-                      });
-                      if (existingPi) {
-                        const availablePhysical =
-                          existingPi.quantity - existingPi.reservedQuantity;
-                        if (availablePhysical < snapshot.totalQuantity) {
-                          throw new BadRequestException(
-                            `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availablePhysical}, needed: ${snapshot.totalQuantity}.`,
-                          );
-                        }
-                        await this.stockService.reservePhysicalAllocated({
-                          orderId: created.id,
-                          cycleId: cycle.id,
-                          comboComponentId: snapshot.id,
-                          productId: snapshot.productId,
-                          variantId: snapshot.variantId ?? undefined,
-                          warehouseId: wh,
-                          quantity: snapshot.totalQuantity,
-                          tx,
-                        });
-                      }
-                    }
+                    await this.stockService.reservePhysicalAllocated({
+                      orderId: created.id,
+                      cycleId: cycle.id,
+                      comboComponentId: snapshot.id,
+                      productId: snapshot.productId,
+                      variantId: snapshot.variantId ?? undefined,
+                      warehouseId: chosenWh,
+                      quantity: snapshot.totalQuantity,
+                      tx,
+                    });
                   }
                 }
               }
@@ -3715,50 +3751,39 @@ export class OrdersService {
                         });
                       }
 
-                      let wh = snapshot.product.warehouseId;
-                      if (!wh) {
-                        const firstStock = await tx.physicalInventory.findFirst(
-                          {
-                            where: {
-                              productId: snapshot.productId,
-                              variantId: snapshot.variantId || null,
-                            },
-                            select: { warehouseId: true },
-                          },
+                      // Availability SUMMED across bin rows per warehouse,
+                      // candidates in preference order (product warehouse
+                      // first) — same shape as the create site and the
+                      // allocate branch of resolveAndApplyStock. The old
+                      // pinned single-row check read split stock as
+                      // unavailable and silently skipped the reservation
+                      // when the pinned warehouse had no row.
+                      const availability =
+                        await this.physicalAvailabilityByWarehouse(
+                          tx,
+                          snapshot.productId,
+                          snapshot.variantId,
                         );
-                        if (firstStock) wh = firstStock.warehouseId;
-                      }
-
-                      if (wh) {
-                        const existingPi = await tx.physicalInventory.findFirst(
-                          {
-                            where: {
-                              productId: snapshot.productId,
-                              variantId: snapshot.variantId || null,
-                              warehouseId: wh,
-                            },
-                          },
+                      const chosenWh = this.choosePhysicalWarehouse(
+                        availability.byWarehouse,
+                        snapshot.product.warehouseId,
+                        snapshot.totalQuantity,
+                      );
+                      if (!chosenWh) {
+                        throw new BadRequestException(
+                          `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availability.totalAvailable}, needed: ${snapshot.totalQuantity}.`,
                         );
-                        if (existingPi) {
-                          const availablePhysical =
-                            existingPi.quantity - existingPi.reservedQuantity;
-                          if (availablePhysical < snapshot.totalQuantity) {
-                            throw new BadRequestException(
-                              `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availablePhysical}, needed: ${snapshot.totalQuantity}.`,
-                            );
-                          }
-                          await this.stockService.reservePhysicalAllocated({
-                            orderId: id,
-                            cycleId: cycle.id,
-                            comboComponentId: snapshot.id,
-                            productId: snapshot.productId,
-                            variantId: snapshot.variantId ?? undefined,
-                            warehouseId: wh,
-                            quantity: snapshot.totalQuantity,
-                            tx,
-                          });
-                        }
                       }
+                      await this.stockService.reservePhysicalAllocated({
+                        orderId: id,
+                        cycleId: cycle.id,
+                        comboComponentId: snapshot.id,
+                        productId: snapshot.productId,
+                        variantId: snapshot.variantId ?? undefined,
+                        warehouseId: chosenWh,
+                        quantity: snapshot.totalQuantity,
+                        tx,
+                      });
                     }
                   }
                 }
@@ -5227,16 +5252,50 @@ export class OrdersService {
       availabilityMode: string;
       name: string;
       customizations?: unknown;
+      managedStockQuantity?: number | null;
+      reservedStock?: number | null;
     } | null = null;
     if (dto.productId) {
       addedProduct = await this.prisma.product.findUnique({
         where: { id: dto.productId },
-        select: { availabilityMode: true, name: true, customizations: true },
+        select: {
+          availabilityMode: true,
+          name: true,
+          customizations: true,
+          managedStockQuantity: true,
+          reservedStock: true,
+        },
       });
       if (addedProduct?.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
         throw new BadRequestException(
           `Product "${addedProduct.name}" is out of stock and cannot be ordered`,
         );
+      }
+      // Managed availability gate BEFORE reserving (same check order create
+      // runs): without it addItem reserved against a counter that was
+      // already exhausted — a live oversell path, since the managed reserve
+      // engine itself does not refuse an over-reservation. Variant lines
+      // check the variant's counters, mirroring create.
+      if (dto.variantId) {
+        const variant = await this.prisma.productVariant.findUnique({
+          where: { id: dto.variantId },
+          select: { managedStockQuantity: true, reservedStock: true },
+        });
+        this.assertManagedAvailability({
+          name: addedProduct?.name ?? dto.productId,
+          availabilityMode: addedProduct?.availabilityMode,
+          managedStockQuantity: variant?.managedStockQuantity ?? 0,
+          reservedStock: variant?.reservedStock ?? 0,
+          quantity: dto.quantity,
+        });
+      } else {
+        this.assertManagedAvailability({
+          name: addedProduct?.name ?? dto.productId,
+          availabilityMode: addedProduct?.availabilityMode,
+          managedStockQuantity: addedProduct?.managedStockQuantity ?? 0,
+          reservedStock: addedProduct?.reservedStock ?? 0,
+          quantity: dto.quantity,
+        });
       }
     }
 
@@ -6829,19 +6888,18 @@ export class OrdersService {
           );
 
           if (decision.pi !== 'skip') {
-            let compWhId = compProduct.warehouseId;
-            if (!compWhId) {
-              const firstStock = await tx.physicalInventory.findFirst({
-                where: {
-                  productId: comp.productId,
-                  variantId: comp.variantId || null,
-                },
-                select: { warehouseId: true },
-              });
-              compWhId = firstStock?.warehouseId || null;
-            }
-
-            if (!compWhId) {
+            // Availability SUMMED across bin rows per warehouse, candidates
+            // in preference order (product warehouse first) — the same
+            // shape as resolveAndApplyStock's allocate branch. The old
+            // pinned single-row check threw a false "insufficient" for
+            // stock split across bins/warehouses.
+            const availability =
+              await this.physicalAvailabilityByWarehouse(
+                tx,
+                comp.productId,
+                comp.variantId,
+              );
+            if (availability.rowCount === 0) {
               throw new BadRequestException(
                 `"${compProduct.name}" in combo has no physical stock record. Cannot confirm order without physical stock when Inventory Management is active.`,
               );
@@ -6856,23 +6914,14 @@ export class OrdersService {
               );
 
             if (!alreadyReserved) {
-              const existingPi = await tx.physicalInventory.findFirst({
-                where: {
-                  productId: comp.productId,
-                  variantId: comp.variantId || null,
-                  warehouseId: compWhId,
-                },
-              });
-              if (!existingPi) {
+              const chosenWh = this.choosePhysicalWarehouse(
+                availability.byWarehouse,
+                compProduct.warehouseId,
+                comp.totalQuantity,
+              );
+              if (!chosenWh) {
                 throw new BadRequestException(
-                  `"${compProduct.name}" in combo has no physical stock record in warehouse. Cannot confirm order.`,
-                );
-              }
-              const availablePhysical =
-                existingPi.quantity - existingPi.reservedQuantity;
-              if (availablePhysical < comp.totalQuantity) {
-                throw new BadRequestException(
-                  `Insufficient physical stock for combo component "${compProduct.name}". Available: ${availablePhysical}, needed: ${comp.totalQuantity}.`,
+                  `Insufficient physical stock for combo component "${compProduct.name}". Available: ${availability.totalAvailable}, needed: ${comp.totalQuantity}.`,
                 );
               }
 
@@ -6882,7 +6931,7 @@ export class OrdersService {
                 comboComponentId: comp.id,
                 productId: comp.productId,
                 variantId: comp.variantId ?? undefined,
-                warehouseId: compWhId,
+                warehouseId: chosenWh,
                 quantity: comp.totalQuantity,
                 tx,
               });
@@ -6936,19 +6985,18 @@ export class OrdersService {
           );
 
           if (decision.pi !== 'skip') {
-            let whId = product.warehouseId;
-            if (!whId) {
-              const firstStock = await tx.physicalInventory.findFirst({
-                where: {
-                  productId: item.productId!,
-                  variantId: item.variantId || null,
-                },
-                select: { warehouseId: true },
-              });
-              whId = firstStock?.warehouseId || null;
-            }
-
-            if (!whId) {
+            // Availability SUMMED across bin rows per warehouse, candidates
+            // in preference order (product warehouse first) — the same
+            // shape as resolveAndApplyStock's allocate branch. The old
+            // pinned single-row check threw a false "insufficient" for
+            // stock split across bins/warehouses.
+            const availability =
+              await this.physicalAvailabilityByWarehouse(
+                tx,
+                item.productId!,
+                item.variantId,
+              );
+            if (availability.rowCount === 0) {
               throw new BadRequestException(
                 `"${product.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই। ` +
                   `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
@@ -6963,25 +7011,15 @@ export class OrdersService {
                 cycleId,
               );
             if (!alreadyReserved) {
-              const existingPi = await tx.physicalInventory.findFirst({
-                where: {
-                  productId: item.productId!,
-                  variantId: item.variantId || null,
-                  warehouseId: whId,
-                },
-              });
-              if (!existingPi) {
-                throw new BadRequestException(
-                  `"${product.name}" এর Physical Inventory-তে কোনো Stock রেকর্ড নেই। ` +
-                    `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
-                );
-              }
-              const availablePhysical =
-                existingPi.quantity - existingPi.reservedQuantity;
-              if (availablePhysical < item.quantity) {
+              const chosenWh = this.choosePhysicalWarehouse(
+                availability.byWarehouse,
+                product.warehouseId,
+                item.quantity,
+              );
+              if (!chosenWh) {
                 throw new BadRequestException(
                   `"${product.name}" এর Physical Stock অপর্যাপ্ত। ` +
-                    `Available: ${availablePhysical}, Needed: ${item.quantity}। ` +
+                    `Available: ${availability.totalAvailable}, Needed: ${item.quantity}। ` +
                     `Inventory Management চালু থাকলে Physical Stock ছাড়া Order Confirm করা যাবে না।`,
                 );
               }
@@ -6991,7 +7029,7 @@ export class OrdersService {
                 orderItemId: item.id,
                 productId: item.productId!,
                 variantId: item.variantId ?? undefined,
-                warehouseId: whId,
+                warehouseId: chosenWh,
                 quantity: item.quantity,
                 tx,
               });
@@ -7002,68 +7040,85 @@ export class OrdersService {
 
       if (product.availabilityMode === 'INVENTORY_CONTROLLED') {
         if (imEnabled) {
-          let icWhId = product.warehouseId;
-          if (!icWhId) {
-            const firstStock = await tx.physicalInventory.findFirst({
-              where: {
-                productId: item.productId!,
-                variantId: item.variantId || null,
-              },
-              select: { warehouseId: true },
-            });
-            icWhId = firstStock?.warehouseId || null;
-          }
-
-          if (icWhId) {
-            const alreadyReserved =
-              await this.stockService.hasExistingPhysicalReservation(
-                orderId,
-                item.id,
-                undefined,
-                cycleId,
-              );
-            if (!alreadyReserved) {
-              const existingPi = await tx.physicalInventory.findFirst({
-                where: {
-                  productId: item.productId!,
-                  variantId: item.variantId || null,
-                  warehouseId: icWhId,
-                },
-              });
-              if (!existingPi) {
-                throw new BadRequestException(
-                  `Insufficient physical stock for "${product.name}". No physical inventory record found.`,
-                );
-              }
-              const availablePhysical =
-                existingPi.quantity - existingPi.reservedQuantity;
-              if (availablePhysical < item.quantity) {
-                throw new BadRequestException(
-                  `Insufficient physical stock for "${product.name}". Available: ${availablePhysical}, needed: ${item.quantity}.`,
-                );
-              }
-              await this.stockService.reservePhysicalAllocated({
-                orderId,
-                cycleId,
-                orderItemId: item.id,
-                productId: item.productId!,
-                variantId: item.variantId ?? undefined,
-                warehouseId: icWhId,
-                quantity: item.quantity,
+          const alreadyReserved =
+            await this.stockService.hasExistingPhysicalReservation(
+              orderId,
+              item.id,
+              undefined,
+              cycleId,
+            );
+          if (!alreadyReserved) {
+            // Availability SUMMED across bin rows per warehouse, candidates
+            // in preference order (product warehouse first) — the same
+            // shape as resolveAndApplyStock's allocate branch. The old
+            // pinned single-row check threw a false "insufficient" for
+            // stock split across bins/warehouses, and the whole branch was
+            // silently skipped when no warehouse was resolvable.
+            const availability =
+              await this.physicalAvailabilityByWarehouse(
                 tx,
-              });
-            } else {
-              const physAvail =
-                await this.stockService.checkPhysicalAvailability(
-                  item.productId!,
-                  icWhId,
-                  item.variantId ?? undefined,
-                );
-              if (physAvail.availableStock < 0) {
-                throw new BadRequestException(
-                  `Insufficient physical stock for "${product.name}". Available: ${physAvail.availableStock}, needed: ${item.quantity}.`,
-                );
-              }
+                item.productId!,
+                item.variantId,
+              );
+            if (availability.rowCount === 0) {
+              throw new BadRequestException(
+                `Insufficient physical stock for "${product.name}". No physical inventory record found.`,
+              );
+            }
+            const chosenWh = this.choosePhysicalWarehouse(
+              availability.byWarehouse,
+              product.warehouseId,
+              item.quantity,
+            );
+            if (!chosenWh) {
+              throw new BadRequestException(
+                `Insufficient physical stock for "${product.name}". Available: ${availability.totalAvailable}, needed: ${item.quantity}.`,
+              );
+            }
+            await this.stockService.reservePhysicalAllocated({
+              orderId,
+              cycleId,
+              orderItemId: item.id,
+              productId: item.productId!,
+              variantId: item.variantId ?? undefined,
+              warehouseId: chosenWh,
+              quantity: item.quantity,
+              tx,
+            });
+          } else {
+            // Already reserved: the hold must still be BACKED by the line
+            // quantity. availableStock at the reservation's warehouse
+            // excludes this line's own hold (it sits inside
+            // reservedQuantity), so the comparison is the warehouse's free
+            // availability PLUS this line's own allocated quantity against
+            // the line quantity. The old check (`availableStock < 0`) only
+            // fired after reservations already exceeded on-hand — a
+            // reservation whose allocations never landed (or whose stock
+            // was later adjusted away) passed silently.
+            const reservation = await tx.physicalReservation.findFirst({
+              where: { orderId, orderItemId: item.id, cycleId },
+              select: {
+                warehouseId: true,
+                allocations: { select: { quantity: true } },
+              },
+            });
+            const ownAllocated = (reservation?.allocations ?? []).reduce(
+              (s, a) => s + a.quantity,
+              0,
+            );
+            const availability =
+              await this.physicalAvailabilityByWarehouse(
+                tx,
+                item.productId!,
+                item.variantId,
+              );
+            const availableStock = reservation?.warehouseId
+              ? (availability.byWarehouse.get(reservation.warehouseId) ?? 0)
+              : availability.totalAvailable;
+            if (availableStock + ownAllocated < item.quantity) {
+              throw new BadRequestException(
+                `Insufficient physical stock for "${product.name}". Available: ${availableStock}, needed: ${item.quantity}.`,
+              );
             }
           }
         }

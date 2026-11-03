@@ -15,7 +15,8 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { Link } from '@tanstack/react-router'
 import { useInventoryManagement } from '../hooks/use-inventory-management'
-import { MOVEMENT_TYPE_LABELS } from '../utils/movement-type-labels'
+import { MOVEMENT_TYPE_LABELS, getMovementTypeBadgeVariant } from '../utils/movement-type-labels'
+import { UserBadge } from '@/components/user-badge'
 
 // Managed Stock Ledger entry types (the /inventory/ledger source).
 const LEDGER_TYPE_OPTIONS = [
@@ -41,7 +42,7 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
   const { data: imEnabled = true } = useInventoryManagement()
   const [ledgerType, setLedgerType] = useState('all_types')
 
-  const { data: ledgerData, isLoading: ledgerLoading } = useQuery({
+  const { data: ledgerData, isLoading: ledgerLoading, isError: ledgerError, refetch: refetchLedger } = useQuery({
     queryKey: ['inventory-ledger', productDetails?.id, ledgerType],
     queryFn: () => apiClient.get('/inventory/ledger', {
       params: {
@@ -53,13 +54,13 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
     enabled: !!productDetails?.id,
   })
 
-  const { data: physicalData, isLoading: physicalLoading } = useQuery({
+  const { data: physicalData, isLoading: physicalLoading, isError: physicalError, refetch: refetchPhysical } = useQuery({
     queryKey: ['inventory-physical', productDetails?.id],
     queryFn: () => apiClient.get('/inventory/physical', { params: { productId: productDetails.id } }).then(r => r.data),
     enabled: !!productDetails?.id,
   })
 
-  const { data: reservationsData, isLoading: reservationsLoading } = useQuery({
+  const { data: reservationsData, isLoading: reservationsLoading, isError: reservationsError, refetch: refetchReservations } = useQuery({
     queryKey: ['inventory-reservations', productDetails?.id],
     queryFn: () => apiClient.get('/inventory/physical/reservations', { params: { productId: productDetails.id } }).then(r => r.data),
     enabled: !!productDetails?.id,
@@ -220,6 +221,13 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                             <Loader2 className="animate-spin h-4 w-4 mx-auto" />
                           </TableCell>
                         </TableRow>
+                      ) : physicalError ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-6">
+                            <p className="text-sm text-destructive mb-2">Failed to load locations.</p>
+                            <Button variant="outline" size="sm" onClick={() => refetchPhysical()}>Retry</Button>
+                          </TableCell>
+                        </TableRow>
                       ) : Array.isArray(physicalData) && physicalData.length > 0 ? (
                         physicalData.map((pi: any) => {
                           const avail = pi.quantity - pi.reservedQuantity
@@ -268,7 +276,6 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date & Ref</TableHead>
-                        <TableHead>Location</TableHead>
                         <TableHead>Type</TableHead>
                         <TableHead>User</TableHead>
                         <TableHead className="text-right">Qty</TableHead>
@@ -277,33 +284,56 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                     <TableBody>
                       {ledgerLoading ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center py-8">
+                          <TableCell colSpan={4} className="text-center py-8">
                             <Loader2 className="animate-spin h-5 w-5 mx-auto" />
                           </TableCell>
                         </TableRow>
+                      ) : ledgerError ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center py-8">
+                            <p className="text-sm text-destructive mb-2">Failed to load ledger entries.</p>
+                            <Button variant="outline" size="sm" onClick={() => refetchLedger()}>Retry</Button>
+                          </TableCell>
+                        </TableRow>
                       ) : ledgerEntries.length ? (
-                        ledgerEntries.map((entry: any) => (
-                          <TableRow key={entry.id}>
-                            <TableCell>
-                              <div className="text-xs font-medium">
-                                {(entry.performedAt || entry.createdAt) ? new Date(entry.performedAt || entry.createdAt).toLocaleString() : '—'}
-                              </div>
-                              <div className="text-[10px] text-blue-600 hover:underline cursor-pointer">{entry.reference || '—'}</div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="text-xs">{entry.warehouseName || entry.warehouse || '—'}</div>
-                              <div className="text-[10px] text-muted-foreground">Lot: {entry.lotNumber || entry.lot || '—'}</div>
-                            </TableCell>
-                            <TableCell><Badge variant="outline" className="text-[10px]">{entry.type || '—'}</Badge></TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{entry.userName || entry.user || '—'}</TableCell>
-                            <TableCell className={`text-right font-medium ${entry.quantity > 0 ? 'text-green-600' : entry.quantity < 0 ? 'text-red-600' : ''}`}>
-                              {entry.quantity > 0 ? '+' : ''}{entry.quantity}
-                            </TableCell>
-                          </TableRow>
-                        ))
+                        ledgerEntries.map((entry: any) => {
+                          // Managed ledger quantities are ABSOLUTE — the sign
+                          // lives in `direction` (IN/OUT). Signing by the raw
+                          // quantity rendered every entry green/'+'.
+                          const isIn = entry.direction
+                            ? entry.direction === 'IN'
+                            : entry.quantity > 0
+                          const performer = entry.performedBy ?? entry.user ?? null
+                          return (
+                            <TableRow key={entry.id}>
+                              <TableCell>
+                                <div className="text-xs font-medium">
+                                  {(entry.performedAt || entry.createdAt) ? new Date(entry.performedAt || entry.createdAt).toLocaleString() : '—'}
+                                </div>
+                                <div className="text-[10px] text-blue-600 hover:underline cursor-pointer">{entry.reference || entry.referenceId || '—'}</div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={getMovementTypeBadgeVariant(entry.type ?? '')} className="text-[10px]">
+                                  {MOVEMENT_TYPE_LABELS[entry.type] ?? entry.type ?? '—'}
+                                </Badge>
+                                {entry.note && <div className="text-[10px] text-muted-foreground mt-1">{entry.note}</div>}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {performer && String(performer).toLowerCase() !== 'system' ? (
+                                  <UserBadge email={performer} showEmail={false} size="sm" />
+                                ) : (
+                                  <Badge variant="secondary" className="text-[10px] h-4">System</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className={`text-right font-medium ${isIn ? 'text-green-600' : 'text-red-600'}`}>
+                                {isIn ? '+' : '−'}{Math.abs(entry.quantity)}
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground text-sm">
+                          <TableCell colSpan={4} className="text-center py-8 text-muted-foreground text-sm">
                             No ledger entries found.
                           </TableCell>
                         </TableRow>
@@ -325,6 +355,11 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                 {reservationsLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="animate-spin h-5 w-5" />
+                  </div>
+                ) : reservationsError ? (
+                  <div className="rounded-md border bg-card p-8 text-center">
+                    <p className="text-sm text-destructive mb-2">Failed to load reservations.</p>
+                    <Button variant="outline" size="sm" onClick={() => refetchReservations()}>Retry</Button>
                   </div>
                 ) : reservations.length > 0 ? (
                   <div className="rounded-md border bg-card">

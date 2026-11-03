@@ -5,11 +5,12 @@ import { CustomersModule } from '../customers/customers.module';
 import { SalesChannelModule } from '../sales-channel/sales-channel.module';
 import { TrackingModule } from '../tracking/tracking.module';
 import { AccountingModule } from '../accounting/accounting.module';
+import { OrdersModule } from '../orders/orders.module';
 
 @Module({
   controllers: [CheckoutLeadsController],
   providers: [CheckoutLeadsService],
   exports: [CheckoutLeadsService],
-  imports: [CustomersModule, TrackingModule, SalesChannelModule, AccountingModule],
+  imports: [CustomersModule, TrackingModule, SalesChannelModule, AccountingModule, OrdersModule],
 })
 export class CheckoutLeadsModule {}

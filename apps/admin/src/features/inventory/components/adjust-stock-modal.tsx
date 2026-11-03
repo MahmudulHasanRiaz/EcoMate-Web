@@ -322,7 +322,7 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
 
               {parseInt(quantity) > 0 && (
                 <div className="grid gap-2">
-                  <Label htmlFor="unitCost">Unit Cost / Purchase Price (৳)</Label>
+                  <Label htmlFor="unitCost">Unit Cost / Purchase Price (৳) <span className="text-destructive">*</span></Label>
                   <Input
                     id="unitCost"
                     type="number"
@@ -332,6 +332,9 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
                     value={unitCost}
                     onChange={(e) => setUnitCost(e.target.value)}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Required when adding stock — the new units are costed at this price (FIFO layer).
+                  </p>
                 </div>
               )}
 

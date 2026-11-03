@@ -727,12 +727,26 @@ export class RtnService {
           });
         }
 
-        await this.cancelReturnStock.restoreForReturnOrder({
+        const restoreResult = await this.cancelReturnStock.restoreForReturnOrder({
           rtnOrderId: rtn.id,
           performedBy: actor.email,
           tx,
           damageByKey,
         });
+        if (!restoreResult?.restored && !(restoreResult as any)?.alreadyRestored) {
+          // HONEST SETTLEMENT (audit item 7): a required stock leg could
+          // not run (no warehouse resolvable, reservation missing,
+          // allocations short). Fail the finalize — the transaction rolls
+          // back, the dispatch stays RETURN_PENDING and the RTN stays
+          // 'Return Pending', so staff can fix the stock data and retry.
+          // Reporting the request quantities as "restored" here would
+          // settle a return whose goods never came back into stock.
+          throw new BadRequestException(
+            `Returned quantities could not be fully restored to stock: ` +
+              `${restoreResult?.reason ?? 'unknown stock restore failure'}. ` +
+              `Nothing was settled — fix the stock data and retry.`,
+          );
+        }
 
         const rtnTimelineEntry = {
           status: 'Returned',

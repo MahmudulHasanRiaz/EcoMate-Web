@@ -191,6 +191,10 @@ describe('InventoryService — productLookup', () => {
         sku: 'MUG-001',
         type: 'product',
         available: 35,
+        // Managed figures until physical rows override them (40 on hand,
+        // 5 reserved → 35 available).
+        onHand: 40,
+        reserved: 5,
         image: null,
       },
     ]);
@@ -314,9 +318,41 @@ describe('InventoryService — productLookup', () => {
     // No physical rows for the L variant → keeps its managed figure.
     expect(byId.get('var-shirt-l')).toBe(3);
 
+    // The groupBy sums span ALL bin rows in the warehouse: onHand and
+    // reserved are exposed alongside available so a picker can show the
+    // true position (9 on hand / 4 reserved), not just the difference.
+    const figures = new Map(res.data.map((r) => [r.variantId, r]));
+    expect(figures.get('var-shirt-s')).toMatchObject({ onHand: 9, reserved: 4, available: 5 });
+    expect(figures.get('var-shirt-m')).toMatchObject({ onHand: 6, reserved: 1, available: 5 });
+    expect(figures.get('var-shirt-l')).toMatchObject({ onHand: 3, reserved: 0, available: 3 });
+
     const groupByArgs = (prisma.physicalInventory.groupBy as jest.Mock).mock.calls[0][0];
     expect(groupByArgs.by).toEqual(['productId', 'variantId']);
     expect(groupByArgs.where.warehouseId).toBe('wh-main');
+  });
+
+  it('matches a multi-token query token-by-token across name and SKU', async () => {
+    // "Clay Mug" as ONE contains matched nothing in the general case (no
+    // single field holds the whole string); each token must now match the
+    // name or a SKU independently.
+    findMany().mockImplementation((args: any) => {
+      const or = args.where.OR;
+      if (or?.some((c: any) => c.sku?.equals)) return Promise.resolve([]);
+      return Promise.resolve([simpleProduct]);
+    });
+
+    const res = await service.productLookup({ q: 'Clay Mug' });
+
+    expect(res.data).toHaveLength(1);
+    expect(res.data[0].productId).toBe('prod-mug');
+    const fuzzyWhere = findMany().mock.calls[1][0].where;
+    expect(fuzzyWhere.AND).toHaveLength(2);
+    expect(fuzzyWhere.AND[0].OR[0]).toEqual({
+      name: { contains: 'Clay', mode: 'insensitive' },
+    });
+    expect(fuzzyWhere.AND[1].OR[0]).toEqual({
+      name: { contains: 'Mug', mode: 'insensitive' },
+    });
   });
 
   it('resolves the first product image for lookup thumbnails', async () => {

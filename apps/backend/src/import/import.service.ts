@@ -1,4 +1,9 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
 import { CacheService } from '../cache/cache.service';
@@ -6,6 +11,7 @@ import {
   InitialPhysicalStockService,
   InitialPhysicalUnit,
 } from '../stock/initial-physical-stock.service';
+import { StockService } from '../stock/stock.service';
 import * as Papa from 'papaparse';
 import slugify from './utils/slugify';
 import {
@@ -39,6 +45,11 @@ export class ImportService {
     private readonly media: MediaService,
     private readonly cache: CacheService,
     private readonly initialPhysicalStock: InitialPhysicalStockService,
+    // Used only to re-level physical stock when a re-import updates an
+    // INVENTORY_CONTROLLED product. Optional so unit constructions that
+    // predate it keep working; StockModule is global in the real app.
+    @Optional()
+    private readonly stock?: StockService,
   ) {}
 
   async importFromCsv(
@@ -443,10 +454,13 @@ export class ImportService {
     const hasVariations = variationRows.length > 0;
     // Units created by THIS run that must also exist in the physical layer.
     const physicalUnits: InitialPhysicalUnit[] = [];
+    // Stored availability mode of an EXISTING product (undefined for new
+    // products, which are always MANAGED_STOCK by schema default).
+    let existingMode: string | undefined;
 
     if (existingProductId) {
       if (hasParentRow) {
-        await this.updateProductCached(
+        existingMode = await this.updateProductCached(
           existingProductId,
           parentRow,
           summary,
@@ -494,6 +508,17 @@ export class ImportService {
       `Product ${parentSku}: ${variationRows.length} variation(s) to process`,
     );
 
+    // Variation-only groups never ran updateProductCached, so resolve the
+    // stored mode directly — variant updates need it for the same IC rule.
+    if (existingProductId && existingMode === undefined) {
+      const modeRow = await this.prisma.product.findUnique({
+        where: { id: existingProductId },
+        select: { availabilityMode: true },
+      });
+      existingMode =
+        (modeRow as any)?.availabilityMode ?? 'MANAGED_STOCK';
+    }
+
     for (const vRow of variationRows) {
       await this.processVariationCached(
         productId,
@@ -507,7 +532,35 @@ export class ImportService {
         variantCache,
         productCache,
         physicalUnits,
+        {
+          productMode: existingMode ?? 'MANAGED_STOCK',
+          warehouseId: initialWarehouseId,
+        },
       );
+    }
+
+    // Re-import of an existing INVENTORY_CONTROLLED simple product: the
+    // CSV Stock cell re-levels the physical layer at the resolved
+    // warehouse (the CREATE path's mirror semantics, as a level set).
+    // Variable IC products are levelled per variant inside
+    // processVariationCached; MANAGED_STOCK products keep the managed
+    // counter write in updateProductCached.
+    if (
+      existingProductId &&
+      existingMode === 'INVENTORY_CONTROLLED' &&
+      initialWarehouseId
+    ) {
+      const parentType = (parentRow.data.Type || 'simple').toLowerCase().trim();
+      const parentIsVariable =
+        parentType === 'variable' || parentType === 'variable-subscription';
+      const parentStock = this.parseInt(parentRow.data.Stock);
+      if (!parentIsVariable && parentStock !== undefined) {
+        await this.setPhysicalStockLevel({
+          productId,
+          warehouseId: initialWarehouseId,
+          quantity: parentStock,
+        });
+      }
     }
 
     if (initialWarehouseId && physicalUnits.length > 0) {
@@ -728,6 +781,53 @@ export class ImportService {
     return product.id;
   }
 
+  /**
+   * Bring the physical layer at `warehouseId` to exactly `quantity` units
+   * for one product/variant — the update-path counterpart of the CREATE
+   * path's mirrorUnits (which ADDs the CSV quantity onto an empty layer).
+   * A WooCommerce Stock cell is a LEVEL, not a delta: on re-import the
+   * physical quantity must BECOME the CSV value, so the signed difference
+   * is applied through the stock engine (which writes the ledger and
+   * refuses to deduct below what reservations leave available).
+   */
+  private async setPhysicalStockLevel(params: {
+    productId: string;
+    variantId?: string;
+    warehouseId: string;
+    quantity: number;
+  }): Promise<void> {
+    const { productId, variantId, warehouseId, quantity } = params;
+    if (!this.stock) {
+      this.logger.warn(
+        `StockService unavailable — cannot re-level physical stock for product ${productId}.`,
+      );
+      return;
+    }
+    const existing = await this.prisma.physicalInventory.findFirst({
+      where: {
+        productId,
+        variantId: variantId ?? null,
+        warehouseId,
+        binLocationId: null,
+      },
+      select: { quantity: true },
+    });
+    const delta = quantity - (existing?.quantity ?? 0);
+    if (delta === 0) return;
+    await this.stock.operatePhysical('add', {
+      productId,
+      variantId,
+      warehouseId,
+      quantity: delta,
+      reference: 'Stock level set by CSV re-import',
+      performedBy: 'csv-import',
+      ledgerType: 'ADJUSTMENT',
+    });
+    this.logger.log(
+      `Product ${productId}${variantId ? ` variant ${variantId}` : ''}: physical stock at warehouse ${warehouseId} set to ${quantity} (delta ${delta}).`,
+    );
+  }
+
   private async updateProductCached(
     productId: string,
     row: CsvRowWithMeta,
@@ -740,7 +840,7 @@ export class ImportService {
     productCache: Map<string, string>,
     slugSet: Set<string>,
     sortOrderObj: { value: number },
-  ): Promise<void> {
+  ): Promise<string> {
     const data = row.data;
     const categories = this.parseCategories(data.Categories);
     const tags = this.parseTags(data.Tags);
@@ -812,7 +912,15 @@ export class ImportService {
     // fills it after variations are processed).
     if (parsedPrice !== undefined || !isVariable) updateData.basePrice = basePrice;
     updateData.salePrice = salePrice ?? null;
-    updateData.managedStockQuantity = stock;
+    // Mode rule (owner): an INVENTORY_CONTROLLED product's stock lives in
+    // the physical layer — a re-import must NEVER write the managed
+    // counter or the manageStock flag onto it (the old code set the
+    // managed quantity from the CSV and left physical untouched, so the
+    // two layers silently diverged). The caller applies the CSV stock to
+    // the physical layer instead, via setPhysicalStockLevel.
+    if (existingMode !== 'INVENTORY_CONTROLLED') {
+      updateData.managedStockQuantity = stock;
+    }
     updateData.categoryId = categoryId;
     updateData.productCategories =
       categoryIds.length > 0
@@ -835,14 +943,18 @@ export class ImportService {
     updateData.seoMeta = seoMeta;
     updateData.isFeatured = isFeatured;
     updateData.isActive = isActive;
-    updateData.manageStock = existingMode === 'MANAGED_STOCK';
+    // Same mode rule as managedStockQuantity above: for
+    // INVENTORY_CONTROLLED products the flag is not the import's to write.
+    if (existingMode !== 'INVENTORY_CONTROLLED') {
+      updateData.manageStock = existingMode === 'MANAGED_STOCK';
+    }
 
     if (await this.isProductUnchanged(productId, updateData)) {
       this.logger.log(
         `Product ${productId}: no changes detected, skipping update.`,
       );
       summary.productsSkipped++;
-      return;
+      return existingMode;
     }
 
     await this.prisma.product.update({
@@ -863,6 +975,7 @@ export class ImportService {
 
     this.logger.log(`Product ${productId}: updated (type=${type})`);
     summary.productsUpdated++;
+    return existingMode;
   }
 
   private async processVariationCached(
@@ -877,6 +990,10 @@ export class ImportService {
     variantCache: Map<string, string>,
     productCache: Map<string, string>,
     physicalUnits?: InitialPhysicalUnit[],
+    // Parent product's availability mode + the import's resolved physical
+    // warehouse (IM on). For INVENTORY_CONTROLLED parents a re-import
+    // applies stock to the physical layer, never the managed counters.
+    stockCtx?: { productMode: string; warehouseId: string | null },
   ): Promise<void> {
     const data = row.data;
     const varSku = data.SKU?.trim();
@@ -928,16 +1045,37 @@ export class ImportService {
         : [];
 
     if (existingId) {
+      const isIcParent = stockCtx?.productMode === 'INVENTORY_CONTROLLED';
       const updateData: Record<string, unknown> = {};
       if (regPrice !== undefined) updateData.price = regPrice;
       if (salePrice !== undefined) updateData.salePrice = salePrice;
-      updateData.managedStockQuantity = stock;
+      // Mode rule: never write the managed counter onto a variant of an
+      // INVENTORY_CONTROLLED product — its stock is the physical layer,
+      // re-levelled below from the same CSV Stock cell.
+      if (!isIcParent) {
+        updateData.managedStockQuantity = stock;
+      }
       if (mainImage) updateData.image = mainImage;
+
+      const applyIcPhysical = async () => {
+        const csvStock = this.parseInt(data.Stock);
+        if (isIcParent && stockCtx?.warehouseId && csvStock !== undefined) {
+          await this.setPhysicalStockLevel({
+            productId,
+            variantId: existingId,
+            warehouseId: stockCtx.warehouseId,
+            quantity: csvStock,
+          });
+        }
+      };
 
       if (await this.isVariantUnchanged(existingId, updateData, productId)) {
         this.logger.log(
           `Variant ${varSku}: no changes detected, skipping update.`,
         );
+        // The physical level can still drift from the CSV even when the
+        // variant row itself is unchanged — re-level regardless.
+        await applyIcPhysical();
         summary.productsSkipped++;
         return;
       }
@@ -977,6 +1115,8 @@ export class ImportService {
         });
       }
 
+      await applyIcPhysical();
+
       summary.productsUpdated++;
       return;
     }
@@ -987,7 +1127,11 @@ export class ImportService {
         sku: varSku,
         price: regPrice ?? undefined,
         salePrice: salePrice ?? undefined,
-        managedStockQuantity: stock,
+        // A variant newly added to an INVENTORY_CONTROLLED product gets no
+        // managed counter either — its units land in the physical layer
+        // via the physicalUnits mirror below.
+        managedStockQuantity:
+          stockCtx?.productMode === 'INVENTORY_CONTROLLED' ? 0 : stock,
         image: mainImage || undefined,
         attributeValues:
           resolvedVarAttrs.length > 0
@@ -1151,8 +1295,17 @@ export class ImportService {
     if (!eq(current.type, intended.type)) return false;
     if (!eq(current.isFeatured, intended.isFeatured)) return false;
     if (!eq(current.isActive, intended.isActive)) return false;
-    if (!eq(current.manageStock, intended.manageStock)) return false;
-    if (!eq(current.managedStockQuantity, intended.managedStockQuantity))
+    // Absent keys are not compared: for INVENTORY_CONTROLLED products the
+    // update deliberately carries no manageStock/managedStockQuantity.
+    if (
+      intended.manageStock !== undefined &&
+      !eq(current.manageStock, intended.manageStock)
+    )
+      return false;
+    if (
+      intended.managedStockQuantity !== undefined &&
+      !eq(current.managedStockQuantity, intended.managedStockQuantity)
+    )
       return false;
     if (!eq(current.categoryId ?? null, intended.categoryId ?? null))
       return false;
@@ -1230,7 +1383,10 @@ export class ImportService {
       )
     )
       return false;
-    if (!eq(current.managedStockQuantity, intended.managedStockQuantity))
+    if (
+      intended.managedStockQuantity !== undefined &&
+      !eq(current.managedStockQuantity, intended.managedStockQuantity)
+    )
       return false;
     if (!eq(current.image ?? null, intended.image ?? null)) return false;
     if (current.productId !== productId) return false;

@@ -317,7 +317,12 @@ describe('ImportService.updateProductCached parent price handling', () => {
     });
 
     const updateData = prisma.product.update.mock.calls[0][0].data;
-    expect(updateData.manageStock).toBe(false);
+    // WS4 mode rule: for IC products the import writes NEITHER the managed
+    // counter NOR the manageStock flag — the field is left untouched
+    // (previously it wrote `false`, which also didn't flip it, but any
+    // write at all risks diverging the layers).
+    expect(updateData.manageStock).toBeUndefined();
+    expect(updateData.managedStockQuantity).toBeUndefined();
   });
 });
 

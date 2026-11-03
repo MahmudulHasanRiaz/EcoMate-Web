@@ -33,6 +33,13 @@ import { PaymentJournalService } from '../accounting/payment-journal.service';
 export class PosOrdersService {
   private readonly logger = new Logger(PosOrdersService.name);
 
+  /**
+   * Numeric stand-in for "unlimited" stock in POS responses. The till's
+   * contract is numeric (_showroomStock/_showroomAvailable, quantity caps),
+   * so an ALWAYS_IN_STOCK product reports this sentinel instead of null.
+   */
+  private static readonly ALWAYS_IN_STOCK_QTY = 999_999;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly stock: StockService,
@@ -146,6 +153,14 @@ export class PosOrdersService {
       price: number;
       discount?: number;
       discountType?: string;
+      // Mode facts for the server-side availability gate in create():
+      // the product's own availabilityMode decides which stock layer the
+      // line is checked against (owner rule). managedAvailable is the
+      // managed layer's available figure for this exact product/variant.
+      availabilityMode?: string | null;
+      manageStock?: boolean | null;
+      managedAvailable?: number | null;
+      productName?: string;
     }>
   > {
     const productIds = [
@@ -176,6 +191,10 @@ export class PosOrdersService {
               basePrice: true,
               salePrice: true,
               name: true,
+              availabilityMode: true,
+              manageStock: true,
+              managedStockQuantity: true,
+              reservedStock: true,
             },
           })
         : (Promise.resolve([]) as Promise<any[]>),
@@ -188,8 +207,16 @@ export class PosOrdersService {
               price: true,
               salePrice: true,
               productId: true,
+              managedStockQuantity: true,
+              reservedStock: true,
               product: {
-                select: { id: true, isActive: true, name: true },
+                select: {
+                  id: true,
+                  isActive: true,
+                  name: true,
+                  availabilityMode: true,
+                  manageStock: true,
+                },
               },
             },
           })
@@ -301,8 +328,46 @@ export class PosOrdersService {
         effectivePrice = 0;
       }
 
+      // Mode facts for the availability gate. A variant line resolves to
+      // its parent product (the mode is product-level), so a variant-only
+      // line also gets its authoritative productId here.
+      let modeFacts: {
+        productId?: string;
+        availabilityMode?: string | null;
+        manageStock?: boolean | null;
+        managedAvailable?: number | null;
+        productName?: string;
+      } = { productId: item.productId };
+      if (item.variantId) {
+        const variant = variantMap.get(item.variantId);
+        if (variant) {
+          modeFacts = {
+            productId: variant.productId,
+            availabilityMode: variant.product?.availabilityMode ?? null,
+            manageStock: variant.product?.manageStock ?? null,
+            managedAvailable:
+              (variant.managedStockQuantity ?? 0) -
+              (variant.reservedStock ?? 0),
+            productName: variant.product?.name,
+          };
+        }
+      } else if (item.productId) {
+        const product = productMap.get(item.productId);
+        if (product) {
+          modeFacts = {
+            productId: product.id,
+            availabilityMode: product.availabilityMode ?? null,
+            manageStock: product.manageStock ?? null,
+            managedAvailable:
+              (product.managedStockQuantity ?? 0) -
+              (product.reservedStock ?? 0),
+            productName: product.name,
+          };
+        }
+      }
+
       return {
-        productId: item.productId,
+        productId: modeFacts.productId,
         variantId: item.variantId,
         comboId: item.comboId,
         comboSelection: item.comboSelection,
@@ -311,8 +376,230 @@ export class PosOrdersService {
         price: effectivePrice,
         discount: item.discount,
         discountType: item.discountType,
+        availabilityMode: modeFacts.availabilityMode,
+        manageStock: modeFacts.manageStock,
+        managedAvailable: modeFacts.managedAvailable,
+        productName: modeFacts.productName,
       };
     });
+  }
+
+  /**
+   * Server-side availability gate for create(). Until now a POS sale was
+   * "enforced" only as a side effect of the deduction throwing deep in
+   * the stock engine — ALWAYS_OUT_OF_STOCK products were never blocked at
+   * all (the router skips both engines for them, so nothing threw), and
+   * mode-blind paths could pass an INVENTORY_CONTROLLED line against the
+   * managed counters. Every line (combo lines expanded to components) is
+   * checked against the layer its product's own availabilityMode sells
+   * from (owner rule):
+   *   MANAGED_STOCK        → managed available, when the product tracks
+   *                          stock (manageStock); untracked products are
+   *                          not gated, mirroring the engine
+   *   INVENTORY_CONTROLLED → physical available at the line's own
+   *                          warehouse; unsellable while IM is off
+   *   ALWAYS_IN_STOCK      → always sellable
+   *   ALWAYS_OUT_OF_STOCK  → never sellable
+   * Quantities aggregate per product/variant/warehouse first, so split
+   * lines cannot jointly oversell.
+   */
+  private async enforcePosAvailability(
+    tx: any,
+    authItems: Array<{
+      productId?: string;
+      variantId?: string;
+      comboId?: string;
+      comboSelection?: Record<string, string>;
+      sourceWarehouseId?: string;
+      quantity: number;
+      availabilityMode?: string | null;
+      manageStock?: boolean | null;
+      managedAvailable?: number | null;
+      productName?: string;
+    }>,
+    showroomId: string,
+    imEnabled: boolean,
+  ): Promise<void> {
+    type GateLine = {
+      productId: string;
+      variantId: string | null;
+      quantity: number;
+      warehouseId: string;
+      mode: string;
+      manageStock: boolean | null;
+      managedAvailable: number | null;
+      name: string;
+    };
+    const lines: GateLine[] = [];
+
+    for (const item of authItems) {
+      const warehouseId = item.sourceWarehouseId || showroomId;
+      if (item.comboId) {
+        const combo = await tx.combo.findUnique({
+          where: { id: item.comboId },
+          include: { items: true },
+        });
+        if (!combo) continue;
+        const compProductIds = [
+          ...new Set(combo.items.map((ci: any) => ci.productId)),
+        ];
+        const compVariantIds = [
+          ...new Set(
+            combo.items
+              .map(
+                (ci: any) =>
+                  ci.variantId ||
+                  (item.comboSelection as any)?.[ci.productId] ||
+                  null,
+              )
+              .filter(Boolean),
+          ),
+        ];
+        const [compProducts, compVariants] = await Promise.all([
+          tx.product.findMany({
+            where: { id: { in: compProductIds } },
+            select: {
+              id: true,
+              name: true,
+              availabilityMode: true,
+              manageStock: true,
+              managedStockQuantity: true,
+              reservedStock: true,
+            },
+          }),
+          compVariantIds.length
+            ? tx.productVariant.findMany({
+                where: { id: { in: compVariantIds } },
+                select: {
+                  id: true,
+                  managedStockQuantity: true,
+                  reservedStock: true,
+                },
+              })
+            : Promise.resolve([] as any[]),
+        ]);
+        const compProductMap = new Map<string, any>(
+          compProducts.map((p: any) => [p.id, p] as [string, any]),
+        );
+        const compVariantMap = new Map<string, any>(
+          compVariants.map((v: any) => [v.id, v] as [string, any]),
+        );
+        for (const ci of combo.items) {
+          const compVariantId =
+            ci.variantId ||
+            (item.comboSelection as any)?.[ci.productId] ||
+            null;
+          const cp = compProductMap.get(ci.productId);
+          if (!cp) continue;
+          const cv = compVariantId
+            ? compVariantMap.get(compVariantId)
+            : undefined;
+          lines.push({
+            productId: ci.productId,
+            variantId: compVariantId,
+            quantity: ci.quantity * item.quantity,
+            warehouseId,
+            mode: cp.availabilityMode ?? 'MANAGED_STOCK',
+            manageStock: cp.manageStock ?? null,
+            managedAvailable: cv
+              ? (cv.managedStockQuantity ?? 0) - (cv.reservedStock ?? 0)
+              : (cp.managedStockQuantity ?? 0) - (cp.reservedStock ?? 0),
+            name: cp.name,
+          });
+        }
+        continue;
+      }
+      if (!item.productId) continue;
+      lines.push({
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        quantity: item.quantity,
+        warehouseId,
+        mode: item.availabilityMode ?? 'MANAGED_STOCK',
+        manageStock: item.manageStock ?? null,
+        managedAvailable: item.managedAvailable ?? null,
+        name: item.productName ?? item.productId,
+      });
+    }
+
+    const aggregated = new Map<string, GateLine>();
+    for (const line of lines) {
+      const key = `${line.productId}|${line.variantId ?? ''}|${line.warehouseId}|${line.mode}`;
+      const existing = aggregated.get(key);
+      if (existing) existing.quantity += line.quantity;
+      else aggregated.set(key, { ...line });
+    }
+
+    // Physical availability for IC lines, summed per exact variant and
+    // per product (a product-level line on a variable product draws on
+    // the product's rows as a whole).
+    const icLines = [...aggregated.values()].filter(
+      (l) => l.mode === 'INVENTORY_CONTROLLED',
+    );
+    const physicalAvailable = new Map<string, number>();
+    if (imEnabled && icLines.length > 0) {
+      const rows = await tx.physicalInventory.findMany({
+        where: {
+          productId: { in: [...new Set(icLines.map((l) => l.productId))] },
+        },
+        select: {
+          productId: true,
+          variantId: true,
+          warehouseId: true,
+          quantity: true,
+          reservedQuantity: true,
+        },
+      });
+      for (const row of rows) {
+        const available = Math.max(0, row.quantity - row.reservedQuantity);
+        const exactKey = `${row.productId}|${row.variantId ?? ''}|${row.warehouseId}`;
+        physicalAvailable.set(
+          exactKey,
+          (physicalAvailable.get(exactKey) ?? 0) + available,
+        );
+        const productKey = `${row.productId}|*|${row.warehouseId}`;
+        physicalAvailable.set(
+          productKey,
+          (physicalAvailable.get(productKey) ?? 0) + available,
+        );
+      }
+    }
+
+    for (const line of aggregated.values()) {
+      if (line.mode === 'ALWAYS_IN_STOCK') continue;
+      if (line.mode === 'ALWAYS_OUT_OF_STOCK') {
+        throw new BadRequestException(
+          `"${line.name}" is out of stock and cannot be sold`,
+        );
+      }
+      if (line.mode === 'INVENTORY_CONTROLLED') {
+        if (!imEnabled) {
+          throw new BadRequestException(
+            `"${line.name}" is stocked in physical inventory, but Inventory Management is turned off — it cannot be sold at POS until Inventory Management is enabled`,
+          );
+        }
+        const key = line.variantId
+          ? `${line.productId}|${line.variantId}|${line.warehouseId}`
+          : `${line.productId}|*|${line.warehouseId}`;
+        const available = physicalAvailable.get(key) ?? 0;
+        if (line.quantity > available) {
+          throw new BadRequestException(
+            `Insufficient stock for "${line.name}": ${available} available at the selling warehouse, ${line.quantity} requested`,
+          );
+        }
+        continue;
+      }
+      // MANAGED_STOCK
+      if (
+        line.manageStock === true &&
+        line.managedAvailable !== null &&
+        line.quantity > line.managedAvailable
+      ) {
+        throw new BadRequestException(
+          `Insufficient stock for "${line.name}": ${line.managedAvailable} available, ${line.quantity} requested`,
+        );
+      }
+    }
   }
 
   private validateDiscount(
@@ -555,6 +842,19 @@ private async resolveCanonicalPos(
       const authItems =
         await this.validateAndFetchAuthoritativeItems(dto, tx);
 
+      // Server-side availability gate (mode-aware): a sale the stock
+      // layers cannot cover — or whose mode forbids selling at all — is
+      // rejected here, before any order/payment/stock write, instead of
+      // depending on the deduction to throw (or silently skip).
+      const imEnabled =
+        await this.stockRouter.isInventoryManagementEnabled();
+      await this.enforcePosAvailability(
+        tx,
+        authItems,
+        session.showroom.id,
+        imEnabled,
+      );
+
       // Server-side discount validation using authoritative prices
       const authSubtotal = authItems.reduce(
         (sum, i) => sum + i.price * i.quantity,
@@ -682,9 +982,6 @@ private async resolveCanonicalPos(
         createdItems.push(createdItem);
       }
 
-      const imEnabled =
-        await this.stockRouter.isInventoryManagementEnabled();
-
       // Stock bookkeeping (stock audit #7, owner 2026-10-23): POS deducts
       // both engines DIRECTLY below, bypassing the reserve→deduct flow — so
       // without the same records the web flow writes (item flags, combo
@@ -709,13 +1006,18 @@ private async resolveCanonicalPos(
         productId: string;
         variantId?: string | null;
         quantity: number;
+        // The warehouse the line is actually deducted from — the session
+        // showroom normally, the line's source warehouse for
+        // cross-warehouse lines.
+        warehouseId?: string;
       }): Promise<void> => {
+        const warehouseId = params.warehouseId || session.showroom.id;
         const cycleId = await ensureStockCycle();
         const pi = await tx.physicalInventory.findFirst({
           where: {
             productId: params.productId,
             variantId: params.variantId ?? null,
-            warehouseId: session.showroom.id,
+            warehouseId,
             binLocationId: null,
           },
           select: { id: true },
@@ -729,7 +1031,7 @@ private async resolveCanonicalPos(
               cycleId,
               productId: params.productId,
               variantId: params.variantId ?? null,
-              warehouseId: session.showroom.id,
+              warehouseId,
               quantity: params.quantity,
               status: 'CONSUMED',
             },
@@ -749,7 +1051,7 @@ private async resolveCanonicalPos(
               cycleId,
               productId: params.productId,
               variantId: params.variantId ?? null,
-              warehouseId: session.showroom.id,
+              warehouseId,
               quantity: params.quantity,
               status: 'CONSUMED',
             },
@@ -767,13 +1069,13 @@ private async resolveCanonicalPos(
       for (let itemIndex = 0; itemIndex < authItems.length; itemIndex++) {
         const item = authItems[itemIndex];
         const createdItem = createdItems[itemIndex];
-        // When sourceWarehouseId is set and differs from current showroom,
-        // skip stock deduction — Order Management handles fulfillment later.
-        const isCrossWarehouse =
-          item.sourceWarehouseId &&
-          item.sourceWarehouseId !== session.showroom.id;
-
-        if (isCrossWarehouse) continue;
+        // A line sold from another warehouse (sourceWarehouseId) is
+        // deducted from THAT warehouse, right here — the old code skipped
+        // cross-warehouse lines entirely, so the order landed Delivered +
+        // PAID with the stock never deducted anywhere. Insufficient stock
+        // at the source warehouse throws and rolls the whole sale back,
+        // exactly like a showroom shortfall.
+        const lineWarehouseId = item.sourceWarehouseId || session.showroom.id;
 
         if (item.comboId) {
           // Combos: resolve each component's availability mode independently,
@@ -797,7 +1099,11 @@ private async resolveCanonicalPos(
             );
 
             const compPhysicalDeducted = imEnabled && compDecision.pi !== 'skip';
-            const compManagedDeducted = compDecision.ms === 'deduct';
+            // The managed leg only "happened" when the product actually
+            // tracks stock — with manageStock off the engine no-ops, so
+            // the flags must stay false too (they drive later restores).
+            const compManagedDeducted =
+              compDecision.ms === 'deduct' && compProduct?.manageStock === true;
             if (compPhysicalDeducted) {
               await this.stock.addPhysical({
                 productId: ci.productId,
@@ -805,7 +1111,7 @@ private async resolveCanonicalPos(
                 quantity: -compQty,
                 reference: displayId,
                 performedBy: cashierId,
-                warehouseId: session.showroom.id,
+                warehouseId: lineWarehouseId,
                 ledgerType: 'POS_SALE',
                 tx,
               });
@@ -851,6 +1157,7 @@ private async resolveCanonicalPos(
                   productId: ci.productId,
                   variantId: compVariantId,
                   quantity: compQty,
+                  warehouseId: lineWarehouseId,
                 });
               }
             }
@@ -872,9 +1179,16 @@ private async resolveCanonicalPos(
           imEnabled,
         );
 
-        // Physical deduction (IM ON): decrement physical quantity at the showroom.
+        // Physical deduction (IM ON): decrement physical quantity at the
+        // line's own warehouse (showroom, or its source warehouse).
         const physicalDeducted = imEnabled && decision.pi !== 'skip';
-        const managedDeducted = decision.ms === 'deduct';
+        // Same truthfulness rule as combo components: no managed deduction
+        // is claimed (or attempted) for a product that does not track
+        // stock — the engine no-ops those, and a "deducted" flag on such a
+        // line would make a later cancel/return restore stock that was
+        // never taken.
+        const managedDeducted =
+          decision.ms === 'deduct' && product?.manageStock === true;
         if (physicalDeducted) {
           await this.stock.addPhysical({
             productId: item.productId,
@@ -882,7 +1196,7 @@ private async resolveCanonicalPos(
             quantity: -item.quantity,
             reference: displayId,
             performedBy: cashierId,
-            warehouseId: session.showroom.id,
+            warehouseId: lineWarehouseId,
             ledgerType: 'POS_SALE',
             tx,
           });
@@ -926,6 +1240,7 @@ private async resolveCanonicalPos(
             productId: item.productId,
             variantId: item.variantId,
             quantity: item.quantity,
+            warehouseId: lineWarehouseId,
           });
         }
       }
@@ -1284,39 +1599,85 @@ private async resolveCanonicalPos(
       }
 
       for (const product of data as any[]) {
+        // Mode-aware (owner rule): the product's OWN availabilityMode
+        // picks the layer that answers — never the global IM flag alone.
+        // The old IM-flag branching showed MANAGED_STOCK products their
+        // physical numbers under IM-on (false zeros where no physical row
+        // existed) and INVENTORY_CONTROLLED products their managed
+        // counters under IM-off (an oversell invitation).
+        const mode = product.availabilityMode ?? 'MANAGED_STOCK';
+        const setFigures = (
+          target: any,
+          managedQty: number,
+          managedReserved: number,
+          physicalKey: string,
+        ) => {
+          if (mode === 'ALWAYS_IN_STOCK') {
+            target._showroomStock = PosOrdersService.ALWAYS_IN_STOCK_QTY;
+            target._showroomAvailable = PosOrdersService.ALWAYS_IN_STOCK_QTY;
+            target._networkAvailable = PosOrdersService.ALWAYS_IN_STOCK_QTY;
+          } else if (mode === 'ALWAYS_OUT_OF_STOCK') {
+            target._showroomStock = 0;
+            target._showroomAvailable = 0;
+            target._networkAvailable = 0;
+          } else if (mode === 'INVENTORY_CONTROLLED') {
+            if (imEnabled) {
+              const entry = physicalMap.get(physicalKey);
+              target._showroomStock = entry?.stock ?? 0;
+              target._showroomAvailable =
+                (entry?.stock ?? 0) - (entry?.reserved ?? 0);
+              const net = networkMap.get(physicalKey);
+              target._networkAvailable =
+                (net?.stock ?? 0) - (net?.reserved ?? 0);
+            } else {
+              // The physical layer is dormant with IM off and the product
+              // is not sellable — never fall back to its managed counters.
+              target._showroomStock = 0;
+              target._showroomAvailable = 0;
+              target._networkAvailable = 0;
+            }
+          } else {
+            // MANAGED_STOCK: the managed counters, whichever way IM is
+            // set. The pool is not warehouse-bound, so "network" is the
+            // same available figure.
+            target._showroomStock = managedQty;
+            target._showroomAvailable = managedQty - managedReserved;
+            target._networkAvailable = managedQty - managedReserved;
+          }
+        };
+
         if (product.type === 'variable' && product.variants?.length) {
           for (const variant of product.variants) {
-            if (imEnabled) {
-              const entry = physicalMap.get(variant.id);
-              variant._showroomStock = entry?.stock ?? 0;
-              variant._showroomAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
-              const net = networkMap.get(variant.id);
-              variant._networkAvailable = (net?.stock ?? 0) - (net?.reserved ?? 0);
-            } else {
-              variant._showroomStock = variant.managedStockQuantity ?? 0;
-              variant._showroomAvailable =
-                (variant.managedStockQuantity ?? 0) - (variant.reservedStock ?? 0);
-              variant._networkAvailable = variant.managedStockQuantity ?? 0;
-            }
+            setFigures(
+              variant,
+              variant.managedStockQuantity ?? 0,
+              variant.reservedStock ?? 0,
+              variant.id,
+            );
           }
-          // For variable products, overall stock = sum of variant stocks.
-          // _networkAvailable is summed from the variants too: the parent row
-          // carries no managedStockQuantity of its own, so reading it directly
-          // reported 0 network-wide even when variants had stock.
-          product._showroomStock = product.variants.reduce((s: number, v: any) => s + (v._showroomStock ?? 0), 0);
-          product._showroomAvailable = product.variants.reduce((s: number, v: any) => s + (v._showroomAvailable ?? 0), 0);
-          product._networkAvailable = product.variants.reduce((s: number, v: any) => s + (v._networkAvailable ?? 0), 0);
-        } else if (imEnabled) {
-          const entry = physicalMap.get(product.id);
-          product._showroomStock = entry?.stock ?? 0;
-          product._showroomAvailable = (entry?.stock ?? 0) - (entry?.reserved ?? 0);
-          const net = networkMap.get(product.id);
-          product._networkAvailable = (net?.stock ?? 0) - (net?.reserved ?? 0);
+          if (mode === 'ALWAYS_IN_STOCK' || mode === 'ALWAYS_OUT_OF_STOCK') {
+            // The product total mirrors the per-variant sentinel/zero
+            // instead of summing it once per variant.
+            product._showroomStock = product.variants[0]._showroomStock;
+            product._showroomAvailable = product.variants[0]._showroomAvailable;
+            product._networkAvailable = product.variants[0]._networkAvailable;
+          } else {
+            // For variable products, overall stock = sum of variant
+            // stocks. _networkAvailable is summed from the variants too:
+            // the parent row carries no managedStockQuantity of its own,
+            // so reading it directly reported 0 network-wide even when
+            // variants had stock.
+            product._showroomStock = product.variants.reduce((s: number, v: any) => s + (v._showroomStock ?? 0), 0);
+            product._showroomAvailable = product.variants.reduce((s: number, v: any) => s + (v._showroomAvailable ?? 0), 0);
+            product._networkAvailable = product.variants.reduce((s: number, v: any) => s + (v._networkAvailable ?? 0), 0);
+          }
         } else {
-          product._showroomStock = product.managedStockQuantity ?? 0;
-          product._showroomAvailable =
-            (product.managedStockQuantity ?? 0) - (product.reservedStock ?? 0);
-          product._networkAvailable = product.managedStockQuantity ?? 0;
+          setFigures(
+            product,
+            product.managedStockQuantity ?? 0,
+            product.reservedStock ?? 0,
+            product.id,
+          );
         }
       }
     }
@@ -1331,15 +1692,75 @@ private async resolveCanonicalPos(
   ): Promise<StockValidationResult> {
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
 
+    // Resolve each item's product mode up front (batched): the product's
+    // own availabilityMode — not the global IM flag — decides which layer
+    // validates the item (owner rule). Variant-only items resolve through
+    // their parent product.
+    const variantProductMap = new Map<string, string>();
+    const itemProductIds = [
+      ...new Set(
+        dto.items.map((i) => i.productId).filter(Boolean) as string[],
+      ),
+    ];
+    const variantOnlyIds = [
+      ...new Set(
+        dto.items
+          .filter((i) => !i.productId && i.variantId)
+          .map((i) => i.variantId!),
+      ),
+    ];
+    if (variantOnlyIds.length) {
+      const vs = await this.prisma.productVariant.findMany({
+        where: { id: { in: variantOnlyIds } },
+        select: { id: true, productId: true },
+      });
+      for (const v of vs ?? []) {
+        variantProductMap.set(v.id, v.productId);
+        if (!itemProductIds.includes(v.productId)) {
+          itemProductIds.push(v.productId);
+        }
+      }
+    }
+    const modeByProduct = new Map<string, string>();
+    if (itemProductIds.length) {
+      const products = await this.prisma.product.findMany({
+        where: { id: { in: itemProductIds } },
+        select: { id: true, availabilityMode: true },
+      });
+      for (const p of products ?? []) {
+        modeByProduct.set(p.id, p.availabilityMode ?? 'MANAGED_STOCK');
+      }
+    }
+
     const results: StockValidationItemResult[] = [];
 
     for (const item of dto.items) {
       let currentStock = 0;
       let currentAvailable = 0;
+      let reason: string | undefined;
 
-      if (imEnabled) {
+      const productId =
+        item.productId ??
+        (item.variantId ? variantProductMap.get(item.variantId) : undefined);
+      const mode = productId ? modeByProduct.get(productId) : undefined;
+      // A product row that cannot be loaded keeps the legacy IM-flag
+      // behaviour; every real product row carries a mode.
+      const physicalMode =
+        mode === 'INVENTORY_CONTROLLED' || (mode === undefined && imEnabled);
+
+      if (mode === 'ALWAYS_IN_STOCK') {
+        currentStock = PosOrdersService.ALWAYS_IN_STOCK_QTY;
+        currentAvailable = PosOrdersService.ALWAYS_IN_STOCK_QTY;
+      } else if (mode === 'ALWAYS_OUT_OF_STOCK') {
+        reason = 'This product is always out of stock';
+      } else if (mode === 'INVENTORY_CONTROLLED' && !imEnabled) {
+        // Never read the managed counters for an IC product: with IM off
+        // the physical layer is dormant and the product cannot be sold.
+        reason =
+          'Inventory Management is turned off — this product is stocked in physical inventory and cannot be sold at POS right now';
+      } else if (physicalMode) {
         const availability = await this.stock.checkPhysicalAvailability(
-          item.productId!,
+          productId!,
           showroomId,
           item.variantId,
         );
@@ -1347,7 +1768,7 @@ private async resolveCanonicalPos(
         currentAvailable = availability.availableStock;
       } else {
         const availability = await this.stock.getAvailableStock(
-          item.productId!,
+          productId!,
           item.variantId,
         );
         currentStock = availability.stock;
@@ -1356,16 +1777,19 @@ private async resolveCanonicalPos(
 
       const available = currentAvailable >= item.quantity;
 
-      // Query alternatives: other warehouses/showrooms with stock
+      // Alternatives follow the SAME mode logic: only an
+      // INVENTORY_CONTROLLED shortfall can be covered from another
+      // warehouse. Managed stock is one global pool (no other location
+      // holds more of it), and a mode block cannot be fixed by location.
       let alternatives: AlternativeSourceDto[] = [];
-      if (!available) {
+      if (!available && physicalMode && imEnabled) {
         // Same product-level reasoning as getProductAvailability: an item being
         // unavailable in THIS showroom is a product-level problem, so the
         // alternative lookup must not hide a location merely because it holds a
         // sibling variant. Filtering on the exact variant here produced the
         // same "no location has stock" result as the See Where button.
         const wherePhysical: any = {
-          productId: item.productId,
+          productId,
           warehouseId: { not: showroomId },
           quantity: { gt: 0 },
         };
@@ -1414,6 +1838,7 @@ private async resolveCanonicalPos(
         currentStock,
         currentAvailable,
         alternatives,
+        ...(reason ? { reason } : {}),
       });
     }
 
@@ -1430,21 +1855,82 @@ private async resolveCanonicalPos(
   ) {
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
 
-    let currentShowroom: any = {};
-    if (imEnabled) {
-      currentShowroom = await this.stock.checkPhysicalAvailability(
+    // Mode-aware (owner rule): the product's own availabilityMode picks
+    // the answering layer. The old code branched on the IM flag alone, so
+    // an INVENTORY_CONTROLLED product under IM-off reported its managed
+    // counters (oversell) and a MANAGED_STOCK product under IM-on
+    // reported physical rows from other warehouses as its "network".
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { availabilityMode: true },
+    });
+    const mode = product?.availabilityMode ?? 'MANAGED_STOCK';
+
+    if (mode === 'ALWAYS_IN_STOCK') {
+      return {
         productId,
-        showroomId,
-        variantId,
-      );
-    } else {
-      const global = await this.stock.getAvailableStock(productId, variantId);
-      currentShowroom = {
-        currentStock: global.stock,
-        reserved: global.reserved,
-        availableStock: global.available,
+        variantId: variantId || null,
+        currentShowroom: {
+          warehouseId: showroomId,
+          stock: PosOrdersService.ALWAYS_IN_STOCK_QTY,
+          reserved: 0,
+          available: PosOrdersService.ALWAYS_IN_STOCK_QTY,
+        },
+        network: [],
       };
     }
+    if (mode === 'ALWAYS_OUT_OF_STOCK') {
+      return {
+        productId,
+        variantId: variantId || null,
+        currentShowroom: {
+          warehouseId: showroomId,
+          stock: 0,
+          reserved: 0,
+          available: 0,
+        },
+        network: [],
+      };
+    }
+    if (mode === 'MANAGED_STOCK') {
+      // Managed stock is one global pool — there are no other warehouses
+      // to find it in, so the network list is empty by definition.
+      const global = await this.stock.getAvailableStock(productId, variantId);
+      return {
+        productId,
+        variantId: variantId || null,
+        currentShowroom: {
+          warehouseId: showroomId,
+          stock: global.stock,
+          reserved: global.reserved,
+          available: global.available,
+        },
+        network: [],
+      };
+    }
+    if (!imEnabled) {
+      // INVENTORY_CONTROLLED with IM off: physical layer dormant, the
+      // product is not sellable, and its managed counters must not be
+      // presented as availability.
+      return {
+        productId,
+        variantId: variantId || null,
+        currentShowroom: {
+          warehouseId: showroomId,
+          stock: 0,
+          reserved: 0,
+          available: 0,
+        },
+        network: [],
+      };
+    }
+
+    // INVENTORY_CONTROLLED + IM on: physical figures, as before.
+    const currentShowroom: any = await this.stock.checkPhysicalAvailability(
+      productId,
+      showroomId,
+      variantId,
+    );
 
     // "See where else can this be found?" is a PRODUCT-level question, so the
     // network lookup must aggregate at product level too.

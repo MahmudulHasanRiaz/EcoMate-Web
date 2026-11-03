@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PhysicalInventoryController } from '../physical-inventory.controller';
 import { StockService } from '../../stock/stock.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -53,6 +53,27 @@ describe('PhysicalInventoryController — destructive adjustment guard', () => {
       $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: jest.fn(async (cb: any) => cb(prisma)),
     };
+  });
+
+  it('rejects a positive adjustment without unit cost as a 400, not a 404', async () => {
+    await build(100);
+    const err = await controller
+      .adjust(
+        {
+          productId: PRODUCT,
+          variantId: VARIANT,
+          warehouseId: SHOWROOM,
+          quantity: 5,
+          reason: 'restock',
+        } as any,
+        user,
+      )
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(err).not.toBeInstanceOf(NotFoundException);
+    expect((err as BadRequestException).message).toMatch(/unit cost/i);
+    expect(addPhysical).not.toHaveBeenCalled();
   });
 
   it('blocks a single adjustment that would wipe >=90% of a location (46 of 46)', async () => {

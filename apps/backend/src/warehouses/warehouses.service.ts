@@ -2,7 +2,9 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
@@ -90,9 +92,28 @@ export class WarehousesService {
 
   async remove(id: string) {
     await this.findOne(id);
-    return this.prisma.warehouse.delete({
-      where: { id },
-    });
+    try {
+      return await this.prisma.warehouse.delete({
+        where: { id },
+      });
+    } catch (err) {
+      // A warehouse that stock, bins or history still reference cannot be
+      // deleted — surface that as a clear 400 instead of leaking the raw
+      // Prisma FK error to the admin (2026-11-02 audit: deleting a
+      // referenced warehouse surfaced a bare "Referenced record not
+      // found", which reads like a bug, not a rule).
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        (err.code === 'P2003' ||
+          err.code === 'P2014' ||
+          /foreign key|constraint/i.test(err.message))
+      ) {
+        throw new BadRequestException(
+          'Warehouse is in use — stock, bins or history reference it — and cannot be deleted',
+        );
+      }
+      throw err;
+    }
   }
 
   /* ── Bin Locations ── */
@@ -166,37 +187,118 @@ export class WarehousesService {
       where: { id: binId },
     });
     if (!bin) throw new NotFoundException('Bin location not found');
-    if (dto.code && dto.code !== bin.code) {
+
+    // Warehouse move (2026-11-03): the route stays nested under the CURRENT
+    // warehouse, but the DTO may carry a different warehouseId — the admin
+    // bin-edit form has always had a Warehouse select whose value was
+    // silently dropped (the DTO had no such field), so the edit looked
+    // inert. A move re-homes the bin; its zone/rack/shelf belong to the OLD
+    // warehouse's hierarchy and are cleared unless the DTO supplies
+    // replacements that validate against the NEW warehouse.
+    const moving = !!dto.warehouseId && dto.warehouseId !== bin.warehouseId;
+    const targetWarehouseId = moving ? dto.warehouseId! : bin.warehouseId;
+    if (moving) {
+      const target = await this.prisma.warehouse.findUnique({
+        where: { id: targetWarehouseId },
+      });
+      if (!target) throw new NotFoundException('Target warehouse not found');
+    }
+
+    // Duplicate-code guard — checked against the warehouse the bin will END
+    // UP in: a move can collide on an unchanged code, and a rename can
+    // collide in the target warehouse.
+    const nextCode = dto.code ?? bin.code;
+    if ((dto.code && dto.code !== bin.code) || moving) {
       const dup = await this.prisma.binLocation.findUnique({
         where: {
-          warehouseId_code: { warehouseId: bin.warehouseId, code: dto.code },
+          warehouseId_code: { warehouseId: targetWarehouseId, code: nextCode },
         },
       });
-      if (dup) throw new ConflictException('Bin code already in use');
+      if (dup && dup.id !== binId) {
+        throw new ConflictException('Bin code already in use');
+      }
     }
-    // '' from form selects means "clear this level" — normalize to null
-    // before it can reach a Prisma FK field (2026-11-02 audit: the admin
-    // edit path sent raw '' values the create path already mapped away).
-    let zoneId = dto.zoneId !== undefined ? dto.zoneId || null : bin.zoneId;
-    let rackId = dto.rackId !== undefined ? dto.rackId || null : bin.rackId;
-    let shelfId = dto.shelfId !== undefined ? dto.shelfId || null : bin.shelfId;
-    if (shelfId && !rackId) {
-      throw new ConflictException('shelfId requires rackId');
+
+    let zoneId: string | null;
+    let rackId: string | null;
+    let shelfId: string | null;
+
+    if (moving) {
+      // Only DTO-supplied hierarchy survives a move, and only if it belongs
+      // to the target warehouse — an old-warehouse zone id written onto a
+      // bin in the new warehouse would corrupt the hierarchy.
+      zoneId = dto.zoneId || null;
+      rackId = dto.rackId || null;
+      shelfId = dto.shelfId || null;
+      if (zoneId) {
+        const zone = await this.prisma.zone.findUnique({
+          where: { id: zoneId },
+          select: { warehouseId: true },
+        });
+        if (!zone || zone.warehouseId !== targetWarehouseId) {
+          throw new ConflictException('Zone does not belong to the target warehouse');
+        }
+      }
+      if (rackId) {
+        const rack = await this.prisma.rack.findUnique({
+          where: { id: rackId },
+          select: { zoneId: true, zone: { select: { warehouseId: true } } },
+        });
+        if (!rack || rack.zone.warehouseId !== targetWarehouseId) {
+          throw new ConflictException('Rack does not belong to the target warehouse');
+        }
+        if (zoneId && rack.zoneId !== zoneId) {
+          throw new ConflictException('Rack does not belong to the selected zone');
+        }
+      }
+      if (shelfId) {
+        const shelf = await this.prisma.shelf.findUnique({
+          where: { id: shelfId },
+          select: {
+            rackId: true,
+            rack: { select: { zoneId: true, zone: { select: { warehouseId: true } } } },
+          },
+        });
+        if (!shelf || shelf.rack.zone.warehouseId !== targetWarehouseId) {
+          throw new ConflictException('Shelf does not belong to the target warehouse');
+        }
+        if (rackId && shelf.rackId !== rackId) {
+          throw new ConflictException('Shelf does not belong to the selected rack');
+        }
+      }
+      if (shelfId && !rackId) {
+        throw new ConflictException('shelfId requires rackId');
+      }
+      if (rackId && !zoneId) {
+        throw new ConflictException('rackId requires zoneId');
+      }
+    } else {
+      // '' from form selects means "clear this level" — normalize to null
+      // before it can reach a Prisma FK field (2026-11-02 audit: the admin
+      // edit path sent raw '' values the create path already mapped away).
+      zoneId = dto.zoneId !== undefined ? dto.zoneId || null : bin.zoneId;
+      rackId = dto.rackId !== undefined ? dto.rackId || null : bin.rackId;
+      shelfId = dto.shelfId !== undefined ? dto.shelfId || null : bin.shelfId;
+      if (shelfId && !rackId) {
+        throw new ConflictException('shelfId requires rackId');
+      }
+      if (rackId && !zoneId) {
+        throw new ConflictException('rackId requires zoneId');
+      }
+      if (dto.zoneId !== undefined && dto.zoneId !== bin.zoneId) {
+        rackId = null;
+        shelfId = null;
+      }
+      if (dto.rackId !== undefined && dto.rackId !== bin.rackId) {
+        shelfId = null;
+      }
     }
-    if (rackId && !zoneId) {
-      throw new ConflictException('rackId requires zoneId');
-    }
-    if (dto.zoneId !== undefined && dto.zoneId !== bin.zoneId) {
-      rackId = null;
-      shelfId = null;
-    }
-    if (dto.rackId !== undefined && dto.rackId !== bin.rackId) {
-      shelfId = null;
-    }
+
     return this.prisma.binLocation.update({
       where: { id: binId },
       data: {
         ...(dto.code !== undefined && { code: dto.code }),
+        ...(moving && { warehouseId: targetWarehouseId }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
         zoneId: zoneId ?? null,
         rackId: rackId ?? null,

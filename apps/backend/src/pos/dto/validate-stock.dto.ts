@@ -31,6 +31,14 @@ export class StockValidationItemResult {
   currentStock: number;
   currentAvailable: number;
   alternatives: AlternativeSourceDto[];
+  /**
+   * Why the item cannot be sold, when the block comes from the product's
+   * availabilityMode rather than a quantity shortfall (e.g. an
+   * INVENTORY_CONTROLLED product while Inventory Management is off, or an
+   * ALWAYS_OUT_OF_STOCK product). Lets the till explain instead of showing
+   * a bare "out of stock".
+   */
+  reason?: string;
 }
 
 export class StockValidationResult {

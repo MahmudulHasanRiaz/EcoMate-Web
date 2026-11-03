@@ -309,6 +309,47 @@ export class CancelReturnStockService {
     });
     if (!order) return;
 
+    // Cumulative settlement (audit item 4): units already settled by
+    // item-level Returns (stockReconciled rows) must never restore twice.
+    // Partial receives now leave flags/reservations ARMED until their line
+    // is fully settled, so this blanket pass restores only each claim's
+    // UNSETTLED remainder. Settled quantities are aggregated per key and
+    // distributed FIFO across lines/snapshots (good first), mirroring the
+    // item-level allocation.
+    const settledByKey = new Map<string, { good: number; total: number }>();
+    const priorReturns = await this.loadSettledReturns(tx, orderId);
+    for (const prior of priorReturns) {
+      const priorItems = Array.isArray((prior as any)?.items)
+        ? ((prior as any).items as any[])
+        : [];
+      for (const pItem of priorItems) {
+        const pQty = Math.floor(Number(pItem?.quantity ?? 0) || 0);
+        if (!pItem?.productId || !(pQty > 0)) continue;
+        const pDamaged = Math.min(
+          pQty,
+          Math.max(0, Math.floor(Number(pItem?.damagedQuantity ?? 0) || 0)),
+        );
+        const k = stockKeyOf(pItem.productId, pItem.variantId ?? undefined);
+        const cur = settledByKey.get(k) ?? { good: 0, total: 0 };
+        cur.good += pQty - pDamaged;
+        cur.total += pQty;
+        settledByKey.set(k, cur);
+      }
+    }
+    const takeSettled = (
+      productId: string,
+      variantId: string | null | undefined,
+      claimQty: number,
+    ): { good: number; total: number } => {
+      const cur = settledByKey.get(stockKeyOf(productId, variantId));
+      if (!cur || claimQty <= 0) return { good: 0, total: 0 };
+      const total = Math.min(claimQty, cur.total);
+      const good = Math.min(total, cur.good);
+      cur.total -= total;
+      cur.good -= good;
+      return { good, total };
+    };
+
     for (const item of order.items) {
       if (!item.productId && !item.comboId) continue;
 
@@ -321,6 +362,7 @@ export class CancelReturnStockService {
           imEnabled,
           reference,
           performedBy,
+          takeSettled,
         );
         continue;
       }
@@ -333,6 +375,7 @@ export class CancelReturnStockService {
         imEnabled,
         reference,
         performedBy,
+        takeSettled(item.productId as string, item.variantId, item.quantity),
       );
     }
 
@@ -370,6 +413,26 @@ export class CancelReturnStockService {
    *   still deducted, future arrivals restore through this same path;
    * - the ACTIVE cycle terminates only on FULL coverage (every line fully
    *   restored) — a partial leaves it ACTIVE for what may still arrive.
+   *
+   * CUMULATIVE SETTLEMENT (inventory audit 2026-11-02, item 4): disarm is
+   * CUMULATIVE, not per-receive. A claim is disarmed only when the total
+   * settled quantity for its line (good restored + damaged, across ALL
+   * settled returns for the order) reaches the line quantity. A partial
+   * receive restores exactly its good units but leaves the managed flags
+   * SET and the physical reservation in place, so a SECOND partial return
+   * against the same line restores the remainder instead of no-oping
+   * against already-cleared flags / an already-RESTORED reservation.
+   * Settlement evidence comes from existing records only (no schema
+   * change): prior stockReconciled Return rows are replayed FIFO across
+   * the claims (the same distribution the original allocations used), and
+   * this return's own already-applied ledger rows (managed RETURN adds /
+   * physical RESTORATION rows under reference `return-<returnId>`) make a
+   * retry after a partial shortfall resume instead of double-applying.
+   *
+   * Returns `unrestored`: good units that were received but could NOT be
+   * put back into physical stock (reservation missing, or its allocations
+   * cover fewer units than were deducted). Callers must not report those
+   * units as restocked.
    */
   async restoreForReturnItems(params: {
     orderId: string;
@@ -383,7 +446,10 @@ export class CancelReturnStockService {
     returnId: string;
     performedBy?: string;
     tx: Prisma.TransactionClient;
-  }): Promise<{ restored: Array<{ productId: string; variantId: string | null; quantity: number }> }> {
+  }): Promise<{
+    restored: Array<{ productId: string; variantId: string | null; quantity: number }>;
+    unrestored: Array<{ productId: string; variantId: string | null; quantity: number }>;
+  }> {
     const { orderId, items, returnId, performedBy, tx } = params;
     const reference = `return-${returnId}`;
 
@@ -415,12 +481,27 @@ export class CancelReturnStockService {
         },
       },
     });
-    if (!order) return { restored: [] };
+    if (!order) return { restored: [], unrestored: [] };
 
     // ---- Build matchable claims: standalone lines + combo snapshots --------
-    type Claim =
-      | { kind: 'line'; line: any; product: any; remaining: number }
-      | { kind: 'snap'; line: any; snap: any; product: any; remaining: number };
+    type Claim = {
+      kind: 'line' | 'snap';
+      line: any;
+      snap?: any;
+      product: any;
+      /** Full ordered quantity of the underlying line / snapshot. */
+      totalQuantity: number;
+      /** Units still unsettled (not restored, not damaged) after prior returns. */
+      remaining: number;
+      /** Good units already restored by EARLIER settled returns. */
+      settledGood: number;
+      /** Units (good + damaged) already settled by EARLIER settled returns. */
+      settledTotal: number;
+      /** Good units whose managed `add` already ran for THIS return (retry resume). */
+      appliedManaged: number;
+      /** Good units whose physical restore already ran for THIS return (retry resume). */
+      appliedPhysical: number;
+    };
     const claimsByKey = new Map<string, Claim[]>();
     const keyOf = (productId: string, variantId?: string | null) =>
       `${productId}::${variantId ?? ''}`;
@@ -438,7 +519,12 @@ export class CancelReturnStockService {
             line,
             snap,
             product: snap.product,
+            totalQuantity: snap.totalQuantity,
             remaining: snap.totalQuantity,
+            settledGood: 0,
+            settledTotal: 0,
+            appliedManaged: 0,
+            appliedPhysical: 0,
           };
           allClaims.push(claim);
           const k = keyOf(snap.productId, snap.variantId ?? undefined);
@@ -451,7 +537,12 @@ export class CancelReturnStockService {
         kind: 'line',
         line,
         product: line.product,
+        totalQuantity: line.quantity,
         remaining: line.quantity,
+        settledGood: 0,
+        settledTotal: 0,
+        appliedManaged: 0,
+        appliedPhysical: 0,
       };
       allClaims.push(claim);
       const k = keyOf(line.productId, line.variantId ?? undefined);
@@ -459,8 +550,70 @@ export class CancelReturnStockService {
       claimsByKey.get(k)!.push(claim);
     }
 
+    // ---- Cumulative settlement from EARLIER settled returns ----------------
+    // Replay every stockReconciled Return for this order (excluding the one
+    // being processed — the RTN dispatch flow pre-marks its damage row
+    // reconciled before calling here) FIFO across the claims of each key,
+    // good units first, exactly like the live allocation below. A claim
+    // whose settledTotal reaches its line quantity is already disarmed;
+    // the rest keep only their unsettled remainder claimable.
+    const priorReturns = await this.loadSettledReturns(tx, orderId, returnId);
+    for (const prior of priorReturns) {
+      const priorItems = Array.isArray((prior as any)?.items)
+        ? ((prior as any).items as any[])
+        : [];
+      for (const pItem of priorItems) {
+        const pQty = Math.floor(Number(pItem?.quantity ?? 0) || 0);
+        if (!pItem?.productId || !(pQty > 0)) continue;
+        const pDamaged = Math.min(
+          pQty,
+          Math.max(0, Math.floor(Number(pItem?.damagedQuantity ?? 0) || 0)),
+        );
+        let pGoodLeft = pQty - pDamaged;
+        let pWanted = pQty;
+        const claims = claimsByKey.get(keyOf(pItem.productId, pItem.variantId ?? undefined)) ?? [];
+        for (const claim of claims) {
+          if (pWanted <= 0) break;
+          const capacity = claim.totalQuantity - claim.settledTotal;
+          if (capacity <= 0) continue;
+          const take = Math.min(capacity, pWanted);
+          const goodTake = Math.min(pGoodLeft, take);
+          claim.settledGood += goodTake;
+          claim.settledTotal += take;
+          pGoodLeft -= goodTake;
+          pWanted -= take;
+        }
+      }
+    }
+    for (const claim of allClaims) {
+      claim.remaining = claim.totalQuantity - claim.settledTotal;
+    }
+
+    // ---- This return's own already-applied movements (retry resume) --------
+    // When a previous attempt of THIS return applied part of the restore
+    // but the return was left unreconciled (physical shortfall), its ledger
+    // rows under `return-<returnId>` are the resume evidence: those units
+    // must never be applied twice.
+    const ownApplied = await this.loadOwnReturnApplied(tx, reference);
+    for (const [k, sums] of ownApplied) {
+      const claims = claimsByKey.get(k) ?? [];
+      let managedLeft = sums.managed;
+      let physicalLeft = sums.physical;
+      for (const claim of claims) {
+        if (managedLeft <= 0 && physicalLeft <= 0) break;
+        const capacity = Math.max(0, claim.totalQuantity - claim.settledTotal);
+        const m = Math.min(capacity, managedLeft);
+        claim.appliedManaged += m;
+        managedLeft -= m;
+        const p = Math.min(capacity, physicalLeft);
+        claim.appliedPhysical += p;
+        physicalLeft -= p;
+      }
+    }
+
     // ---- Allocate Return quantities across matching claims (FIFO) ----------
     const restoredByKey = new Map<string, { productId: string; variantId: string | null; quantity: number }>();
+    const unrestoredByKey = new Map<string, { productId: string; variantId: string | null; quantity: number }>();
     for (const item of items ?? []) {
       const qty = Math.floor(Number((item as any)?.quantity ?? 0));
       if (!item?.productId || !(qty > 0)) continue;
@@ -481,19 +634,35 @@ export class CancelReturnStockService {
         // Allocate the received split across claims; only good units move.
         const goodTake = Math.min(goodLeft, take);
         goodLeft -= goodTake;
+        const damagedTake = take - goodTake;
         if (goodTake > 0) {
-          await this.restoreReturnClaim(tx, claim, goodTake, cycleId, imEnabled, reference, performedBy);
-          const agg = restoredByKey.get(k) ?? {
-            productId: item.productId,
-            variantId: (item.variantId ?? null) as string | null,
-            quantity: 0,
-          };
-          agg.quantity += goodTake;
-          restoredByKey.set(k, agg);
+          const { physicalShortfall } = await this.restoreReturnClaim(
+            tx, claim, goodTake, damagedTake, cycleId, imEnabled, reference, performedBy,
+          );
+          const reallyRestored = goodTake - physicalShortfall;
+          if (reallyRestored > 0) {
+            const agg = restoredByKey.get(k) ?? {
+              productId: item.productId,
+              variantId: (item.variantId ?? null) as string | null,
+              quantity: 0,
+            };
+            agg.quantity += reallyRestored;
+            restoredByKey.set(k, agg);
+          }
+          if (physicalShortfall > 0) {
+            const agg = unrestoredByKey.get(k) ?? {
+              productId: item.productId,
+              variantId: (item.variantId ?? null) as string | null,
+              quantity: 0,
+            };
+            agg.quantity += physicalShortfall;
+            unrestoredByKey.set(k, agg);
+          }
         } else {
-          // Damaged-only allocation still disarms the claim: a later blanket
-          // restore must never put these units back on the shelf.
-          await this.disarmClaim(tx, claim);
+          // Damaged-only allocation: settle ONLY the damaged share of the
+          // claim (counters), never the whole line — the good remainder
+          // stays armed for a later arrival (see disarmClaim).
+          await this.disarmClaim(tx, claim, damagedTake, reference, performedBy);
         }
       }
       if (wanted > 0) {
@@ -513,7 +682,87 @@ export class CancelReturnStockService {
     }
 
     await this.cache.invalidateByPrefix('product:');
-    return { restored: [...restoredByKey.values()] };
+    return { restored: [...restoredByKey.values()], unrestored: [...unrestoredByKey.values()] };
+  }
+
+  /**
+   * Earlier SETTLED returns for an order — the cumulative-settlement
+   * evidence for the item-level restore path. A return counts as settled
+   * only when its stockReconciled flag committed in the same transaction
+   * as its stock movement (the guarded core's contract). Guarded for
+   * transaction doubles that lack the delegate (older unit specs): no
+   * delegate → no evidence → claims start unsettled, as before.
+   */
+  private async loadSettledReturns(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    excludeReturnId?: string,
+  ): Promise<any[]> {
+    const delegate = (tx as any)?.return;
+    if (!delegate || typeof delegate.findMany !== 'function') return [];
+    const rows = await delegate.findMany({
+      where: {
+        orderId,
+        stockReconciled: true,
+        ...(excludeReturnId ? { id: { not: excludeReturnId } } : {}),
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true, items: true },
+    });
+    return (rows ?? []) as any[];
+  }
+
+  /**
+   * Quantities THIS return already applied in an earlier (interrupted)
+   * attempt, summed from the stock ledgers under its own reference
+   * (`return-<returnId>`): managed `add` rows (type RETURN, referenceType
+   * RETURN, referenceId = reference — StockService.operate stores the
+   * reference string as referenceId when none is passed) and physical
+   * RESTORATION rows (reason = reference). Keys → per-layer good units.
+   */
+  private async loadOwnReturnApplied(
+    tx: Prisma.TransactionClient,
+    reference: string,
+  ): Promise<Map<string, { managed: number; physical: number }>> {
+    const out = new Map<string, { managed: number; physical: number }>();
+    const bump = (
+      productId: string,
+      variantId: string | null | undefined,
+      layer: 'managed' | 'physical',
+      qty: number,
+    ) => {
+      if (!(qty > 0)) return;
+      const k = `${productId}::${variantId ?? ''}`;
+      const cur = out.get(k) ?? { managed: 0, physical: 0 };
+      cur[layer] += qty;
+      out.set(k, cur);
+    };
+    const managedDelegate = (tx as any)?.managedStockLedger;
+    if (managedDelegate && typeof managedDelegate.findMany === 'function') {
+      const rows = (await managedDelegate.findMany({
+        where: {
+          referenceType: 'RETURN',
+          referenceId: reference,
+          type: 'RETURN',
+          direction: 'IN',
+        },
+        select: { productId: true, variantId: true, quantity: true },
+      })) as any[];
+      for (const r of rows ?? []) {
+        if (r?.productId) bump(r.productId, r.variantId, 'managed', Number(r.quantity) || 0);
+      }
+    }
+    const physicalDelegate = (tx as any)?.physicalInventoryLedger;
+    if (physicalDelegate && typeof physicalDelegate.findMany === 'function') {
+      const rows = (await physicalDelegate.findMany({
+        where: { reason: reference, type: 'RESTORATION' },
+        select: { productId: true, variantId: true, quantity: true },
+      })) as any[];
+      for (const r of rows ?? []) {
+        if (r?.productId) bump(r.productId, r.variantId, 'physical', Number(r.quantity) || 0);
+      }
+    }
+    return out;
   }
 
   /**
@@ -609,28 +858,40 @@ export class CancelReturnStockService {
   }
 
   /**
-   * Damaged-only allocation: the claim is settled (nothing will ever restock)
-   * but no stock movement is written. Clearing the managed flags and marking
-   * the physical reservation handled keeps the blanket restore path from
-   * resurrecting units that arrived damaged.
+   * Damaged-only allocation: settle ONLY the damaged share of the claim.
+   *
+   * The damaged units are settled (nothing will ever restock for them) but
+   * the rest of the line is NOT disarmed: the managed flags are cleared and
+   * the physical reservation is marked handled ONLY when this take
+   * completes the claim's cumulative settlement (claim.remaining reached
+   * 0 — the caller decrements before calling). A damaged-only PARTIAL
+   * therefore frees only the damaged units' hold counters and leaves the
+   * good remainder fully armed for a later arrival — previously the whole
+   * line was disarmed regardless of quantity, so the good remainder could
+   * never restore (inventory audit 2026-11-02, item 4).
    */
   private async disarmClaim(
     tx: Prisma.TransactionClient,
-    claim:
-      | { kind: 'line'; line: any; product: any; remaining: number }
-      | { kind: 'snap'; line: any; snap: any; product: any; remaining: number },
+    claim: {
+      kind: 'line' | 'snap';
+      line: any;
+      snap?: any;
+      product: any;
+      remaining: number;
+      settledGood: number;
+      settledTotal: number;
+    },
+    damagedQty: number,
+    reference: string,
+    performedBy?: string,
   ): Promise<void> {
-    if (claim.kind === 'line') {
-      await tx.orderItem.update({
-        where: { id: claim.line.id },
-        data: { managedStockDeducted: false, managedStockReserved: false },
-      });
-    } else {
-      await tx.orderItemComboComponent.update({
-        where: { id: claim.snap.id },
-        data: { managedStockDeducted: false, managedStockReserved: false },
-      });
+    if (damagedQty > 0) {
+      await this.settleDamagedShareOfClaim(tx, claim, damagedQty, reference, performedBy);
     }
+    if (claim.remaining > 0) return; // good remainder still armed — nothing else to do
+
+    // The claim is now FULLY settled (this damaged take was the last share).
+    await this.clearClaimManagedFlags(tx, claim);
     const cycle = await tx.orderStockCycle.findFirst({
       where: { orderId: claim.line.orderId, status: 'ACTIVE' },
     });
@@ -662,6 +923,118 @@ export class CancelReturnStockService {
     }
   }
 
+  /** Clear a claim's managed flags (line or combo snapshot). */
+  private async clearClaimManagedFlags(
+    tx: Prisma.TransactionClient,
+    claim: { kind: 'line' | 'snap'; line: any; snap?: any },
+  ): Promise<void> {
+    if (claim.kind === 'line') {
+      await tx.orderItem.update({
+        where: { id: claim.line.id },
+        data: { managedStockDeducted: false, managedStockReserved: false },
+      });
+    } else {
+      await tx.orderItemComboComponent.update({
+        where: { id: claim.snap.id },
+        data: { managedStockDeducted: false, managedStockReserved: false },
+      });
+    }
+  }
+
+  /**
+   * Settle the counters for a DAMAGED share of a claim: the units never
+   * restock, so on-hand never moves — but the hold this share carries
+   * (Return-Pending re-reserve / original reservation counter, managed and
+   * physical) must be freed or it leaks availability forever. Flags and
+   * reservation status are NOT touched here; the caller disarms those only
+   * on full cumulative settlement.
+   */
+  private async settleDamagedShareOfClaim(
+    tx: Prisma.TransactionClient,
+    claim: {
+      kind: 'line' | 'snap';
+      line: any;
+      snap?: any;
+      product: any;
+    },
+    damagedQty: number,
+    reference: string,
+    performedBy?: string,
+  ): Promise<void> {
+    const product = claim.product;
+    const holder = claim.kind === 'line' ? claim.line : claim.snap;
+    if (!product || !holder) return;
+    const productId = (claim.kind === 'line'
+      ? claim.line.productId
+      : claim.snap.productId) as string;
+    const variantId = ((claim.kind === 'line'
+      ? claim.line.variantId
+      : claim.snap.variantId) ?? undefined) as string | undefined;
+
+    // Managed counters for the damaged share.
+    if (product.availabilityMode === 'MANAGED_STOCK' && product.manageStock) {
+      if (holder.managedStockDeducted) {
+        await this.releaseHeldReservation(
+          tx, productId, variantId, damagedQty, reference, performedBy,
+        );
+      } else if (holder.managedStockReserved) {
+        await this.stockService.operate('release', {
+          productId,
+          variantId,
+          quantity: damagedQty,
+          reference,
+          performedBy: performedBy || 'system',
+          tx,
+          ledgerType: 'CANCEL_RELEASE',
+        });
+      }
+    } else if (holder.managedStockDeducted || holder.managedStockReserved) {
+      // Q6: product left MANAGED_STOCK — settle the managed claim's counters
+      // for the damaged share only (no flags: the claim may still be open).
+      await this.settleManagedClaimWithoutRestore(
+        tx, claim.kind, holder, damagedQty, reference, performedBy, false,
+      );
+    }
+
+    // Physical counters for the damaged share: free the held counter across
+    // the reservation's allocations (guarded, budget-capped). On-hand never
+    // moves — damaged units are never put back on the shelf.
+    const cycle = await tx.orderStockCycle.findFirst({
+      where: { orderId: claim.line.orderId, status: 'ACTIVE' },
+    });
+    if (!cycle) return;
+    const reservation =
+      claim.kind === 'line'
+        ? await tx.physicalReservation.findUnique({
+            where: {
+              orderItemId_cycleId: { orderItemId: claim.line.id, cycleId: cycle.id },
+            },
+            include: { allocations: true },
+          })
+        : await tx.comboComponentPhysicalReservation.findUnique({
+            where: {
+              componentId_cycleId: { componentId: claim.snap.id, cycleId: cycle.id },
+            },
+            include: { allocations: true },
+          });
+    if (!reservation) return;
+    if (!['ACTIVE', 'CONSUMED'].includes((reservation as any).status)) return;
+    let budget = damagedQty;
+    for (const alloc of (reservation as any).allocations ?? []) {
+      if (budget <= 0) break;
+      const take = Math.min((alloc as any).quantity, budget);
+      if (take <= 0) continue;
+      const res = await tx.physicalInventory.updateMany({
+        where: {
+          id: (alloc as any).physicalInventoryId,
+          reservedQuantity: { gte: take },
+        },
+        data: { reservedQuantity: { decrement: take } },
+      });
+      if ((res as any)?.count > 0) budget -= take;
+    }
+  }
+
   /**
    * Owner decision 2026-10-23 (Q6): the restore layer follows the product's
    * availability mode AT RESTORE TIME. Managed (virtual) stock is restored
@@ -681,22 +1054,34 @@ export class CancelReturnStockService {
     qty: number,
     reference: string,
     performedBy?: string,
+    disarm: boolean = true,
   ): Promise<void> {
     const productId = holder.productId as string;
     const variantId = (holder.variantId ?? undefined) as string | undefined;
-    if (holder.managedStockDeducted) {
-      await this.releaseHeldReservation(tx, productId, variantId, qty, reference, performedBy);
-    } else if (holder.managedStockReserved) {
-      await this.stockService.operate('release', {
-        productId,
-        variantId,
-        quantity: qty,
-        reference,
-        performedBy: performedBy || 'system',
-        tx,
-        ledgerType: 'CANCEL_RELEASE',
-      });
+    if (qty > 0) {
+      if (holder.managedStockDeducted) {
+        await this.releaseHeldReservation(tx, productId, variantId, qty, reference, performedBy);
+      } else if (holder.managedStockReserved) {
+        try {
+          await this.stockService.operate('release', {
+            productId,
+            variantId,
+            quantity: qty,
+            reference,
+            performedBy: performedBy || 'system',
+            tx,
+            ledgerType: 'CANCEL_RELEASE',
+          });
+        } catch (e) {
+          // Counter may already be settled (retry after a partial attempt):
+          // an already-free hold must not fail the restore.
+          this.logger.warn(
+            `settleManagedClaimWithoutRestore: release skipped (${productId}): ${(e as Error).message}`,
+          );
+        }
+      }
     }
+    if (!disarm) return;
     if (kind === 'line') {
       await tx.orderItem.update({
         where: { id: holder.id },
@@ -711,76 +1096,101 @@ export class CancelReturnStockService {
   }
 
   /**
-   * Restore + disarm ONE allocated claim (see restoreForReturnItems).
-   * Managed: exact-qty `add` when deducted (plus a capped release of the
-   * Return-Pending hold), capped `release` when reserved-only; flags cleared
-   * so a later blanket restore skips this claim. Physical: exact-qty on-hand
-   * restore for CONSUMED reservations (capped `release` of the held counter
-   * for ACTIVE ones); the reservation is marked handled so the blanket path
-   * — which skips non-ACTIVE/CONSUMED reservations — can never re-restore.
+   * Restore + (on FULL cumulative settlement) disarm ONE allocated claim
+   * (see restoreForReturnItems). Managed: exact-qty `add` when deducted
+   * (plus a capped release of the Return-Pending hold), capped `release`
+   * when reserved-only. Physical: exact-qty on-hand restore for CONSUMED
+   * reservations (capped `release` of the held counter for ACTIVE ones).
+   *
+   * The claim is disarmed (managed flags cleared, reservation marked
+   * handled) ONLY when this take completes the claim's cumulative
+   * settlement (claim.remaining reached 0 after the caller's decrement) —
+   * a partial take restores its units and leaves the claim armed so the
+   * next partial return against the same line restores the remainder.
+   *
+   * Returns the physical shortfall: good units of this take that the
+   * physical layer could not put back (no reservation, or its allocations
+   * cover fewer units). Managed-layer restores are exact by construction.
    */
   private async restoreReturnClaim(
     tx: Prisma.TransactionClient,
-    claim:
-      | { kind: 'line'; line: any; product: any; remaining: number }
-      | { kind: 'snap'; line: any; snap: any; product: any; remaining: number },
+    claim: {
+      kind: 'line' | 'snap';
+      line: any;
+      snap?: any;
+      product: any;
+      remaining: number;
+      settledGood: number;
+      settledTotal: number;
+      appliedManaged: number;
+      appliedPhysical: number;
+    },
     qty: number,
+    damagedTake: number,
     cycleId: string | null,
     imEnabled: boolean,
     reference: string,
     performedBy?: string,
-  ): Promise<void> {
-    if (qty <= 0) return;
+  ): Promise<{ physicalShortfall: number }> {
+    if (qty <= 0) return { physicalShortfall: 0 };
     const product = claim.product;
     const holder = claim.kind === 'line' ? claim.line : claim.snap;
     const productId = (claim.kind === 'line' ? claim.line.productId : claim.snap.productId) as string;
     const variantId = (claim.kind === 'line' ? claim.line.variantId : claim.snap.variantId) ?? undefined;
-    if (!product) return;
+    if (!product) return { physicalShortfall: 0 };
+    const finalSettle = claim.remaining <= 0;
+
+    // The damaged share of THIS take settles its counters only (never
+    // restocks, never disarms on its own).
+    if (damagedTake > 0) {
+      await this.settleDamagedShareOfClaim(tx, claim, damagedTake, reference, performedBy);
+    }
 
     // A. Managed engine (exact-qty direct adds — RTN-path semantics).
+    // On a retry of THIS return, units whose managed add already committed
+    // in the interrupted attempt (claim.appliedManaged) are skipped.
+    const managedQty = Math.max(0, qty - claim.appliedManaged);
+    claim.appliedManaged = Math.max(0, claim.appliedManaged - qty);
     if (product.availabilityMode === 'MANAGED_STOCK' && product.manageStock) {
       if (holder.managedStockDeducted) {
-        await this.stockService.operate('add', {
-          productId,
-          variantId,
-          quantity: qty,
-          reference,
-          performedBy: performedBy || 'system',
-          tx,
-          ledgerType: 'RETURN',
-          referenceType: 'RETURN',
-        });
-        // Capped release of the Return-Pending hold (remainder stays held).
-        await this.releaseHeldReservation(tx, productId, variantId, qty, reference, performedBy);
+        if (managedQty > 0) {
+          await this.stockService.operate('add', {
+            productId,
+            variantId,
+            quantity: managedQty,
+            reference,
+            performedBy: performedBy || 'system',
+            tx,
+            ledgerType: 'RETURN',
+            referenceType: 'RETURN',
+          });
+          // Capped release of the Return-Pending hold (remainder stays held).
+          await this.releaseHeldReservation(tx, productId, variantId, managedQty, reference, performedBy);
+        }
       } else if (holder.managedStockReserved) {
-        await this.stockService.operate('release', {
-          productId,
-          variantId,
-          quantity: qty,
-          reference,
-          performedBy: performedBy || 'system',
-          tx,
-          ledgerType: 'CANCEL_RELEASE',
-        });
+        if (managedQty > 0) {
+          await this.stockService.operate('release', {
+            productId,
+            variantId,
+            quantity: managedQty,
+            reference,
+            performedBy: performedBy || 'system',
+            tx,
+            ledgerType: 'CANCEL_RELEASE',
+          });
+        }
       }
-      // Disarm: this claim is settled — the blanket path must skip it.
-      if (claim.kind === 'line') {
-        await tx.orderItem.update({
-          where: { id: claim.line.id },
-          data: { managedStockDeducted: false, managedStockReserved: false },
-        });
-      } else {
-        await tx.orderItemComboComponent.update({
-          where: { id: claim.snap.id },
-          data: { managedStockDeducted: false, managedStockReserved: false },
-        });
+      // Disarm only on FULL cumulative settlement of the claim.
+      if (finalSettle) {
+        await this.clearClaimManagedFlags(tx, claim);
       }
     } else if (holder.managedStockDeducted || holder.managedStockReserved) {
       // Q6 (owner 2026-10-23): the product has left MANAGED_STOCK since the
       // order was placed — restore goes to the physical layer only (section
       // B below); settle the managed claim without reviving virtual stock.
+      // Flags clear only when the claim is fully settled.
       await this.settleManagedClaimWithoutRestore(
-        tx, claim.kind, holder, qty, reference, performedBy,
+        tx, claim.kind, holder, qty, reference, performedBy, finalSettle,
       );
     }
 
@@ -793,6 +1203,7 @@ export class CancelReturnStockService {
     // RESTOCKED while no unit (and no ledger entry) ever came back
     // (staging RTN-261024-0002, 2026-10-24). restorePhysicalForReturnLine
     // already no-ops safely when no reservation exists.
+    let physicalShortfall = 0;
     if (cycleId) {
       const decision = this.stockRouter.resolve(
         product.availabilityMode,
@@ -801,28 +1212,64 @@ export class CancelReturnStockService {
         product.syncManagedStock ?? undefined,
       );
       if (decision.pi !== 'skip') {
-        if (claim.kind === 'line') {
-          await this.restorePhysicalForReturnLine(
-            tx, claim.line.id, null, cycleId, 'ORDER_ITEM',
-            product, variantId, qty, reference, performedBy,
+        const outcome = await this.restorePhysicalForReturnLine(
+          tx,
+          claim.kind === 'line' ? claim.line.id : claim.snap.id,
+          claim.kind === 'line' ? null : claim.snap.id,
+          cycleId,
+          claim.kind === 'line' ? 'ORDER_ITEM' : 'COMBO_COMPONENT',
+          product, variantId, qty, reference, performedBy,
+          {
+            // Units of this claim already physically settled by earlier
+            // returns + this return's own earlier attempt: the CONSUMED
+            // walk skips already-RESTORED good units (skipQty); the
+            // ACTIVE walk skips already-RELEASED settled shares, good and
+            // damaged alike (skipReleaseQty).
+            skipQty: claim.settledGood + claim.appliedPhysical,
+            skipReleaseQty: claim.settledTotal + claim.appliedPhysical,
+            finalSettle,
+          },
+        );
+        if (!outcome.found) {
+          // A live cycle routes this product to the physical layer, so a
+          // fulfilled line must have a reservation. Missing = the units
+          // cannot be put back — report, never silently "restore".
+          physicalShortfall = qty;
+          this.logger.warn(
+            `restoreReturnClaim: no physical reservation for ${claim.kind} ` +
+              `${claim.kind === 'line' ? claim.line.id : claim.snap.id} in cycle ${cycleId} — ` +
+              `${qty} unit(s) of ${productId} could not be restored to physical stock`,
           );
-        } else {
-          await this.restorePhysicalForReturnLine(
-            tx, claim.snap.id, claim.snap.id, cycleId, 'COMBO_COMPONENT',
-            product, variantId, qty, reference, performedBy,
-          );
+        } else if (outcome.consumed) {
+          physicalShortfall = Math.max(0, qty - outcome.restoredQty);
+          if (physicalShortfall > 0) {
+            this.logger.warn(
+              `restoreReturnClaim: physical allocations covered ${outcome.restoredQty}/${qty} ` +
+                `unit(s) of ${productId} — ${physicalShortfall} unit(s) could not be restored`,
+            );
+          }
         }
       }
     }
+    return { physicalShortfall };
   }
 
   /**
    * Physical half of restoreReturnClaim. CONSUMED → on-hand +qty across the
    * reservation's allocations (capped walk, never past each alloc), guarded
    * held-counter release, RESTORATION ledger, costing capped at qty, then
-   * RESTORED (disarm). ACTIVE → capped guarded counter release only (stock
-   * never left on-hand, so nothing to add back), RELEASED only on full
-   * coverage of the reservation.
+   * RESTORED (disarm) — but ONLY when the claim is fully settled
+   * (opts.finalSettle): a partial walk leaves the reservation CONSUMED so
+   * the next partial return resumes it. ACTIVE → capped guarded counter
+   * release only (stock never left on-hand, so nothing to add back),
+   * RELEASED only on full settlement.
+   *
+   * opts.skipQty = units of this reservation already physically restored
+   * by earlier settlements of the same claim; the walk skips that prefix
+   * of the allocations so cumulative partial restores never double-add.
+   *
+   * Returns what actually happened so the caller can report shortfalls
+   * instead of claiming a restore that never moved.
    */
   private async restorePhysicalForReturnLine(
     tx: Prisma.TransactionClient,
@@ -835,7 +1282,8 @@ export class CancelReturnStockService {
     qty: number,
     reference: string,
     performedBy?: string,
-  ): Promise<void> {
+    opts?: { skipQty?: number; skipReleaseQty?: number; finalSettle?: boolean },
+  ): Promise<{ found: boolean; consumed: boolean; restoredQty: number }> {
     const reservation = componentId
       ? await tx.comboComponentPhysicalReservation.findUnique({
           where: { componentId_cycleId: { componentId, cycleId } },
@@ -845,43 +1293,62 @@ export class CancelReturnStockService {
           where: { orderItemId_cycleId: { orderItemId: lookupId, cycleId } },
           include: { allocations: true },
         });
-    if (!reservation) return;
-    if ((reservation as any).status === 'RELEASED' || (reservation as any).status === 'RESTORED') return;
+    if (!reservation) return { found: false, consumed: false, restoredQty: 0 };
+    if ((reservation as any).status === 'RELEASED' || (reservation as any).status === 'RESTORED') {
+      // Already settled by another path — the units are accounted for.
+      return { found: true, consumed: false, restoredQty: qty };
+    }
 
     const markHandled = (status: 'RELEASED' | 'RESTORED') =>
       componentId
         ? tx.comboComponentPhysicalReservation.update({ where: { id: (reservation as any).id }, data: { status } })
         : tx.physicalReservation.update({ where: { id: (reservation as any).id }, data: { status } });
+    const finalSettle = opts?.finalSettle ?? false;
 
     if ((reservation as any).status === 'ACTIVE') {
-      // Stock never left on-hand — release the held counter (capped), no add.
+      // Stock never left on-hand — release the held counter (capped), no
+      // add. The walk uses a DECREMENTING remaining budget across
+      // allocations (previously every allocation re-used the full qty,
+      // over-releasing the counter) and skips the prefix already released
+      // by earlier settlements of this claim (opts.skipReleaseQty: settled
+      // good + damaged shares).
+      let skip = Math.max(0, opts?.skipReleaseQty ?? 0);
+      let remaining = qty;
       for (const alloc of (reservation as any).allocations ?? []) {
-        const take = Math.min((alloc as any).quantity, qty);
+        if (remaining <= 0) break;
+        const skipHere = Math.min((alloc as any).quantity, skip);
+        skip -= skipHere;
+        const capacity = (alloc as any).quantity - skipHere;
+        const take = Math.min(capacity, remaining);
         if (take <= 0) continue;
+        remaining -= take;
         await tx.physicalInventory.updateMany({
           where: { id: (alloc as any).physicalInventoryId, reservedQuantity: { gte: take } },
           data: { reservedQuantity: { decrement: take } },
         });
       }
-      const total = ((reservation as any).allocations ?? []).reduce(
-        (s: number, a: any) => s + (a.quantity ?? 0), 0,
-      );
-      if (qty >= total) await markHandled('RELEASED');
-      return;
+      if (finalSettle) await markHandled('RELEASED');
+      return { found: true, consumed: false, restoredQty: qty - remaining };
     }
 
     if ((reservation as any).status === 'CONSUMED') {
+      let skip = Math.max(0, opts?.skipQty ?? 0);
       let remaining = qty;
+      let restoredQty = 0;
       for (const alloc of (reservation as any).allocations ?? []) {
         if (remaining <= 0) break;
-        const take = Math.min((alloc as any).quantity, remaining);
+        const skipHere = Math.min((alloc as any).quantity, skip);
+        skip -= skipHere;
+        const capacity = (alloc as any).quantity - skipHere;
+        const take = Math.min(capacity, remaining);
         if (take <= 0) continue;
         remaining -= take;
+        restoredQty += take;
         await tx.physicalInventory.update({
           where: { id: (alloc as any).physicalInventoryId },
           data: { quantity: { increment: take } },
         });
-        await tx.physicalInventory.updateMany({
+        const releaseRes = await tx.physicalInventory.updateMany({
           where: { id: (alloc as any).physicalInventoryId, reservedQuantity: { gte: take } },
           data: { reservedQuantity: { decrement: take } },
         });
@@ -889,6 +1356,14 @@ export class CancelReturnStockService {
           where: { id: (alloc as any).physicalInventoryId },
           select: { quantity: true, reservedQuantity: true },
         });
+        // REAL snapshots: the row was read AFTER the increment, so the
+        // pre-restore quantity is exactly (after − take). The reserved
+        // counter's before-value adds back the decrement only when the
+        // guarded decrement actually applied.
+        const stockAfter = pi?.quantity ?? take;
+        const reservedAfter = pi?.reservedQuantity ?? 0;
+        const reservedBefore =
+          reservedAfter + (((releaseRes as any)?.count ?? 0) > 0 ? take : 0);
         await tx.physicalInventoryLedger.create({
           data: {
             productId: (reservation as any).productId,
@@ -896,10 +1371,10 @@ export class CancelReturnStockService {
             warehouseId: (reservation as any).warehouseId,
             quantity: take,
             direction: 'IN',
-            stockBefore: pi?.quantity ?? take,
-            stockAfter: pi?.quantity ?? take,
-            reservedBefore: (pi?.reservedQuantity ?? 0) + take,
-            reservedAfter: pi?.reservedQuantity ?? 0,
+            stockBefore: stockAfter,
+            stockAfter,
+            reservedBefore,
+            reservedAfter,
             type: 'RELEASE',
             reason: reference,
             performedBy: performedBy,
@@ -912,8 +1387,10 @@ export class CancelReturnStockService {
             warehouseId: (reservation as any).warehouseId,
             quantity: take,
             direction: 'IN',
-            stockBefore: 0,
-            stockAfter: take,
+            stockBefore: stockAfter - take,
+            stockAfter,
+            reservedBefore,
+            reservedAfter,
             type: 'RESTORATION',
             reason: reference,
             performedBy: performedBy,
@@ -923,10 +1400,14 @@ export class CancelReturnStockService {
       await this.restoreCostingConsumption(
         tx, cycleId, referenceType, lookupId, qty, reference,
       );
-      // Disarm: the blanket path skips non-ACTIVE/CONSUMED reservations, so
-      // this claim can never re-restore; later arrivals use this same path.
-      await markHandled('RESTORED');
+      // Disarm ONLY on full cumulative settlement: the blanket path skips
+      // non-ACTIVE/CONSUMED reservations, so marking RESTORED early would
+      // strand the unrestored remainder forever (audit item 4).
+      if (finalSettle) await markHandled('RESTORED');
+      return { found: true, consumed: true, restoredQty };
     }
+
+    return { found: true, consumed: false, restoredQty: 0 };
   }
 
   /**
@@ -937,14 +1418,35 @@ export class CancelReturnStockService {
    * NOT be used here. This operation restores EXACTLY the RTN item
    * quantities — nothing from the original order, nothing extra.
    *
-   * Managed engine:  stockService.operate('add', RETURN)
-   * Physical engine: stockService.operatePhysical('add') — authoritative path
-   * Costing engine:  CostingLotRestoration rows scoped to the ORIGINAL order's
-   *                  FULFILLMENT consumptions (linked via sourceOrderItemId)
+   * Layer targeting follows the ORIGINAL order's claim evidence (audit
+   * 2026-11-02, item 7):
+   * - Managed leg: consults the ORIGINAL line's deducted/reserved flags
+   *   (the unified path's claim logic). It adds only when the managed
+   *   layer actually deducted; a product that has since moved INTO
+   *   MANAGED_STOCK (was inventory-controlled at order time) gets NO
+   *   phantom managed add — previously the unconditional add plus the
+   *   physical restore double-restored those units.
+   * - Physical leg: restores into the RESERVATION ALLOCATION warehouses
+   *   of the original line (like the unified path), not
+   *   `sourceWarehouseId ?? product.warehouseId`. It adds only when the
+   *   physical layer actually deducted (CONSUMED reservation, or a
+   *   FULFILLMENT consumption proving deduction); an ACTIVE reservation
+   *   releases its hold instead. Router-SKIP modes (ALWAYS_*) legitimately
+   *   require no leg.
    *
-   * Idempotent AND durable: Order.stockRestored is checked at entry and set
-   * inside the SAME transaction as the stock movement, so repeated calls
-   * (scanner retries, webhook + scanner races) can never restore twice.
+   * HONEST RESULT (audit item 7): Order.stockRestored is set ONLY when
+   * every required leg ran or was legitimately not required. A required
+   * leg that cannot run (no warehouse resolvable, reservation missing
+   * while consumptions prove deduction, allocations short) returns
+   * `{ restored: false, reason }` and stockRestored stays false — the
+   * caller (RtnService) fails the finalize so the caller's transaction
+   * rolls back and the finalize can be retried after the data is fixed.
+   *
+   * Idempotent AND durable: Order.stockRestored is checked at entry and
+   * set inside the SAME transaction as the stock movement, so repeated
+   * calls (scanner retries, webhook + scanner races) can never restore
+   * twice. An already-restored RTN reports `{ restored: false,
+   * alreadyRestored: true }`.
    */
   async restoreForReturnOrder(params: {
     rtnOrderId: string;
@@ -952,7 +1454,11 @@ export class CancelReturnStockService {
     tx: Prisma.TransactionClient;
     /** productKey → damaged units (never restocked); quantity is capped per line. */
     damageByKey?: Map<string, number>;
-  }): Promise<{ restored: boolean }> {
+  }): Promise<{
+    restored: boolean;
+    alreadyRestored?: boolean;
+    reason?: string;
+  }> {
     const { rtnOrderId, performedBy, tx, damageByKey } = params;
 
     const rtn = await tx.order.findUnique({
@@ -979,13 +1485,51 @@ export class CancelReturnStockService {
     if (!rtn || rtn.kind !== 'RETURN') {
       throw new BadRequestException('Return order not found');
     }
-    if (rtn.stockRestored) return { restored: false };
+    if (rtn.stockRestored) return { restored: false, alreadyRestored: true };
 
     const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
     const reference = `RTN RESTORE: ${rtn.displayId}`;
 
+    // The ORIGINAL order's stock cycle — reservations and consumptions for
+    // the returned lines live there (ACTIVE first, else the earliest).
+    const original = rtn.returnOfOrderId
+      ? await tx.order.findUnique({ where: { id: rtn.returnOfOrderId } })
+      : null;
+    const cycle = original
+      ? ((await tx.orderStockCycle.findFirst({
+          where: { orderId: original.id, status: 'ACTIVE' },
+        })) ??
+        (await tx.orderStockCycle.findFirst({
+          where: { orderId: original.id },
+          orderBy: { createdAt: 'asc' },
+        })))
+      : null;
+    const cycleId = cycle?.id ?? null;
+
+    const failures: string[] = [];
+
     for (const item of rtn.items) {
       if (!item.productId && !item.comboId) continue;
+
+      // Claim evidence from the ORIGINAL line the RTN item was split from.
+      // A fully-returned line was DELETED by the split (its deducted claim
+      // was deliberately left for this restore — see
+      // RtnService.releaseHoldsForRemovedLine), so a missing line means
+      // the units had been deducted.
+      const origLine = item.sourceOrderItemId
+        ? await tx.orderItem.findUnique({
+            where: { id: item.sourceOrderItemId },
+          })
+        : null;
+      const lineClaim = {
+        deducted: origLine ? !!(origLine as any).managedStockDeducted : true,
+        reserved: origLine ? !!(origLine as any).managedStockReserved : false,
+      };
+      const origSnaps = item.sourceOrderItemId
+        ? await tx.orderItemComboComponent.findMany({
+            where: { orderItemId: item.sourceOrderItemId },
+          })
+        : [];
 
       if (item.comboId) {
         const snapshots = await tx.orderItemComboComponent.findMany({
@@ -999,6 +1543,17 @@ export class CancelReturnStockService {
           );
           const good = snap.totalQuantity - damaged;
           if (good <= 0) continue;
+          const origSnap = (origSnaps as any[]).find(
+            (s) =>
+              s.productId === snap.productId &&
+              (s.variantId ?? null) === (snap.variantId ?? null),
+          );
+          const snapClaim = origSnap
+            ? {
+                deducted: !!origSnap.managedStockDeducted,
+                reserved: !!origSnap.managedStockReserved,
+              }
+            : lineClaim;
           await this.restoreManagedStock(
             tx,
             snap.product,
@@ -1006,8 +1561,9 @@ export class CancelReturnStockService {
             good,
             reference,
             performedBy,
+            snapClaim,
           );
-          await this.restorePhysicalStock(
+          const leg = await this.restorePhysicalStock(
             tx,
             snap.product,
             snap.variantId ?? undefined,
@@ -1016,7 +1572,18 @@ export class CancelReturnStockService {
             imEnabled,
             reference,
             performedBy,
+            {
+              cycleId,
+              referenceType: 'COMBO_COMPONENT',
+              referenceId: origSnap?.id ?? null,
+              claim: snapClaim,
+            },
           );
+          if (leg.outcome === 'failed') {
+            failures.push(
+              `${snap.product?.name ?? snap.productId}: ${leg.reason}`,
+            );
+          }
         }
         continue;
       }
@@ -1035,8 +1602,9 @@ export class CancelReturnStockService {
         good,
         reference,
         performedBy,
+        lineClaim,
       );
-      await this.restorePhysicalStock(
+      const leg = await this.restorePhysicalStock(
         tx,
         item.product,
         item.variantId ?? undefined,
@@ -1045,21 +1613,31 @@ export class CancelReturnStockService {
         imEnabled,
         reference,
         performedBy,
+        {
+          cycleId,
+          referenceType: 'ORDER_ITEM',
+          referenceId: item.sourceOrderItemId ?? null,
+          claim: lineClaim,
+        },
       );
+      if (leg.outcome === 'failed') {
+        failures.push(`${item.product?.name ?? item.productId}: ${leg.reason}`);
+      }
     }
 
     // Costing-lot restoration scoped to the original order's consumptions.
-    const original = rtn.returnOfOrderId
-      ? await tx.order.findUnique({ where: { id: rtn.returnOfOrderId } })
-      : null;
-    if (original) {
-      const cycle = await tx.orderStockCycle.findFirst({
-        where: { orderId: original.id },
-        orderBy: { createdAt: 'asc' },
-      });
-      if (cycle) {
-        await this.restoreCostingLotsForRtn(tx, rtn, cycle.id, performedBy, damageByKey);
-      }
+    if (original && cycleId) {
+      await this.restoreCostingLotsForRtn(tx, rtn, cycleId, performedBy, damageByKey);
+    }
+
+    if (failures.length > 0) {
+      // Do NOT set stockRestored: at least one required leg could not run.
+      // The caller fails the finalize, rolling the whole transaction back
+      // so nothing is half-restored and the finalize stays retryable.
+      this.logger.warn(
+        `RTN ${rtn.displayId}: stock restore incomplete — ${failures.join('; ')}`,
+      );
+      return { restored: false, reason: failures.join('; ') };
     }
 
     // Durable idempotency flag — set in the same transaction as the movement.
@@ -1072,8 +1650,15 @@ export class CancelReturnStockService {
   }
 
   /**
-   * Managed-engine restore for an RTN quantity. Uses the authoritative
-   * StockService.operate path (ledger type RETURN, reference type RETURN).
+   * Managed-engine restore for an RTN quantity — claim-aware (audit item
+   * 7): the authoritative StockService.operate path runs ONLY for the
+   * layer the original line's flags prove engaged:
+   * - deducted → `add` (ledger type RETURN, reference type RETURN);
+   * - reserved-only → `release` of the hold share (on-hand never moved);
+   * - neither → NO movement (the layer never engaged for these units —
+   *   adding here is what double-restored IC→MANAGED_STOCK mode changes).
+   * When the product has since LEFT MANAGED_STOCK, the managed claim is
+   * settled via its counters only (Q6), never an add.
    */
   private async restoreManagedStock(
     tx: Prisma.TransactionClient,
@@ -1082,26 +1667,68 @@ export class CancelReturnStockService {
     quantity: number,
     reference: string,
     performedBy?: string,
+    claim: { deducted: boolean; reserved: boolean } = { deducted: true, reserved: false },
   ) {
     if (!product) return;
-    if (product.availabilityMode !== 'MANAGED_STOCK' || !product.manageStock)
+    if (product.availabilityMode !== 'MANAGED_STOCK' || !product.manageStock) {
+      // Q6 settle: free the managed hold this claim carries, no add.
+      if (claim.deducted) {
+        await this.releaseHeldReservation(
+          tx, product.id, variantId, quantity, reference, performedBy,
+        );
+      } else if (claim.reserved) {
+        try {
+          await this.stockService.operate('release', {
+            productId: product.id,
+            variantId,
+            quantity,
+            reference,
+            performedBy: performedBy || 'system',
+            tx,
+            ledgerType: 'CANCEL_RELEASE',
+          });
+        } catch (e) {
+          this.logger.warn(
+            `RTN managed claim settle skipped (${product.id}): ${(e as Error).message}`,
+          );
+        }
+      }
       return;
-    await this.stockService.operate('add', {
-      productId: product.id,
-      variantId,
-      quantity,
-      reference,
-      ledgerType: 'RETURN',
-      referenceType: 'RETURN',
-      performedBy: performedBy || 'system',
-      tx,
-    });
+    }
+    if (claim.deducted) {
+      await this.stockService.operate('add', {
+        productId: product.id,
+        variantId,
+        quantity,
+        reference,
+        ledgerType: 'RETURN',
+        referenceType: 'RETURN',
+        performedBy: performedBy || 'system',
+        tx,
+      });
+    } else if (claim.reserved) {
+      await this.stockService.operate('release', {
+        productId: product.id,
+        variantId,
+        quantity,
+        reference,
+        ledgerType: 'CANCEL_RELEASE',
+        referenceType: 'ORDER',
+        performedBy: performedBy || 'system',
+        tx,
+      });
+    }
+    // Neither flag: the managed layer never engaged for these units.
   }
 
   /**
-   * Physical-engine restore for an RTN quantity. Uses the authoritative
-   * operatePhysical path (finds/creates the warehouse-level PI row). Guarded
-   * by the same router decision the forward flow uses.
+   * Physical-engine restore for an RTN quantity — reservation-aware
+   * (audit item 7). Targets the ORIGINAL line's reservation allocations
+   * (their warehouses), falling back to `sourceWarehouseId ??
+   * product.warehouseId` ONLY for legacy orders with no stock cycle at
+   * all. Reports whether the leg ran, was legitimately not required
+   * (router SKIP / layer never deducted), or FAILED (required but could
+   * not run) so the caller can keep stockRestored honest.
    */
   private async restorePhysicalStock(
     tx: Prisma.TransactionClient,
@@ -1112,17 +1739,140 @@ export class CancelReturnStockService {
     imEnabled: boolean,
     reference: string,
     performedBy?: string,
-  ) {
-    if (!product) return;
+    ctx?: {
+      cycleId: string | null;
+      referenceType: 'ORDER_ITEM' | 'COMBO_COMPONENT';
+      referenceId: string | null;
+      claim: { deducted: boolean; reserved: boolean };
+    },
+  ): Promise<{ outcome: 'ok' | 'not-required' | 'failed'; reason?: string }> {
+    if (!product) return { outcome: 'not-required' };
     const decision = this.stockRouter.resolve(
       product.availabilityMode,
       'add',
       imEnabled,
       product.syncManagedStock ?? undefined,
     );
-    if (decision.pi === 'skip') return;
+    if (decision.pi === 'skip') return { outcome: 'not-required' };
+
+    const cycleId = ctx?.cycleId ?? null;
+    const referenceId = ctx?.referenceId ?? null;
+
+    if (cycleId && referenceId) {
+      const reservation =
+        ctx!.referenceType === 'COMBO_COMPONENT'
+          ? await tx.comboComponentPhysicalReservation.findUnique({
+              where: { componentId_cycleId: { componentId: referenceId, cycleId } },
+              include: { allocations: true },
+            })
+          : await tx.physicalReservation.findUnique({
+              where: { orderItemId_cycleId: { orderItemId: referenceId, cycleId } },
+              include: { allocations: true },
+            });
+      if (reservation) {
+        const status = (reservation as any).status as string;
+        if (status === 'RESTORED' || status === 'RELEASED') {
+          // Another path already settled the physical claim.
+          return { outcome: 'ok' };
+        }
+        const allocations = ((reservation as any).allocations ?? []) as any[];
+        if (status === 'ACTIVE') {
+          // Never deducted physically — free the hold share, never add.
+          let budget = quantity;
+          for (const alloc of allocations) {
+            if (budget <= 0) break;
+            const take = Math.min(alloc.quantity, budget);
+            if (take <= 0) continue;
+            const res = await tx.physicalInventory.updateMany({
+              where: {
+                id: alloc.physicalInventoryId,
+                reservedQuantity: { gte: take },
+              },
+              data: { reservedQuantity: { decrement: take } },
+            });
+            if ((res as any)?.count > 0) budget -= take;
+          }
+          return { outcome: 'ok' };
+        }
+        // CONSUMED: restore into the allocation warehouses (the exact
+        // warehouses the units left from), split across allocations.
+        const piIds = allocations.map((a) => a.physicalInventoryId);
+        const piRows = piIds.length
+          ? await tx.physicalInventory.findMany({
+              where: { id: { in: piIds } },
+              select: { id: true, warehouseId: true },
+            })
+          : [];
+        const warehouseByPi = new Map<string, string>(
+          (piRows as any[]).map((r) => [r.id, r.warehouseId]),
+        );
+        let remaining = quantity;
+        for (const alloc of allocations) {
+          if (remaining <= 0) break;
+          const take = Math.min(alloc.quantity, remaining);
+          if (take <= 0) continue;
+          remaining -= take;
+          await this.stockService.operatePhysical('add', {
+            productId: product.id,
+            variantId,
+            warehouseId:
+              warehouseByPi.get(alloc.physicalInventoryId) ??
+              (reservation as any).warehouseId,
+            quantity: take,
+            reference,
+            ledgerType: 'RESTORATION',
+            referenceType: 'RETURN',
+            performedBy: performedBy || 'system',
+            tx,
+          });
+        }
+        if (remaining > 0) {
+          return {
+            outcome: 'failed',
+            reason:
+              `physical allocations cover ${quantity - remaining}/${quantity} unit(s); ` +
+              `${remaining} unit(s) have no allocation to restore into`,
+          };
+        }
+        return { outcome: 'ok' };
+      }
+
+      // No reservation: did the physical layer deduct at all? A FULFILLMENT
+      // consumption for this line proves it did — restoring blind would
+      // fabricate stock, so the leg fails honestly. No consumption → the
+      // layer never engaged → not required.
+      const consumption = await tx.costingLotConsumption.findFirst({
+        where: {
+          cycleId,
+          referenceType: ctx!.referenceType,
+          referenceId,
+          type: 'FULFILLMENT',
+        },
+        select: { id: true },
+      });
+      if (consumption) {
+        return {
+          outcome: 'failed',
+          reason:
+            'physical stock was deducted (costing consumption exists) but the ' +
+            'physical reservation is missing — cannot restore without it',
+        };
+      }
+      return { outcome: 'not-required' };
+    }
+
+    // Legacy path: the original order has no stock cycle (or the RTN item
+    // is not linked to an original line), so no reservation evidence can
+    // exist. Restore only when the claim shows the units were deducted,
+    // into the line's source warehouse / product default.
+    if (!ctx?.claim?.deducted) return { outcome: 'not-required' };
     const warehouseId = sourceWarehouseId ?? product.warehouseId;
-    if (!warehouseId) return;
+    if (!warehouseId) {
+      return {
+        outcome: 'failed',
+        reason: 'no warehouse resolvable for the physical restore',
+      };
+    }
     await this.stockService.operatePhysical('add', {
       productId: product.id,
       variantId,
@@ -1134,6 +1884,7 @@ export class CancelReturnStockService {
       performedBy: performedBy || 'system',
       tx,
     });
+    return { outcome: 'ok' };
   }
 
   /**
@@ -1255,6 +2006,11 @@ export class CancelReturnStockService {
     imEnabled: boolean,
     reference: string,
     performedBy?: string,
+    takeSettled?: (
+      productId: string,
+      variantId: string | null | undefined,
+      claimQty: number,
+    ) => { good: number; total: number },
   ): Promise<void> {
     // Attempt snapshot-based restore
     const snapshots = await tx.orderItemComboComponent.findMany({
@@ -1279,17 +2035,28 @@ export class CancelReturnStockService {
 
     for (const snap of snapshots) {
       const compProduct = snap.product;
+      // Units of this snapshot already settled by item-level Returns.
+      const settled = takeSettled
+        ? takeSettled(snap.productId, snap.variantId, snap.totalQuantity)
+        : { good: 0, total: 0 };
+      const effectiveQty = Math.max(0, snap.totalQuantity - settled.total);
 
       // A. Managed Engine
       if (
         compProduct.availabilityMode === 'MANAGED_STOCK' &&
         compProduct.manageStock
       ) {
-        if (snap.managedStockDeducted) {
+        if (effectiveQty <= 0) {
+          // Fully settled by item-level returns — disarm only.
+          await tx.orderItemComboComponent.update({
+            where: { id: snap.id },
+            data: { managedStockDeducted: false, managedStockReserved: false },
+          });
+        } else if (snap.managedStockDeducted) {
           await this.stockService.operate('add', {
             productId: snap.productId,
             variantId: snap.variantId ?? undefined,
-            quantity: snap.totalQuantity,
+            quantity: effectiveQty,
             reference,
             performedBy: performedBy || 'system',
             tx,
@@ -1300,7 +2067,7 @@ export class CancelReturnStockService {
             tx,
             snap.productId,
             snap.variantId ?? undefined,
-            snap.totalQuantity,
+            effectiveQty,
             reference,
             performedBy,
           );
@@ -1312,7 +2079,7 @@ export class CancelReturnStockService {
           await this.stockService.operate('release', {
             productId: snap.productId,
             variantId: snap.variantId ?? undefined,
-            quantity: snap.totalQuantity,
+            quantity: effectiveQty,
             reference,
             performedBy: performedBy || 'system',
             tx,
@@ -1326,7 +2093,7 @@ export class CancelReturnStockService {
       } else if (snap.managedStockDeducted || snap.managedStockReserved) {
         // Q6 (owner 2026-10-23): product left MANAGED_STOCK — physical only.
         await this.settleManagedClaimWithoutRestore(
-          tx, 'snap', snap, snap.totalQuantity, reference, performedBy,
+          tx, 'snap', snap, effectiveQty, reference, performedBy,
         );
       }
 
@@ -1346,6 +2113,11 @@ export class CancelReturnStockService {
             'COMBO_COMPONENT',
             reference,
             performedBy,
+            {
+              skipQty: settled.good,
+              skipReleaseQty: settled.total,
+              maxQty: effectiveQty,
+            },
           );
         }
       }
@@ -1363,6 +2135,7 @@ export class CancelReturnStockService {
     imEnabled: boolean,
     reference: string,
     performedBy?: string,
+    settled: { good: number; total: number } = { good: 0, total: 0 },
   ): Promise<void> {
     const product = item.product;
     if (!product) return;
@@ -1370,14 +2143,25 @@ export class CancelReturnStockService {
     const referencePrefix = reference.startsWith('cancel')
       ? 'cancel'
       : 'return';
+    // Units already settled by item-level Returns never restore twice;
+    // this blanket pass settles only the remainder.
+    const effectiveQty = Math.max(0, item.quantity - settled.total);
 
     // A. Managed Engine
     if (product.availabilityMode === 'MANAGED_STOCK' && product.manageStock) {
-      if (item.managedStockDeducted) {
+      if (effectiveQty <= 0) {
+        // Fully settled by item-level returns — disarm only.
+        if (item.managedStockDeducted || item.managedStockReserved) {
+          await tx.orderItem.update({
+            where: { id: item.id },
+            data: { managedStockDeducted: false, managedStockReserved: false },
+          });
+        }
+      } else if (item.managedStockDeducted) {
         await this.stockService.operate('add', {
           productId: item.productId,
           variantId: item.variantId ?? undefined,
-          quantity: item.quantity,
+          quantity: effectiveQty,
           reference,
           performedBy: performedBy || 'system',
           tx,
@@ -1388,7 +2172,7 @@ export class CancelReturnStockService {
           tx,
           item.productId,
           item.variantId ?? undefined,
-          item.quantity,
+          effectiveQty,
           reference,
           performedBy,
         );
@@ -1400,7 +2184,7 @@ export class CancelReturnStockService {
         await this.stockService.operate('release', {
           productId: item.productId,
           variantId: item.variantId ?? undefined,
-          quantity: item.quantity,
+          quantity: effectiveQty,
           reference,
           performedBy: performedBy || 'system',
           tx,
@@ -1414,7 +2198,7 @@ export class CancelReturnStockService {
     } else if (item.managedStockDeducted || item.managedStockReserved) {
       // Q6 (owner 2026-10-23): product left MANAGED_STOCK — physical only.
       await this.settleManagedClaimWithoutRestore(
-        tx, 'line', item, item.quantity, reference, performedBy,
+        tx, 'line', item, effectiveQty, reference, performedBy,
       );
     }
 
@@ -1434,6 +2218,11 @@ export class CancelReturnStockService {
           'ORDER_ITEM',
           reference,
           performedBy,
+          {
+            skipQty: settled.good,
+            skipReleaseQty: settled.total,
+            maxQty: effectiveQty,
+          },
         );
       }
     }
@@ -1484,6 +2273,7 @@ export class CancelReturnStockService {
     referenceType: string,
     reference: string,
     performedBy?: string,
+    opts?: { skipQty?: number; skipReleaseQty?: number; maxQty?: number },
   ): Promise<void> {
     const reservation = await tx.physicalReservation.findUnique({
       where: { orderItemId_cycleId: { orderItemId, cycleId } },
@@ -1495,11 +2285,21 @@ export class CancelReturnStockService {
       return;
 
     if (reservation.status === 'ACTIVE') {
-      // Release: decrement reservedQuantity, mark RELEASED
+      // Release: decrement reservedQuantity for the UNSETTLED remainder
+      // only (settled shares were already released by the item-level
+      // path), then mark RELEASED — this blanket pass is terminal.
+      let skip = Math.max(0, opts?.skipReleaseQty ?? 0);
+      let budget = Math.max(0, opts?.maxQty ?? Number.POSITIVE_INFINITY);
       for (const alloc of reservation.allocations) {
+        if (budget <= 0) break;
+        const skipHere = Math.min(alloc.quantity, skip);
+        skip -= skipHere;
+        const take = Math.min(alloc.quantity - skipHere, budget);
+        if (take <= 0) continue;
+        budget -= take;
         await tx.physicalInventory.update({
           where: { id: alloc.physicalInventoryId },
-          data: { reservedQuantity: { decrement: alloc.quantity } },
+          data: { reservedQuantity: { decrement: take } },
         });
       }
       await tx.physicalReservation.update({
@@ -1512,34 +2312,49 @@ export class CancelReturnStockService {
     if (reservation.status === 'CONSUMED') {
       // Restore: increment quantity AND release the counter that the
       // 'Return Pending' hold re-established (or that survived deduction).
-      // Guarded decrement keeps the invariant safe on re-runs.
+      // Guarded decrement keeps the invariant safe on re-runs. Units
+      // already restored by item-level Returns (skipQty) are skipped and
+      // at most maxQty further units restore — the settled remainder.
+      let skip = Math.max(0, opts?.skipQty ?? 0);
+      let budget = Math.max(0, opts?.maxQty ?? Number.POSITIVE_INFINITY);
       for (const alloc of reservation.allocations) {
+        if (budget <= 0) break;
+        const skipHere = Math.min(alloc.quantity, skip);
+        skip -= skipHere;
+        const take = Math.min(alloc.quantity - skipHere, budget);
+        if (take <= 0) continue;
+        budget -= take;
         await tx.physicalInventory.update({
           where: { id: alloc.physicalInventoryId },
-          data: { quantity: { increment: alloc.quantity } },
+          data: { quantity: { increment: take } },
         });
-        await tx.physicalInventory.updateMany({
+        const releaseRes = await tx.physicalInventory.updateMany({
           where: {
             id: alloc.physicalInventoryId,
-            reservedQuantity: { gte: alloc.quantity },
+            reservedQuantity: { gte: take },
           },
-          data: { reservedQuantity: { decrement: alloc.quantity } },
+          data: { reservedQuantity: { decrement: take } },
         });
         const pi = await tx.physicalInventory.findUnique({
           where: { id: alloc.physicalInventoryId },
           select: { quantity: true, reservedQuantity: true },
         });
+        // REAL snapshots (row read after the increment): before = after − take.
+        const stockAfter = pi?.quantity ?? take;
+        const reservedAfter = pi?.reservedQuantity ?? 0;
+        const reservedBefore =
+          reservedAfter + (((releaseRes as any)?.count ?? 0) > 0 ? take : 0);
         await tx.physicalInventoryLedger.create({
           data: {
             productId: reservation.productId,
             variantId: reservation.variantId ?? null,
             warehouseId: reservation.warehouseId,
-            quantity: alloc.quantity,
+            quantity: take,
             direction: 'IN',
-            stockBefore: pi?.quantity ?? alloc.quantity,
-            stockAfter: pi?.quantity ?? alloc.quantity,
-            reservedBefore: (pi?.reservedQuantity ?? 0) + alloc.quantity,
-            reservedAfter: pi?.reservedQuantity ?? 0,
+            stockBefore: stockAfter,
+            stockAfter,
+            reservedBefore,
+            reservedAfter,
             type: 'RELEASE',
             reason: reference,
             performedBy: performedBy,
@@ -1550,10 +2365,12 @@ export class CancelReturnStockService {
             productId: reservation.productId,
             variantId: reservation.variantId ?? null,
             warehouseId: reservation.warehouseId,
-            quantity: alloc.quantity,
+            quantity: take,
             direction: 'IN',
-            stockBefore: 0,
-            stockAfter: alloc.quantity,
+            stockBefore: stockAfter - take,
+            stockAfter,
+            reservedBefore,
+            reservedAfter,
             type: 'RESTORATION',
             reason: reference,
             performedBy: performedBy,
@@ -1587,6 +2404,7 @@ export class CancelReturnStockService {
     referenceType: string,
     reference: string,
     performedBy?: string,
+    opts?: { skipQty?: number; skipReleaseQty?: number; maxQty?: number },
   ): Promise<void> {
     const reservation = await tx.comboComponentPhysicalReservation.findUnique({
       where: { componentId_cycleId: { componentId, cycleId } },
@@ -1598,10 +2416,18 @@ export class CancelReturnStockService {
       return;
 
     if (reservation.status === 'ACTIVE') {
+      let skip = Math.max(0, opts?.skipReleaseQty ?? 0);
+      let budget = Math.max(0, opts?.maxQty ?? Number.POSITIVE_INFINITY);
       for (const alloc of reservation.allocations) {
+        if (budget <= 0) break;
+        const skipHere = Math.min(alloc.quantity, skip);
+        skip -= skipHere;
+        const take = Math.min(alloc.quantity - skipHere, budget);
+        if (take <= 0) continue;
+        budget -= take;
         await tx.physicalInventory.update({
           where: { id: alloc.physicalInventoryId },
-          data: { reservedQuantity: { decrement: alloc.quantity } },
+          data: { reservedQuantity: { decrement: take } },
         });
       }
       await tx.comboComponentPhysicalReservation.update({
@@ -1612,20 +2438,36 @@ export class CancelReturnStockService {
     }
 
     if (reservation.status === 'CONSUMED') {
+      let skip = Math.max(0, opts?.skipQty ?? 0);
+      let budget = Math.max(0, opts?.maxQty ?? Number.POSITIVE_INFINITY);
       for (const alloc of reservation.allocations) {
+        if (budget <= 0) break;
+        const skipHere = Math.min(alloc.quantity, skip);
+        skip -= skipHere;
+        const take = Math.min(alloc.quantity - skipHere, budget);
+        if (take <= 0) continue;
+        budget -= take;
         await tx.physicalInventory.update({
           where: { id: alloc.physicalInventoryId },
-          data: { quantity: { increment: alloc.quantity } },
+          data: { quantity: { increment: take } },
         });
+        const pi = await tx.physicalInventory.findUnique({
+          where: { id: alloc.physicalInventoryId },
+          select: { quantity: true, reservedQuantity: true },
+        });
+        // REAL snapshots (row read after the increment): before = after − take.
+        const stockAfter = pi?.quantity ?? take;
         await tx.physicalInventoryLedger.create({
           data: {
             productId: reservation.productId,
             variantId: reservation.variantId ?? null,
             warehouseId: reservation.warehouseId,
-            quantity: alloc.quantity,
+            quantity: take,
             direction: 'IN',
-            stockBefore: 0,
-            stockAfter: alloc.quantity,
+            stockBefore: stockAfter - take,
+            stockAfter,
+            reservedBefore: pi?.reservedQuantity ?? null,
+            reservedAfter: pi?.reservedQuantity ?? null,
             type: 'RESTORATION',
             reason: reference,
             performedBy: performedBy,
