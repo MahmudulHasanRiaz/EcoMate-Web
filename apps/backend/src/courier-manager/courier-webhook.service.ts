@@ -98,6 +98,11 @@ const PATHAO_DISPATCH_MAP: Record<string, string | null> = {
   'order.updated': null,
   'order.pickup-requested': null,
   'order.assigned-for-pickup': null,
+  // Owner ruling 2026-11-04: pickup-stage hold — parcel NOT picked up yet,
+  // still with the merchant; record-only like pickup-requested. (The
+  // Avelto incident came through sync, where the label "Pickup On Hold"
+  // fell into the /hold/ keyword fallback → HOLD → order Shipping.)
+  'order.pickup-on-hold': null,
   'order.picked': 'PICKED_UP',
   // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED workflow
   // state (record attempt + reason + alert); delivery-failed stays
@@ -152,6 +157,8 @@ const CARRYBEE_DISPATCH_MAP: Record<string, string | null> = {
   'order.updated': null,
   'order.pickup-requested': null,
   'order.assigned-for-pickup': null,
+  // Owner ruling 2026-11-04 (Pathao parity): pickup-stage hold, record-only.
+  'order.pickup-on-hold': null,
   'order.picked': 'PICKED_UP',
   // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED workflow
   // state (record attempt + reason + alert); delivery-failed stays

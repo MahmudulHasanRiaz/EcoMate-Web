@@ -42,6 +42,9 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(mapCourierStatusToDispatchStatus('pathao', 'order.assigned-for-delivery')).toBe('ASSIGNED_TO_RIDER');
     expect(mapCourierStatusToDispatchStatus('pathao', 'order.returned-to-merchant')).toBe('RETURN_PENDING');
     expect(mapCourierStatusToDispatchStatus('pathao', 'order.on-hold')).toBe('HOLD');
+    // Owner ruling 2026-11-04: pickup-stage hold is record-only.
+    expect(mapCourierStatusToDispatchStatus('pathao', 'order.pickup-on-hold')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('carrybee', 'order.pickup-on-hold')).toBeNull();
   });
 
   it('maps Pathao plain status labels (official /orders/{id}/info vocabulary) before keyword fallback', () => {
@@ -50,6 +53,16 @@ describe('mapCourierStatusToDispatchStatus', () => {
     expect(mapCourierStatusToDispatchStatus('pathao', 'assigned for delivery')).toBe('ASSIGNED_TO_RIDER');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Assigned For Pickup')).toBeNull();
     expect(mapCourierStatusToDispatchStatus('pathao', 'Pickup Requested')).toBeNull();
+    // Owner ruling 2026-11-04 (Avelto incident): "Pickup On Hold" means the
+    // courier has NOT picked the parcel up — it must never become HOLD
+    // (which derives order Shipping) or PICKED_UP. Record-only, every
+    // spelling, both Pathao-vocabulary couriers; delivery-stage "On Hold"
+    // above stays HOLD.
+    expect(mapCourierStatusToDispatchStatus('pathao', 'Pickup On Hold')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('pathao', 'pickup_on_hold')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('pathao', 'pickup-on-hold')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('carrybee', 'Pickup On Hold')).toBeNull();
+    expect(mapCourierStatusToDispatchStatus('steadfast', 'Pickup On Hold')).toBeNull();
     expect(mapCourierStatusToDispatchStatus('pathao', 'At the Sorting Hub')).toBe('IN_TRANSIT');
     expect(mapCourierStatusToDispatchStatus('pathao', 'In Transit')).toBe('IN_TRANSIT');
     expect(mapCourierStatusToDispatchStatus('pathao', 'Received at Last Mile Hub')).toBe('ASSIGNED_TO_HUB');
