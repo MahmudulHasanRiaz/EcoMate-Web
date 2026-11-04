@@ -63,4 +63,40 @@ describe('sitemap (P0-5)', () => {
       delete process.env.NEXT_PUBLIC_STOREFRONT_URL;
     }
   });
+
+  it('never leaks the internal API origin into image URLs (production API_URL=http://backend:4000)', async () => {
+    process.env.NEXT_PUBLIC_STOREFRONT_URL = 'https://shop.example.com.bd';
+    process.env.API_URL = 'http://backend:4000/api';
+    try {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: any) => {
+        const url = String(input);
+        const json = async () => {
+          if (url.includes('/products')) {
+            return {
+              data: [
+                { slug: 'rel-img', updatedAt: '2026-10-01T00:00:00.000Z', images: ['/uploads/rel.jpg'] },
+                { slug: 'abs-img', updatedAt: '2026-10-01T00:00:00.000Z', images: ['http://backend:4000/uploads/abs.jpg'] },
+              ],
+              meta: { hasMore: false, nextCursor: null },
+            };
+          }
+          return { data: [] };
+        };
+        return { json } as any;
+      });
+      const entries = await sitemap();
+      const rel = entries.find((e) => e.url.endsWith('/products/rel-img')) as any;
+      const abs = entries.find((e) => e.url.endsWith('/products/abs-img')) as any;
+      expect(rel?.images?.[0]).toBe('https://shop.example.com.bd/uploads/rel.jpg');
+      expect(abs?.images?.[0]).toBe('https://shop.example.com.bd/uploads/abs.jpg');
+      for (const e of entries) {
+        for (const img of (e as any).images ?? []) {
+          expect(img).not.toContain('backend');
+        }
+      }
+    } finally {
+      delete process.env.NEXT_PUBLIC_STOREFRONT_URL;
+      delete process.env.API_URL;
+    }
+  });
 });
