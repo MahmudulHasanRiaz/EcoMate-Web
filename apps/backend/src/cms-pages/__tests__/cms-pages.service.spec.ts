@@ -111,6 +111,34 @@ describe('CmsPagesService', () => {
       expect(page.content).toContain('src="/uploads/banner.jpg"');
     });
 
+    it('attaches derivative manifests for structured config image fields (public path)', async () => {
+      const page = {
+        id: 'x',
+        slug: 'about',
+        isActive: true,
+        content: '<p>Hi</p>',
+        config: { image: '/uploads/hero.png', hero: { image: '/uploads/hero2.png' }, title: 'About' },
+      };
+      (prisma.cmsPage.findUnique as jest.Mock).mockResolvedValue(page);
+      const resolver = (service as any).mediaResolver as MediaResolverService;
+      (resolver.resolve as jest.Mock).mockResolvedValue({
+        '/uploads/hero.png': {
+          derivativeManifest: { large: '/uploads/derivatives/m9/large.webp' },
+          blurUrl: null,
+          updatedAt: new Date(),
+        },
+      });
+      const result: any = await service.findBySlug('about');
+      expect(resolver.resolve).toHaveBeenCalledWith(
+        expect.arrayContaining(['/uploads/hero.png', '/uploads/hero2.png']),
+      );
+      expect(result.config._mediaMeta['/uploads/hero.png'].derivativeManifest.large).toBe(
+        '/uploads/derivatives/m9/large.webp',
+      );
+      // Stored config object is not mutated.
+      expect((page.config as any)._mediaMeta).toBeUndefined();
+    });
+
     it('leaves content untouched when no derivatives exist yet', async () => {
       const page = {
         id: 'x',

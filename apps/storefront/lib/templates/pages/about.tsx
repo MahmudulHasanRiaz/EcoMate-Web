@@ -1,6 +1,7 @@
 import { Target, Users, ShieldCheck, Heart } from 'lucide-react';
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { resolveDerivativeUrl } from "@/lib/image-derivative";
 
 const FALLBACK_STORY_HEADING = 'Started with a mission to bring excellence in every interaction.';
 
@@ -15,7 +16,11 @@ const VALUE_ICONS = [ShieldCheck, Target, Heart, Users];
 
 export default function AboutTemplate({ config }: { config: Record<string, any> }) {
   const storeName = 'Store';
-  const heroImage = config?.image ? config.image : PLACEHOLDER_IMAGE;
+  // Serve the hero as a derivative, never the raw original — the backend
+  // attaches config._mediaMeta on the public read path (findBySlug).
+  const heroImage = config?.image
+    ? resolveDerivativeUrl(config?._mediaMeta, config.image, 'large')
+    : PLACEHOLDER_IMAGE;
 
   const rawStory = typeof config?.story === 'string' ? config.story : '';
   const storyParagraphs = rawStory

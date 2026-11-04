@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { Briefcase, MapPin, Clock, DollarSign, ArrowRight } from "lucide-react";
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { resolveDerivativeUrl } from "@/lib/image-derivative";
 
 interface Job {
   title?: string;
@@ -23,7 +24,7 @@ export default function CareersTemplate({ config }: { config: Record<string, any
   const firstLine = splitTitle ? heroWords.slice(0, -1).join(" ") : heroTitle;
   const secondLine = splitTitle ? heroWords[heroWords.length - 1] : "";
 
-  const heroImage = (hero.image || "").trim();
+  const heroImage = resolveDerivativeUrl(config?._mediaMeta, (hero.image || "").trim(), 'large');
   const subtitle =
     hero.subtitle ||
     "Join a team that cares about health, authenticity, and the growth of Bangladeshi agriculture.";

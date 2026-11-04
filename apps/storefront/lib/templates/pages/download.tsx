@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { Smartphone, Zap, PackageOpen, Shield } from "lucide-react";
+import { resolveDerivativeUrl } from "@/lib/image-derivative";
 
 /**
  * Feature card visual palette. The current design shows three highlight cards
@@ -25,7 +26,7 @@ export default function DownloadTemplate({ config }: { config: Record<string, an
   const iosUrl = (config?.iosUrl || "").trim();
   const heading = (config?.heading || "Get the Store App").trim();
   const description = config?.description || "";
-  const image = (config?.image || "").trim();
+  const image = resolveDerivativeUrl(config?._mediaMeta, (config?.image || "").trim(), 'small');
   const features: string[] = Array.isArray(config?.features) ? config.features : [];
 
   const hasAndroid = Boolean(androidUrl);

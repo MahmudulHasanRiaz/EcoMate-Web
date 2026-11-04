@@ -1,6 +1,7 @@
 import { Building2, Award, Users2, Rocket } from 'lucide-react';
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
+import { resolveDerivativeUrl } from "@/lib/image-derivative";
 
 const DEFAULTS = {
   name: "Store Limited",
@@ -29,7 +30,9 @@ export default function CompanyTemplate({ config }: { config: Record<string, any
   const philosophy = String(config?.philosophy || DEFAULTS.philosophy).trim();
   const vision = String(config?.vision || DEFAULTS.vision).trim();
   const impact = String(config?.impact || DEFAULTS.impact).trim();
-  const image = config?.image || PLACEHOLDER_IMAGE;
+  const image = config?.image
+    ? resolveDerivativeUrl(config?._mediaMeta, config.image, 'large')
+    : PLACEHOLDER_IMAGE;
 
   return (
     <div className="bg-white min-h-screen">
