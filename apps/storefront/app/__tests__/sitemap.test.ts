@@ -71,6 +71,19 @@ describe('sitemap (P0-5)', () => {
     await expect(sitemap()).rejects.toThrow('backend unreachable');
   });
 
+  it('does not throw during the build-time prerender (no backend exists in the builder)', async () => {
+    process.env.NEXT_PHASE = 'phase-production-build';
+    try {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        throw new Error('connect ECONNREFUSED');
+      });
+      const entries = await sitemap();
+      expect(entries.length).toBeGreaterThan(0);
+    } finally {
+      delete process.env.NEXT_PHASE;
+    }
+  });
+
   it('serves a static-only sitemap when the backend answers with empty catalogs', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({ json: async () => ({ data: [] }) }) as any);
     const entries = await sitemap();
