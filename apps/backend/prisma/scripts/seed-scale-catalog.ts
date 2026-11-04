@@ -48,8 +48,10 @@
  * Safety: refuses to seed twice (existing scale-seed products) unless
  * --force is passed. Cleanup only ever touches scale-seed artefacts.
  */
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { Queue } from 'bullmq';
+import { Pool } from 'pg';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { rm, writeFile } from 'node:fs/promises';
@@ -217,7 +219,17 @@ async function cleanup(prisma: PrismaClient): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const prisma = new PrismaClient();
+  // Prisma 7 requires a driver adapter: a bare `new PrismaClient()` throws
+  // PrismaClientInitializationError ("A driver adapter is required"). Build
+  // the client exactly like src/prisma/prisma.service.ts and
+  // src/better-auth/prisma.ts do. (2026-11-04: the first auto-seed run died
+  // here — invisible until the launcher streamed output to docker logs.)
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('[seed-scale] DATABASE_URL is not set — refusing to seed');
+  }
+  const pool = new Pool({ connectionString, max: 4 });
+  const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
   try {
     if (CLEANUP) {
       assertNotProduction();
@@ -379,6 +391,7 @@ async function main(): Promise<void> {
     );
   } finally {
     await prisma.$disconnect();
+    await pool.end();
   }
 }
 
