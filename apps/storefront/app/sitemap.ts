@@ -130,7 +130,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   } catch {}
 
-  if (!dynamicOk) {
+  // Build-time prerender is exempt: `next build` generates /sitemap.xml
+  // inside the Docker builder, where no backend exists by design — the
+  // baked static-only result is only a placeholder until the first
+  // runtime revalidation replaces it. Throwing there fails the build
+  // (seen in Build #880). At runtime the throw stands.
+  const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
+  if (!dynamicOk && !isBuildPhase) {
     throw new Error('sitemap: backend unreachable — refusing to cache a degenerate sitemap');
   }
 
