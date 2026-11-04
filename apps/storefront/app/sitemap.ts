@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { siteUrl } from '@/lib/site-url';
+import { publicMediaUrl, siteUrl } from '@/lib/site-url';
 
 // Crawler hits must not regenerate on every request: cache for an hour.
 // Product/stock freshness lives on the PDP (short TTL), not here.
@@ -25,13 +25,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
-  // Product images are served from the backend (/uploads/…) — resolve to
-  // absolute URLs for the image sitemap.
-  const apiOrigin = apiUrl.replace(/\/api\/?$/, '');
+  // Product images are served from the backend (/uploads/…) — resolve them
+  // through the ONE public-media helper, never against the API origin:
+  // in production API_URL is the internal http://backend:4000, which
+  // leaked into every sitemap image URL (unfetchable by any crawler).
+  // publicMediaUrl rebases internal hosts and relative /uploads paths
+  // onto the public site origin (the PDP og:image path already uses it).
+  // Sitemap entries must be absolute, so a still-relative result (site
+  // URL unset) falls back to the sitemap base URL.
   const toAbsoluteUrl = (src: string | undefined): string | undefined => {
-    if (!src) return undefined;
-    if (/^https?:\/\//.test(src)) return src;
-    return `${apiOrigin}${src.startsWith('/') ? '' : '/'}${src}`;
+    const pub = publicMediaUrl(src);
+    if (!pub) return undefined;
+    if (/^https?:\/\//.test(pub)) return pub;
+    return `${baseUrl}${pub.startsWith('/') ? '' : '/'}${pub}`;
   };
 
   // Fetch categories for dynamic category pages
