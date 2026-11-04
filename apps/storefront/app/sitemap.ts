@@ -40,11 +40,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     return `${baseUrl}${pub.startsWith('/') ? '' : '/'}${pub}`;
   };
 
+  // Outage guard (same class as the PR #180 PDP fix): if EVERY dynamic
+  // fetch fails — e.g. the sitemap regenerates while the backend is
+  // still booting after a redeploy — the result would be a degenerate
+  // static-only sitemap, and `revalidate` would cache it for an hour.
+  // Throw instead so nothing is cached and the next hit retries; a
+  // successful-but-empty catalog response is NOT a failure.
+  let dynamicOk = false;
+
   // Fetch categories for dynamic category pages
   let categoryPages: MetadataRoute.Sitemap = [];
   try {
     const res = await fetch(`${apiUrl}/categories?isActive=true`);
     const data = await res.json();
+    dynamicOk = true;
     const categories = data.data || data || [];
     if (Array.isArray(categories)) {
       categoryPages = categories.map((cat: any) => ({
@@ -66,6 +75,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       const pageUrl: string = `${apiUrl}/products?isActive=true&perPage=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
       const res: any = await fetch(pageUrl);
       const data: any = await res.json();
+      dynamicOk = true;
       const products = data.data || [];
       if (Array.isArray(products)) {
         for (const p of products) {
@@ -91,6 +101,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const res = await fetch(`${apiUrl}/combos?isActive=true&perPage=1000`);
     const data = await res.json();
+    dynamicOk = true;
     const combos = data.data || [];
     if (Array.isArray(combos)) {
       comboPages = combos.map((c: any) => ({
@@ -107,6 +118,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const res = await fetch(`${apiUrl}/cms-pages`);
     const data = await res.json();
+    dynamicOk = true;
     const pages = Array.isArray(data) ? data : data.data || [];
     if (Array.isArray(pages)) {
       cmsPages = pages.map((p: any) => ({
@@ -117,6 +129,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }));
     }
   } catch {}
+
+  if (!dynamicOk) {
+    throw new Error('sitemap: backend unreachable — refusing to cache a degenerate sitemap');
+  }
 
   return [...staticPages, ...categoryPages, ...productPages, ...comboPages, ...cmsPages];
 }

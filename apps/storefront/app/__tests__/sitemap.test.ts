@@ -64,6 +64,20 @@ describe('sitemap (P0-5)', () => {
     }
   });
 
+  it('throws instead of caching a degenerate sitemap when the backend is unreachable', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      throw new Error('connect ECONNREFUSED');
+    });
+    await expect(sitemap()).rejects.toThrow('backend unreachable');
+  });
+
+  it('serves a static-only sitemap when the backend answers with empty catalogs', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({ json: async () => ({ data: [] }) }) as any);
+    const entries = await sitemap();
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.every((e) => !e.url.includes('/products/'))).toBe(true);
+  });
+
   it('never leaks the internal API origin into image URLs (production API_URL=http://backend:4000)', async () => {
     process.env.NEXT_PUBLIC_STOREFRONT_URL = 'https://shop.example.com.bd';
     process.env.API_URL = 'http://backend:4000/api';
