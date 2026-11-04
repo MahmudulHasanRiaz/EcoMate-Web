@@ -56,12 +56,19 @@ fi
 # — and only when — ALLOW_SCALE_SEED=1 is set in the stack env; no stack
 # sets it by default. The script re-checks the same flag itself and
 # additionally refuses known client production domains unconditionally,
-# so this can never seed a client by accident. Fire-and-forget: output
-# goes to /tmp/scale-seed.log and a failure never blocks or fails startup.
-# Re-boots are safe: the script refuses to double-seed.
+# so this can never seed a client by accident. Fire-and-forget: a failure
+# never blocks or fails startup. Re-boots are safe: the script refuses to
+# double-seed.
+#
+# Launch notes (learned 2026-11-04, staging run died silently): do NOT go
+# through `npx` — as the nestjs user its npm cache/HOME handling can kill
+# the process before the script prints anything, and the old redirect hid
+# every trace in a container-local /tmp file nobody could read. Instead
+# run tsx's CLI directly with node, and tee the output to BOTH the file
+# and the container stdout so it shows up in `docker logs` / Portainer.
 if [ "$ALLOW_SCALE_SEED" = "1" ]; then
   echo "[Startup] ALLOW_SCALE_SEED=1 — scale seeder scheduled in background (log: /tmp/scale-seed.log)"
-  ( sleep 20; su -s /bin/sh nestjs -c "cd /app && npx tsx prisma/scripts/seed-scale-catalog.ts --apply" >> /tmp/scale-seed.log 2>&1 || true ) &
+  ( sleep 20; su -s /bin/sh nestjs -c "cd /app && node node_modules/tsx/dist/cli.mjs prisma/scripts/seed-scale-catalog.ts --apply; echo \"[seed-scale] launcher exit=\$?\"" 2>&1 | tee /tmp/scale-seed.log ) &
 fi
 
 echo "[Startup] Starting server..."

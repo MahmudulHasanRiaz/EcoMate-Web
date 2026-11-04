@@ -13,7 +13,10 @@
  * the production backend image, where prisma/ is copied but src/ is not:
  *
  *   docker exec -it <backend-container> sh -c \
- *     "cd /app && npx tsx prisma/scripts/seed-scale-catalog.ts --apply"
+ *     "cd /app && node node_modules/tsx/dist/cli.mjs prisma/scripts/seed-scale-catalog.ts --apply"
+ *
+ * (Invoke tsx's CLI directly — never via `npx`: as the nestjs user, npx's
+ * npm cache/HOME handling can kill the process before it prints anything.)
  *
  * Invocation: (a) manually via container console, or (b) automatically in
  * the background at container startup — startup.sh does that ONLY when
