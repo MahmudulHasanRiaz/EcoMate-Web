@@ -98,6 +98,14 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.updated': null,
     'order.pickup-requested': null,
     'order.assigned-for-pickup': null,
+    // Owner ruling 2026-11-04 (Avelto production incident): a PICKUP-stage
+    // hold is NOT a delivery hold — the courier has NOT picked the parcel
+    // up yet; it is still with the merchant. Record-only (null), exactly
+    // like pickup-requested / assigned-for-pickup. It must NEVER resolve
+    // to HOLD: the /hold/ keyword fallback did exactly that, and HOLD
+    // derives order 'Shipping', so a held pickup dragged an order out of
+    // a staff-set Packing Hold into Shipping for a parcel that never left.
+    'order.pickup-on-hold': null,
     // Task 3 (owner-locked F7): pickup-failed is a real PICKUP_FAILED
     // workflow state (record attempt + reason + alert) — never the skip
     // path. Owner ruling 2026-10-30: it never moves the ORDER status.
@@ -134,6 +142,13 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     // title-case labels are listed lowercase.
     'pickup requested': null,
     'assigned for pickup': null,
+    // Owner ruling 2026-11-04: the /info endpoint's plain label for a held
+    // pickup ("Pickup On Hold", slug pickup_on_hold) — record-only, see the
+    // 'order.pickup-on-hold' note above. Distinct from 'on hold' (a
+    // DELIVERY-stage hold → HOLD): the parcel has not been picked up.
+    'pickup on hold': null,
+    'pickup_on_hold': null,
+    'pickup-on-hold': null,
     // 'assigned for delivery' → ASSIGNED_TO_RIDER, NOT the `deliver` keyword.
     'assigned for delivery': 'ASSIGNED_TO_RIDER',
     // Task 3 (owner-locked F7): 'pickup failed' is the PICKUP_FAILED state
@@ -194,6 +209,9 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     'order.updated': null,
     'order.pickup-requested': null,
     'order.assigned-for-pickup': null,
+    // Owner ruling 2026-11-04 (Pathao parity): pickup-stage hold is
+    // record-only — parcel not picked up, still with the merchant.
+    'order.pickup-on-hold': null,
     // Task 3 (owner-locked F7): pickup-failed → PICKUP_FAILED (same as
     // Pathao); delivery-failed stays record-only (null).
     'order.pickup-failed': 'PICKUP_FAILED',
@@ -228,6 +246,8 @@ const COURIER_TRACKING_STATUS_MAP: Record<
     // delivery-failed stays record-only via the /fail|error/ guard below.
     'pickup-failed': 'PICKUP_FAILED',
     'pickup failed': 'PICKUP_FAILED',
+    // Owner ruling 2026-11-04 (Pathao parity): plain pickup-hold label.
+    'pickup on hold': null,
   },
 };
 
@@ -279,6 +299,14 @@ export function mapCourierStatusToDispatchStatus(  courier: string,
   // DISPATCHED). Exact-map entries (e.g. steadfast partial_delivered_approval
   // _pending → PARTIAL, T5-locked) already returned above and are unaffected.
   if (isUnsettledCourierStatus(normalized)) return null;
+
+  // Owner ruling 2026-11-04 (class guard): any label combining "pickup"
+  // with "hold" is a PRE-pickup hold — the parcel is still with the
+  // merchant. It must never reach the keyword rules below: /hold/ would
+  // claim a delivery-stage HOLD (→ order Shipping) and /pickup|picked/
+  // would claim a pickup that never happened. Record-only, for every
+  // courier and every spelling not covered by an exact entry above.
+  if (/pickup/.test(normalized) && /hold/.test(normalized)) return null;
 
   for (const rule of KEYWORD_RULES) {
     if (rule.match.test(normalized)) return rule.status;
