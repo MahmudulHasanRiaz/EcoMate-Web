@@ -519,12 +519,17 @@ describe('ArchivePageClient — server facet lists (PLP scale round)', () => {
       cursor: 'SEED_CURSOR',
     });
 
-    triggerSentinels();
-    await vi.waitFor(() =>
+    // The hook swaps in a fresh observer after each page lands (the
+    // mock only fires on an explicit trigger, unlike a real observer's
+    // initial delivery), and the cursor state must settle first — so
+    // keep triggering inside the wait until the keyset page is asked
+    // for. isLoading blocks any duplicate seed-cursor fetch meanwhile.
+    await vi.waitFor(() => {
+      triggerSentinels();
       expect(
         getProductsMock.mock.calls.some((c: any[]) => c[0]?.cursor === 'KEYSET_PAGE_2'),
-      ).toBe(true),
-    );
+      ).toBe(true);
+    });
     // Ordering: the keyset cursor is only ever requested AFTER the seed
     // cursor page has been fetched (no page-number mode anywhere).
     const cursors = getProductsMock.mock.calls.map((c: any[]) => c[0]?.cursor);
