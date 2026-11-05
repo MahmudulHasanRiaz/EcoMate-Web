@@ -574,6 +574,7 @@ export default function ArchivePageClient({
             <div className="relative flex-shrink-0">
               <select
                 value={sortBy}
+                aria-label="Sort products"
                 onChange={(e) => {
                   const next = e.target.value;
                   setSortBy(next);

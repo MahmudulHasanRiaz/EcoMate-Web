@@ -935,6 +935,7 @@ function LeaveTab() {
             </label>
             <select
               value={typeId}
+              aria-label="Leave Type"
               onChange={(e) => setTypeId(e.target.value)}
               className="w-full h-11 px-4 bg-white border border-gray-200 rounded-xl outline-none focus:border-brand-blue text-sm"
             >
