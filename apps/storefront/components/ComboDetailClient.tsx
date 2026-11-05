@@ -268,6 +268,7 @@ export default function ComboDetailClient({ combo }: { combo: Combo }) {
               <span className="text-xs text-gray-500 w-14 shrink-0">{attr.name}:</span>
               <select
                 value={selectedVal}
+                aria-label={attr.name}
                 onChange={(e) => handleAttrChange(item.productId, attr.attrId, e.target.value)}
                 className="flex-1 h-7 text-xs rounded-md border border-gray-300 bg-white px-2 text-gray-700 focus:outline-none focus:border-brand-blue appearance-none"
               >
