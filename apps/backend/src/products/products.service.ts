@@ -34,6 +34,35 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, '');
 }
 
+/**
+ * The price a product card sorts/displays by (PLP scale round) — the
+ * EXACT semantics the retired in-memory sort in findAll computed per
+ * request, now persisted on Product.effectivePrice and maintained on
+ * every price-affecting write:
+ *   - variable product with at least one priced variant: the minimum
+ *     over ALL variants (no isActive filter — the old read had none) of
+ *     (salePrice ?? price), counting only variants whose coalesced
+ *     price is a number > 0;
+ *   - otherwise (simple product, or no priced variant exists):
+ *     salePrice ?? basePrice, with a non-numeric result collapsing to 0.
+ * The migration backfill (20261105120000_product_effective_price)
+ * mirrors this in SQL; the two must never drift apart.
+ */
+export function computeEffectivePrice(
+  product: { type?: string | null; basePrice?: unknown; salePrice?: unknown },
+  variants?: Array<{ price?: unknown; salePrice?: unknown }> | null,
+): number {
+  if (product.type === 'variable' && variants && variants.length > 0) {
+    const prices = variants
+      .map((v) => Number(v.salePrice ?? v.price))
+      .filter((price) => !isNaN(price) && price > 0);
+    if (prices.length > 0) {
+      return Math.min(...prices);
+    }
+  }
+  return Number(product.salePrice ?? product.basePrice) || 0;
+}
+
 @Injectable()
 export class ProductsService {
   constructor(
@@ -186,6 +215,45 @@ export class ProductsService {
         create: { productId, tagId: tag.id },
       });
     }
+  }
+
+  /**
+   * Recompute and persist Product.effectivePrice from the CURRENT stored
+   * prices (PLP scale round). This is the single writer-side helper for
+   * the column: every price-affecting mutation path that does not fold
+   * the value into its own write (variant create/update/delete,
+   * variant regeneration, CSV import) calls this after its write lands.
+   * The write is skipped when the stored value already matches, so
+   * price-neutral calls (e.g. a variant image edit) stay read-only.
+   * Returns the computed value, or null when the product is gone.
+   */
+  async syncEffectivePrice(productId: string): Promise<number | null> {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: {
+        type: true,
+        basePrice: true,
+        salePrice: true,
+        effectivePrice: true,
+      },
+    });
+    if (!product) return null;
+    let variants: Array<{ price: any; salePrice: any }> = [];
+    if (product.type === 'variable') {
+      variants =
+        (await this.prisma.productVariant.findMany({
+          where: { productId },
+          select: { price: true, salePrice: true },
+        })) ?? [];
+    }
+    const value = computeEffectivePrice(product, variants);
+    if (Number(product.effectivePrice) !== value) {
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { effectivePrice: value },
+      });
+    }
+    return value;
   }
 
   /**
@@ -389,6 +457,33 @@ export class ProductsService {
     );
   }
 
+  /**
+   * Price-sort keyset cursor (PLP scale round): same base64url envelope
+   * as the createdAt cursor, carrying the (effectivePrice, id) key of
+   * the last row served. The price segment is validated as a plain
+   * decimal so a createdAt cursor (or any foreign string) can never be
+   * misread as a price key.
+   */
+  private decodePriceCursor(
+    cursor: string,
+  ): { price: number; id: string } | null {
+    try {
+      const raw = Buffer.from(cursor, 'base64url').toString('utf8');
+      const [priceStr, id] = raw.split('|');
+      if (!priceStr || !id) return null;
+      if (!/^-?\d+(\.\d+)?$/.test(priceStr)) return null;
+      const price = parseFloat(priceStr);
+      if (isNaN(price)) return null;
+      return { price, id };
+    } catch {
+      return null;
+    }
+  }
+
+  private encodePriceCursor(price: unknown, id: string): string {
+    return Buffer.from(`${Number(price)}|${id}`, 'utf8').toString('base64url');
+  }
+
   private readonly listInclude = {
     brand: true,
     category: { select: { id: true, name: true, slug: true } },
@@ -499,6 +594,7 @@ export class ProductsService {
       slug: p.slug,
       basePrice: p.basePrice,
       salePrice: p.salePrice,
+      effectivePrice: p.effectivePrice,
       originalPrice: p.originalPrice,
       type: p.type,
       image: primary,
@@ -642,11 +738,13 @@ export class ProductsService {
     let orderBy: any;
     if (query.sort === 'basePrice' || query.sort === 'price') {
       const dir = query.order === 'asc' ? 'asc' : 'desc';
-      orderBy = [
-        { salePrice: { sort: dir, nulls: 'last' } },
-        { basePrice: dir },
-        { id: dir },
-      ];
+      // PLP scale round: the price sort runs in Postgres on the
+      // persisted effectivePrice column — this offset path serves the
+      // admin lists (the storefront scroll rides the keyset cursor in
+      // findAllCursor instead). Tie-break is id ASC in BOTH directions,
+      // the exact order the retired in-memory sort produced (its
+      // tie-break compared ids ascending regardless of direction).
+      orderBy = [{ effectivePrice: dir }, { id: 'asc' }];
     } else if (query.sort === 'popularity') {
       orderBy = [
         { orderItems: { _count: query.order || 'desc' } },
@@ -659,75 +757,21 @@ export class ProductsService {
       ];
     }
 
-    let data: any[];
-    let total: number;
-
-    if (query.sort === 'basePrice' || query.sort === 'price') {
-      const allMatching = await this.prisma.product.findMany({
+    // One DB-paged read for every sort (PLP scale round): price sorts
+    // used to load ALL matching products + variants, sort in memory and
+    // slice a page of ids — a full-catalogue read per PLP price-sort
+    // request. The persisted effectivePrice column (orderBy above)
+    // makes them ordinary indexed sorts like every other sort here.
+    const [data, total] = await Promise.all([
+      this.prisma.product.findMany({
         where,
-        select: {
-          id: true,
-          basePrice: true,
-          salePrice: true,
-          type: true,
-          variants: {
-            select: {
-              price: true,
-              salePrice: true,
-            },
-          },
-        },
-      });
-
-      total = allMatching.length;
-      const dir = query.order === 'asc' ? 'asc' : 'desc';
-
-      const getEffectivePrice = (p: any): number => {
-        if (p.type === 'variable' && p.variants?.length > 0) {
-          const prices = p.variants
-            .map((v: any) => Number(v.salePrice ?? v.price))
-            .filter((price: number) => !isNaN(price) && price > 0);
-          if (prices.length > 0) {
-            return Math.min(...prices);
-          }
-        }
-        return Number(p.salePrice ?? p.basePrice) || 0;
-      };
-
-      const sorted = allMatching.sort((a, b) => {
-        const priceA = getEffectivePrice(a);
-        const priceB = getEffectivePrice(b);
-        if (priceA !== priceB) {
-          return dir === 'asc' ? priceA - priceB : priceB - priceA;
-        }
-        return a.id.localeCompare(b.id);
-      });
-
-      const paginatedIds = sorted
-        .slice((page - 1) * perPage, page * perPage)
-        .map((p) => p.id);
-
-      const rawData = await this.prisma.product.findMany({
-        where: { id: { in: paginatedIds } },
+        skip: (page - 1) * perPage,
+        take: perPage,
+        orderBy,
         include: this.listInclude,
-      });
-
-      // Maintain exact sorted order of IDs
-      data = paginatedIds
-        .map((id) => rawData.find((item) => item.id === id)!)
-        .filter(Boolean);
-    } else {
-      [data, total] = await Promise.all([
-        this.prisma.product.findMany({
-          where,
-          skip: (page - 1) * perPage,
-          take: perPage,
-          orderBy,
-          include: this.listInclude,
-        }),
-        this.prisma.product.count({ where }),
-      ]);
-    }
+      }),
+      this.prisma.product.count({ where }),
+    ]);
 
     await this.enrichProductsWithAvailableStock(data);
     await this.enrichWithDerivatives(data);
@@ -771,9 +815,18 @@ export class ProductsService {
     hasStock?: boolean;
     status?: 'active' | 'draft';
     fields?: string;
+    sort?: string;
+    order?: string;
   }, opts?: { isStaff?: boolean }) {
     const perPage = this.clampListPerPage(query.perPage);
     if (query.ids && query.ids.length > 200) query.ids = query.ids.slice(0, 200);
+    // PLP scale round: price sorts join the keyset path on the
+    // persisted (effectivePrice, id) key; every other call keeps the
+    // (createdAt, id) newest-first keyset exactly as before. The id
+    // tie-break is ASC in both price directions — the retired in-memory
+    // sort compared ids ascending regardless of direction.
+    const isPriceSort = query.sort === 'price' || query.sort === 'basePrice';
+    const priceDir: 'asc' | 'desc' = query.order === 'asc' ? 'asc' : 'desc';
     const effectiveCategoryId =
       query.categoryId ||
       (query.category
@@ -852,14 +905,31 @@ export class ProductsService {
       ? [...cursorWhere.AND]
       : undefined;
     if (query.cursor) {
-      const decoded = this.decodeCursor(query.cursor);
-      if (decoded) {
-        const cursorFilter = {
-          OR: [
-            { createdAt: { lt: decoded.createdAt } },
-            { createdAt: decoded.createdAt, id: { lt: decoded.id } },
-          ],
-        };
+      let cursorFilter: any = null;
+      if (isPriceSort) {
+        const decoded = this.decodePriceCursor(query.cursor);
+        if (decoded) {
+          cursorFilter = {
+            OR: [
+              priceDir === 'asc'
+                ? { effectivePrice: { gt: decoded.price } }
+                : { effectivePrice: { lt: decoded.price } },
+              { effectivePrice: decoded.price, id: { gt: decoded.id } },
+            ],
+          };
+        }
+      } else {
+        const decoded = this.decodeCursor(query.cursor);
+        if (decoded) {
+          cursorFilter = {
+            OR: [
+              { createdAt: { lt: decoded.createdAt } },
+              { createdAt: decoded.createdAt, id: { lt: decoded.id } },
+            ],
+          };
+        }
+      }
+      if (cursorFilter) {
         const conditions: any[] = [cursorFilter];
         if (cursorWhere.OR) {
           conditions.push({ OR: cursorWhere.OR });
@@ -875,7 +945,9 @@ export class ProductsService {
       this.prisma.product.findMany({
         where: cursorWhere,
         take: perPage,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: isPriceSort
+          ? [{ effectivePrice: priceDir }, { id: 'asc' }]
+          : [{ createdAt: 'desc' }, { id: 'desc' }],
         include: this.listInclude,
       }),
       this.prisma.product.count({ where: filters }),
@@ -886,7 +958,11 @@ export class ProductsService {
     const hasMore = data.length === perPage;
     const last = data[data.length - 1];
     const nextCursor =
-      hasMore && last ? this.encodeCursor(last.createdAt, last.id) : null;
+      hasMore && last
+        ? isPriceSort
+          ? this.encodePriceCursor(last.effectivePrice, last.id)
+          : this.encodeCursor(last.createdAt, last.id)
+        : null;
     return {
       data: query.fields === 'card' ? data.map((p) => this.toCardProduct(p)) : data,
       meta: {
@@ -1016,6 +1092,19 @@ export class ProductsService {
       brandId: dto.brandId,
       basePrice: dto.basePrice,
       salePrice: dto.salePrice,
+      // PLP scale round: the persisted sort price is computable from
+      // the payload alone (variants are created 1:1 from dto.variants),
+      // so it folds into this same write — no follow-up sync needed.
+      // The draft-promote path below reuses `scalars`, so it is covered
+      // by the same line.
+      effectivePrice: computeEffectivePrice(
+        {
+          type: dto.type || 'simple',
+          basePrice: dto.basePrice,
+          salePrice: dto.salePrice,
+        },
+        dto.variants,
+      ),
       sku: dto.sku,
       standardCost: dto.standardCost,
       managedStockQuantity:
@@ -1161,6 +1250,13 @@ export class ProductsService {
       }
     }
 
+    // The promote path can KEEP a draft's stored variants when the
+    // payload carries none (variable draft promoted without a variant
+    // list) — the scalars-folded value assumed the payload's variants,
+    // so re-derive from stored state. A no-op (no write) whenever the
+    // folded value already matches, which is every fresh create.
+    await this.syncEffectivePrice(product.id);
+
     await this.syncTags(dto.tags || [], product.id);
     await this.cache.invalidateByPrefix('product:');
 
@@ -1272,6 +1368,34 @@ export class ProductsService {
     const effectiveMode = dto.availabilityMode ?? p.availabilityMode;
     if (effectiveMode === 'MANAGED_STOCK') {
       data.manageStock = true;
+    }
+
+    // PLP scale round: fold the persisted sort price into this same
+    // write. update() never touches variant rows, so a recompute is
+    // only needed when a price input changed; it uses the merged
+    // scalars plus the CURRENT variant prices for a variable product.
+    if (
+      dto.basePrice !== undefined ||
+      dto.salePrice !== undefined ||
+      dto.type !== undefined
+    ) {
+      const nextType = dto.type ?? p.type;
+      let priceVariants: Array<{ price: any; salePrice: any }> = [];
+      if (nextType === 'variable') {
+        priceVariants =
+          (await this.prisma.productVariant.findMany({
+            where: { productId: id },
+            select: { price: true, salePrice: true },
+          })) ?? [];
+      }
+      data.effectivePrice = computeEffectivePrice(
+        {
+          type: nextType,
+          basePrice: dto.basePrice ?? p.basePrice,
+          salePrice: dto.salePrice !== undefined ? dto.salePrice : p.salePrice,
+        },
+        priceVariants,
+      );
     }
 
     if (dto.categoryIds !== undefined) {
@@ -1588,6 +1712,17 @@ export class ProductsService {
         shortDesc: dto.shortDesc,
         basePrice: dto.basePrice ?? 0,
         salePrice: dto.salePrice,
+        // PLP scale round: folded into the create write, same rule as
+        // create() (drafts stay invisible to the PLP, but the column is
+        // never left stale for the publish that follows).
+        effectivePrice: computeEffectivePrice(
+          {
+            type: dto.type || 'simple',
+            basePrice: dto.basePrice ?? 0,
+            salePrice: dto.salePrice,
+          },
+          dto.variants,
+        ),
         sku: dto.sku,
         brandId: dto.brandId || undefined,
         standardCost: dto.standardCost,
@@ -1770,6 +1905,33 @@ export class ProductsService {
       data.manageStock = newMode === 'MANAGED_STOCK';
     }
 
+    // PLP scale round: fold the persisted sort price into this same
+    // write. The post-write variant set is known exactly: the payload's
+    // set when provided (wholesale replace above), none when the draft
+    // switched back to simple, otherwise the stored rows (untouched by
+    // this write), which are read only for a variable draft.
+    {
+      const nextType = dto.type ?? p.type;
+      let priceVariants: Array<{ price: any; salePrice: any }> = [];
+      if (dto.variants) {
+        priceVariants = dto.variants;
+      } else if (nextType === 'variable') {
+        priceVariants =
+          (await this.prisma.productVariant.findMany({
+            where: { productId: id },
+            select: { price: true, salePrice: true },
+          })) ?? [];
+      }
+      data.effectivePrice = computeEffectivePrice(
+        {
+          type: nextType,
+          basePrice: dto.basePrice ?? p.basePrice,
+          salePrice: dto.salePrice !== undefined ? dto.salePrice : p.salePrice,
+        },
+        priceVariants,
+      );
+    }
+
     let product: any;
     try {
       product = await this.prisma.product.update({
@@ -1941,6 +2103,21 @@ export class ProductsService {
     // Publishing is creation-equivalent: the same initial-stock mirror runs
     // for a draft that goes live with MANAGED_STOCK units.
     const finalType = dto.type || p.type;
+    // Stored variants of a variable draft published WITHOUT a payload
+    // variant set: one read feeds both the initial-stock sum below and
+    // the effectivePrice fold (prices added to the select for that).
+    let publishStoredVariants: Array<{
+      managedStockQuantity: number;
+      price: any;
+      salePrice: any;
+    }> = [];
+    if (finalType === 'variable' && !dto.variants) {
+      publishStoredVariants =
+        (await this.prisma.productVariant.findMany({
+          where: { productId: id },
+          select: { managedStockQuantity: true, price: true, salePrice: true },
+        })) ?? [];
+    }
     let initialStock: number;
     if (finalType === 'variable') {
       initialStock = dto.variants
@@ -1948,12 +2125,10 @@ export class ProductsService {
             (sum, v) => sum + (v.managedStockQuantity ?? 0),
             0,
           )
-        : (
-            await this.prisma.productVariant.findMany({
-              where: { productId: id },
-              select: { managedStockQuantity: true },
-            })
-          ).reduce((sum, v) => sum + (v.managedStockQuantity ?? 0), 0);
+        : publishStoredVariants.reduce(
+            (sum, v) => sum + (v.managedStockQuantity ?? 0),
+            0,
+          );
     } else {
       initialStock = dto.managedStockQuantity ?? p.managedStockQuantity ?? 0;
     }
@@ -1979,6 +2154,14 @@ export class ProductsService {
         })),
       };
     }
+
+    // PLP scale round: fold the persisted sort price into the publish
+    // write, from the already-resolved final scalars (basePrice and
+    // salePrice locals above) and the post-publish variant set.
+    data.effectivePrice = computeEffectivePrice(
+      { type: finalType, basePrice, salePrice },
+      dto.variants ?? publishStoredVariants,
+    );
 
     let product: any;
     try {
@@ -2173,6 +2356,9 @@ export class ProductsService {
       }
     });
 
+    // PLP scale round: the regenerated set carries fresh prices.
+    await this.syncEffectivePrice(productId);
+
     return this.findOne(productId);
   }
 
@@ -2214,6 +2400,10 @@ export class ProductsService {
     if (syncImages !== undefined) {
       await this.media.syncEntityImages('variant', variantId, syncImages);
     }
+    // PLP scale round: a variant price edit moves the parent's sort
+    // price (the helper writes only when the value actually changed,
+    // so image-only edits stay read-only).
+    await this.syncEffectivePrice(productId);
     return updated;
   }
 
@@ -2439,6 +2629,9 @@ export class ProductsService {
       where: { id: productId },
       data: { type: 'simple', managedStockQuantity: 0, manageStock: true },
     });
+    // PLP scale round: back to a simple product — the sort price is the
+    // product rule again, not the deleted variants' minimum.
+    await this.syncEffectivePrice(productId);
     await this.cache.invalidateByPrefix('product:');
     return { message: 'All variants removed. Product reset to simple type.' };
   }
@@ -2461,6 +2654,9 @@ export class ProductsService {
     }
     await this.media.detachAll('variant', variantId);
     await this.prisma.productVariant.delete({ where: { id: variantId } });
+    // PLP scale round: removing the cheapest variant raises the
+    // parent's sort price.
+    await this.syncEffectivePrice(productId);
     await this.cache.invalidateByPrefix('product:');
     return { message: 'Variant deleted' };
   }

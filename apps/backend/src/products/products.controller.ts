@@ -61,6 +61,36 @@ export class ProductsController {
     const parsedHasStock =
       hasStock !== undefined ? hasStock === 'true' : undefined;
     const isSortingActive = sort && sort !== 'default';
+    const isPriceSort = sort === 'price' || sort === 'basePrice';
+
+    // PLP scale round: price sorts WITHOUT an explicit page number are
+    // scroll traffic (the storefront PLP) and ride the (effectivePrice,
+    // id) keyset cursor — the cursor is the opaque keyset token, never
+    // a page number. An explicit `page` (admin offset lists) keeps the
+    // findAll path below, which sorts on the same persisted column in
+    // Postgres. Non-price sorts keep their existing routing untouched.
+    if (isPriceSort && page === undefined) {
+      return this.svc.findAllCursor({
+        cursor,
+        perPage: perPage ? parseInt(perPage) : undefined,
+        search,
+        type,
+        categoryId: effectiveCategoryId,
+        tagSlug: tagSlug || undefined,
+        brandSlug: brandSlug || undefined,
+        minPrice: minPrice ? parseFloat(minPrice) : undefined,
+        maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
+        isActive: isActive !== undefined ? isActive === 'true' : undefined,
+        isFeatured:
+          isFeatured !== undefined ? isFeatured === 'true' : undefined,
+        ids: ids ? ids.split(',').filter(Boolean) : undefined,
+        hasStock: parsedHasStock,
+        status,
+        fields,
+        sort,
+        order,
+      }, { isStaff: this.isStaffUser(user) });
+    }
 
     let parsedPage = page ? parseInt(page) : undefined;
     if (isSortingActive && cursor) {

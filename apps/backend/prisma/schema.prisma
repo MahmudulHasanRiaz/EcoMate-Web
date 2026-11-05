@@ -601,6 +601,13 @@ model Product {
   shortDesc            String?          @db.Text
   basePrice            Decimal          @db.Decimal(10, 2)
   salePrice            Decimal?         @db.Decimal(10, 2)
+  // Persisted card sort/display price (PLP scale round): simple =
+  // salePrice ?? basePrice; variable = minimum priced variant
+  // (salePrice ?? price, coalesced value > 0), falling back to the
+  // product rule when no variant is priced. Maintained by
+  // ProductsService on every price-affecting write; backfilled by
+  // migration 20261105120000_product_effective_price.
+  effectivePrice       Decimal          @default(0) @db.Decimal(10, 2)
   sku                  String?
   managedStockQuantity Int              @default(0) @map("stock")
   lowStockQty          Int?
@@ -661,6 +668,8 @@ model Product {
   @@index([sku])
   @@index([type])
   @@index([brandId])
+  // PLP price sort keyset pagination orders by (effectivePrice, id).
+  @@index([effectivePrice, id])
   // Substring SKU search on the orders list (trigram).
   @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_sku_trgm_idx")
   // Substring name/slug search on the product list (`contains`, leading

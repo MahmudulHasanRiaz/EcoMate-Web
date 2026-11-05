@@ -86,6 +86,25 @@ describe('CartDrawer', () => {
     expect(dialog.className).toContain('translate-x-full');
   });
 
+  it('keeps the closed drawer out of the tab order and accessibility tree (inert, not aria-hidden)', () => {
+    const { container } = renderDrawer();
+    const dialog = container.querySelector('[role="dialog"]') as HTMLElement;
+    const isInert = (el: HTMLElement) =>
+      el.hasAttribute('inert') || (el as unknown as { inert?: boolean }).inert === true;
+
+    // Closed on mount: inert, and NOT aria-hidden — aria-hidden over
+    // focusable descendants is the Lighthouse agentic-browsing failure
+    // ("Accessibility tree is not well-formed", PSI 2026-11-05).
+    expect(isInert(dialog)).toBe(true);
+    expect(dialog.hasAttribute('aria-hidden')).toBe(false);
+
+    fireEvent.click(screen.getByText('open'));
+    expect(isInert(dialog)).toBe(false);
+
+    fireEvent.click(screen.getByText('close'));
+    expect(isInert(dialog)).toBe(true);
+  });
+
   it('runs the checkout pulse a bounded number of times, never infinitely', () => {
     renderDrawer();
     fireEvent.click(screen.getByText('add'));

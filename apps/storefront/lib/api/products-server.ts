@@ -164,6 +164,28 @@ export async function getBrandsServer(): Promise<any[]> {
   }
 }
 
+/**
+ * PLP facet twin of getBrandsServer: the global tag list for the archive
+ * filter sidebar (name + slug per tag, same envelope-unwrap and ISR
+ * options as brands). Sourced from `GET /tags/facets` — the tags
+ * resource's visibility-gated facet route: only tags carried by at
+ * least one visible product (active, non-draft) are returned, so the
+ * rail never offers a filter that lands on an empty archive. Response
+ * shape matches `GET /tags/public` (bare array with _count.products).
+ * Never throws: a failed fetch resolves to [] and the archive falls
+ * back to deriving tag options from loaded items, exactly as it did
+ * before facets existed.
+ */
+export async function getTagsServer(): Promise<any[]> {
+  try {
+    const data = await serverFetch<any>("/tags/facets", { revalidate: 300, tags: ["products"] });
+    return Array.isArray(data) ? data : data.data || [];
+  } catch (err) {
+    console.error("Failed to fetch tags from backend:", err);
+    return [];
+  }
+}
+
 export async function getFeaturedProductsServer(perPage = 50): Promise<ProductCardData[]> {
   const config = await getStorefrontConfigServer().catch(() => null);
   const hideOos = config?.features?.hideOosFromArchive === true;

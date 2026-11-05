@@ -181,13 +181,17 @@ export default function CartDrawer() {
           the drawer visibly jumped when the browser chrome showed or
           hid mid-slide. will-change-transform promotes the panel to its
           own compositor layer before the slide starts, so a busy main
-          thread can't tear the first frames. */}
+          thread can't tear the first frames.
+          While closed, `inert` (not aria-hidden) takes the panel out of
+          the tab order AND the accessibility tree — aria-hidden on a
+          subtree that still contains focusable controls is the
+          Lighthouse "accessibility tree is not well-formed" failure. */}
       <div
         className={`fixed top-0 right-0 h-full supports-[height:100dvh]:h-dvh w-full sm:w-[400px] bg-[#fcfcfc] z-[70] shadow-2xl flex flex-col transform transition-transform duration-300 ease-out will-change-transform ${isCartOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
         role="dialog"
         aria-modal="true"
         aria-label="Shopping cart"
-        aria-hidden={!isCartOpen}
+        inert={!isCartOpen}
       >
         
         {/* Header */}

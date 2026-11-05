@@ -32,11 +32,12 @@ export default function MobileMenu({}: {}) {
 
   return (
     <>
-      <div 
+      <div
         className={`fixed inset-0 bg-black/60 z-[60] backdrop-blur-sm md:hidden transition-opacity duration-300 ${
           isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={() => setIsMobileMenuOpen(false)}
+        inert={!isMobileMenuOpen}
       >
         <button 
           onClick={() => setIsMobileMenuOpen(false)}
@@ -47,9 +48,12 @@ export default function MobileMenu({}: {}) {
         </button>
       </div>
 
+      {/* inert while closed: same mounted-drawer pattern as CartDrawer —
+          the off-canvas panel must leave the tab order and the
+          accessibility tree, not just the viewport. */}
       <div className={`fixed top-0 left-0 h-full w-[85vw] max-w-[340px] bg-white z-[70] flex flex-col transform transition-transform duration-300 ease-out md:hidden shadow-2xl ${
         isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
+      }`} inert={!isMobileMenuOpen}>
         
         {/* Header User Area */}
         <div className="p-4 pt-5">

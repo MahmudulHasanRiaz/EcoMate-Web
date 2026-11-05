@@ -389,3 +389,149 @@ describe('ArchivePageClient — refetch bug regression (param change without rem
     }
   });
 });
+
+describe('ArchivePageClient — server facet lists (PLP scale round)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setConsent(false, true);
+    window.fbq = vi.fn();
+    pushMock.mockClear();
+    searchParamsMock.mockClear();
+    searchParamsMock.mockImplementation(() => new URLSearchParams());
+    getProductsMock.mockReset();
+    getProductsMock.mockResolvedValue({
+      data: [],
+      meta: { total: 0, page: 2, perPage: 24, totalPages: 0, nextCursor: null, hasMore: false },
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true } as any);
+  });
+
+  // Facet slugs deliberately differ from what slugifying the name would
+  // produce ('acme-corp' / 'sale-items'), so a navigation carrying the
+  // facet slug proves the SERVER list — not name derivation — was used.
+  const brandFacets = [
+    { name: 'Acme Corp', slug: 'acme-corp-bd' },
+    { name: 'Zenith', slug: 'zenith' },
+  ];
+  const tagFacets = [{ name: 'Sale Items', slug: 'sale-items-bd' }];
+
+  const renderFacets = (
+    filters: ArchivePageClientProps['filters'],
+    opts: {
+      items?: any[];
+      brandFacets?: ArchivePageClientProps['brandFacets'];
+      tagFacets?: ArchivePageClientProps['tagFacets'];
+      cursor?: string | null;
+      hasMore?: boolean;
+    } = {},
+  ) =>
+    render(
+      <StorefrontConfigProvider initialConfig={CONFIG}>
+        <CartProvider>
+          <WishlistProvider>
+            <AuthProvider>
+              <ArchivePageClient
+                initialItems={opts.items ?? [productA, productB]}
+                initialCursor={opts.cursor ?? null}
+                initialHasMore={opts.hasMore ?? false}
+                initialTotal={2}
+                categories={[]}
+                brandFacets={opts.brandFacets}
+                tagFacets={opts.tagFacets}
+                filters={filters}
+              />
+            </AuthProvider>
+          </WishlistProvider>
+        </CartProvider>
+      </StorefrontConfigProvider>,
+    );
+
+  const facetCheckbox = (label: string) => {
+    const labelEl = screen.getByText(label).closest('label');
+    return labelEl?.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+  };
+
+  it('brand/tag options come from the server facet props — complete with zero scrolling', () => {
+    // productA/productB carry no brand and no tags: under the old
+    // item-derived options the sidebar lists would be EMPTY here.
+    renderFacets({}, { brandFacets, tagFacets });
+    expect(screen.getByText('Acme Corp')).toBeInTheDocument();
+    expect(screen.getByText('Zenith')).toBeInTheDocument();
+    expect(screen.getByText('Sale Items')).toBeInTheDocument();
+  });
+
+  it('the active brand shows selected via the facet slug even when no loaded item carries it', () => {
+    renderFacets({ brand: 'acme-corp-bd' }, { brandFacets, tagFacets });
+    const nameSpan = screen.getByText('Acme Corp');
+    expect(nameSpan.className).toContain('font-bold');
+    expect(facetCheckbox('Acme Corp')?.checked).toBe(true);
+    expect(facetCheckbox('Zenith')?.checked).toBe(false);
+  });
+
+  it('toggling a facet brand navigates with the SERVER slug, not a name-derived one', () => {
+    renderFacets({}, { brandFacets, tagFacets });
+    fireEvent.click(facetCheckbox('Acme Corp') as HTMLElement);
+    expect(pushMock).toHaveBeenCalledWith(expect.stringContaining('brand=acme-corp-bd'));
+  });
+
+  it('toggling a facet tag navigates with the SERVER slug', () => {
+    renderFacets({}, { brandFacets, tagFacets });
+    fireEvent.click(facetCheckbox('Sale Items') as HTMLElement);
+    expect(pushMock).toHaveBeenCalledWith(expect.stringContaining('tag=sale-items-bd'));
+  });
+
+  it('fallback: with no facet props, options derive from loaded items as before', () => {
+    const branded = {
+      id: 'p7', sku: 'SKU-7', slug: 'branded-thing', name: 'Branded Thing', price: 700,
+      image: null, images: null,
+      brand: { id: 'b7', name: 'ItemBrand', slug: 'item-brand' },
+      tags: ['ItemTag'],
+    } as any;
+    renderFacets({}, { items: [branded] });
+    expect(screen.getByText('ItemBrand')).toBeInTheDocument();
+    expect(screen.getByText('ItemTag')).toBeInTheDocument();
+  });
+
+  it('price sort pages by cursor: each server nextCursor is passed verbatim to the next fetch', async () => {
+    getProductsMock.mockReset();
+    getProductsMock
+      .mockResolvedValueOnce({
+        data: [{ ...productB, id: 'p9' }],
+        meta: { total: 50, perPage: 24, nextCursor: 'KEYSET_PAGE_2', hasMore: true },
+      })
+      .mockResolvedValue({
+        data: [],
+        meta: { total: 50, perPage: 24, nextCursor: null, hasMore: false },
+      });
+
+    renderFacets({ sort: 'price-high' }, { cursor: 'SEED_CURSOR', hasMore: true });
+
+    const triggerSentinels = () => {
+      const observers = (globalThis.IntersectionObserver as any).instances;
+      for (const o of observers) act(() => o.trigger(true));
+    };
+
+    triggerSentinels();
+    await vi.waitFor(() => expect(getProductsMock).toHaveBeenCalled());
+    expect(getProductsMock.mock.calls[0][0]).toMatchObject({
+      sort: 'basePrice',
+      order: 'desc',
+      cursor: 'SEED_CURSOR',
+    });
+
+    triggerSentinels();
+    await vi.waitFor(() =>
+      expect(
+        getProductsMock.mock.calls.some((c: any[]) => c[0]?.cursor === 'KEYSET_PAGE_2'),
+      ).toBe(true),
+    );
+    // Ordering: the keyset cursor is only ever requested AFTER the seed
+    // cursor page has been fetched (no page-number mode anywhere).
+    const cursors = getProductsMock.mock.calls.map((c: any[]) => c[0]?.cursor);
+    expect(cursors.indexOf('KEYSET_PAGE_2')).toBeGreaterThan(cursors.indexOf('SEED_CURSOR'));
+    for (const call of getProductsMock.mock.calls) {
+      expect(call[0]).toMatchObject({ sort: 'basePrice', order: 'desc' });
+      expect(call[0].page).toBeUndefined();
+    }
+  });
+});
