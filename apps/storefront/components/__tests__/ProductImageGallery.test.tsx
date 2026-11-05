@@ -109,7 +109,10 @@ describe('ProductImageGallery hero priority (scale round)', () => {
     expect(mobileHero).not.toBeNull();
     for (const hero of [desktopHero, mobileHero]) {
       expect(hero?.getAttribute('fetchpriority')).toBe('high');
-      expect(hero?.getAttribute('loading')).toBe('eager');
+      // Never lazy: next/image omits the loading attribute entirely on
+      // priority images (the preload IS the eager load), so the check
+      // is "not lazy", not a literal loading="eager".
+      expect(hero?.getAttribute('loading')).not.toBe('lazy');
     }
 
     const desktopSecond = byAlt('Gallery Product 2');
