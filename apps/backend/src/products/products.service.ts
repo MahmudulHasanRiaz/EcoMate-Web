@@ -1912,7 +1912,7 @@ export class ProductsService {
     // this write), which are read only for a variable draft.
     {
       const nextType = dto.type ?? p.type;
-      let priceVariants: Array<{ price: any; salePrice: any }> = [];
+      let priceVariants: Array<{ price?: any; salePrice?: any }> = [];
       if (dto.variants) {
         priceVariants = dto.variants;
       } else if (nextType === 'variable') {
