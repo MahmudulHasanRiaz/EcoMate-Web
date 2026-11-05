@@ -12,6 +12,7 @@ import {
   InitialPhysicalUnit,
 } from '../stock/initial-physical-stock.service';
 import { StockService } from '../stock/stock.service';
+import { ProductsService } from '../products/products.service';
 import * as Papa from 'papaparse';
 import slugify from './utils/slugify';
 import {
@@ -50,6 +51,13 @@ export class ImportService {
     // predate it keep working; StockModule is global in the real app.
     @Optional()
     private readonly stock?: StockService,
+    // Used only to refresh the persisted PLP sort price
+    // (Product.effectivePrice) once per imported product group, after
+    // every price the group wrote is final. Optional for the same
+    // unit-construction reason as StockService above; ImportModule
+    // imports ProductsModule in the real app.
+    @Optional()
+    private readonly products?: ProductsService,
   ) {}
 
   async importFromCsv(
@@ -609,6 +617,13 @@ export class ImportService {
         }
       }
     }
+
+    // PLP scale round: this group funnel is the ONLY write path of the
+    // CSV import — parent create/update, variation upserts and the
+    // basePrice fill above all land here — so one refresh per group,
+    // after every price it wrote is final, keeps the persisted sort
+    // price exact without touching the per-row write sites.
+    await this.products?.syncEffectivePrice(productId);
   }
 
   /**

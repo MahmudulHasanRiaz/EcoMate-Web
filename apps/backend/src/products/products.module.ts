@@ -8,5 +8,8 @@ import { CustomizationService } from '../customization/customization.service';
   imports: [MediaModule],
   controllers: [ProductsController],
   providers: [ProductsService, CustomizationService],
+  // ImportModule injects ProductsService to refresh the persisted PLP
+  // sort price (syncEffectivePrice) after CSV price writes.
+  exports: [ProductsService],
 })
 export class ProductsModule {}

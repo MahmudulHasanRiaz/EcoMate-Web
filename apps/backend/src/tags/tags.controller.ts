@@ -35,6 +35,16 @@ export class TagsController {
     return this.svc.findAll();
   }
 
+  // PLP facet list (scale round): distinct tags used by at least one
+  // visible product — the tags counterpart of GET /brands for the
+  // storefront filter rail. Declared before ':id' so the literal
+  // segment wins over the parameter route.
+  @Public()
+  @Get('facets')
+  async findFacets() {
+    return this.svc.findFacets();
+  }
+
   @Roles('superadmin', 'admin', 'employee')
   @RequiresFeature('admin_products')
   @Get(':id')

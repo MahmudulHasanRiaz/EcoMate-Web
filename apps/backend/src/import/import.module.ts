@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
 import { StorageService } from '../storage/storage.service';
 import { CustomersModule } from '../customers/customers.module';
+import { ProductsModule } from '../products/products.module';
 import { ImportJobManager } from './import-job-manager';
 
 @Module({
@@ -18,7 +19,7 @@ import { ImportJobManager } from './import-job-manager';
     StorageService,
     ImportJobManager,
   ],
-  imports: [CustomersModule],
+  imports: [CustomersModule, ProductsModule],
   exports: [ImportService, OrderImportService, ImportJobManager],
 })
 export class ImportModule {}

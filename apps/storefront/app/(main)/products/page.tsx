@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { fetchProductCardsServer, getBrandsServer, getCategoriesServer } from "@/lib/api/products-server";
+import { fetchProductCardsServer, getBrandsServer, getCategoriesServer, getTagsServer } from "@/lib/api/products-server";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { getMetaStoreName, metaBaseUrl, prettySlug } from "@/lib/archive-meta";
 import ArchivePageClient from "./ArchivePageClient";
@@ -116,10 +116,27 @@ export default async function ProductsPage({
     : sort === "featured" ? "isFeatured"
     : undefined;
 
-  const [config, categories] = await Promise.all([
+  const [config, categories, brands, tags] = await Promise.all([
     getStorefrontConfigServer().catch(() => null),
     getCategoriesServer(),
+    getBrandsServer().catch(() => []),
+    getTagsServer().catch(() => []),
   ]);
+
+  // PLP facet lists (PLP scale round): the filter sidebar's brand/tag
+  // options come from these GLOBAL server lists, complete on first
+  // render — previously the client derived them from whichever infinite-
+  // scroll items happened to be loaded, so the lists were incomplete
+  // until the visitor scrolled. Both fetchers never throw (they resolve
+  // to [] on backend failure); an empty list makes the client fall back
+  // to the old item-derived options, so a facet outage cannot break the
+  // page. Only name + slug cross the wire — the client needs nothing else.
+  const toFacetOptions = (list: any[]) =>
+    (Array.isArray(list) ? list : [])
+      .filter((x) => x && typeof x.name === 'string' && x.name)
+      .map((x) => ({ name: x.name, slug: typeof x.slug === 'string' ? x.slug : '' }));
+  const brandFacets = toFacetOptions(brands);
+  const tagFacets = toFacetOptions(tags);
 
   const hideOos = config?.features?.hideOosFromArchive === true && !sp.search;
 
@@ -149,6 +166,8 @@ export default async function ProductsPage({
       initialHasMore={meta.hasMore}
       initialTotal={meta.total}
       categories={categories}
+      brandFacets={brandFacets}
+      tagFacets={tagFacets}
       filters={sp}
       hasStock={hideOos || undefined}
     />

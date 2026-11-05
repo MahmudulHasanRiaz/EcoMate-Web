@@ -21,7 +21,12 @@ export function StickyBar({ isOutOfStock, visible, onOpenSheet }: Props) {
     <div
       className={`fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] pb-safe hidden max-[900px]:block transition-transform duration-300 ${visible ? 'translate-y-0' : 'translate-y-full pointer-events-none'}`}
       data-testid="sticky-bar"
-      aria-hidden={!visible}
+      // While hidden, `inert` (not aria-hidden) takes the bar's buttons
+      // out of the tab order AND the accessibility tree — aria-hidden on
+      // a subtree that still contains focusable controls is the
+      // Lighthouse "accessibility tree is not well-formed" failure
+      // (same defect class as the cart drawer, PSI 2026-11-05).
+      inert={!visible}
     >
       <div className="flex items-stretch gap-1.5 px-3 py-2 max-w-screen-xl mx-auto">
         {isOutOfStock ? (

@@ -81,3 +81,50 @@ describe('ProductImageGallery autoplay (P6)', () => {
     expect(cancelSpy).toHaveBeenCalled();
   });
 });
+
+/**
+ * Hero priority (PLP/PDP scale round) — the first gallery image is the
+ * PDP LCP element on BOTH viewports: desktop slide 1 and mobile slide 1
+ * carry priority treatment (fetchpriority=high, never lazy). Everything
+ * else — later slides, thumbnails — stays unprioritised so the priority
+ * budget remains the hero only.
+ */
+describe('ProductImageGallery hero priority (scale round)', () => {
+  const renderGallery = () =>
+    render(
+      <ProductImageGallery
+        images={['/uploads/a.jpg', '/uploads/b.jpg']}
+        productName="Gallery Product"
+      />,
+    );
+
+  it('prioritises ONLY the first slide in both carousels', () => {
+    const { container } = renderGallery();
+    const byAlt = (alt: string) =>
+      container.querySelector(`img[alt="${alt}"]`) as HTMLImageElement | null;
+
+    const desktopHero = byAlt('Gallery Product 1');
+    const mobileHero = byAlt('Gallery Product image 1');
+    expect(desktopHero).not.toBeNull();
+    expect(mobileHero).not.toBeNull();
+    for (const hero of [desktopHero, mobileHero]) {
+      expect(hero?.getAttribute('fetchpriority')).toBe('high');
+      expect(hero?.getAttribute('loading')).toBe('eager');
+    }
+
+    const desktopSecond = byAlt('Gallery Product 2');
+    const mobileSecond = byAlt('Gallery Product image 2');
+    for (const slide of [desktopSecond, mobileSecond]) {
+      expect(slide).not.toBeNull();
+      expect(slide?.getAttribute('fetchpriority')).not.toBe('high');
+      expect(slide?.getAttribute('loading')).toBe('lazy');
+    }
+
+    // Thumbnails (alt="") never take priority budget.
+    const thumbs = Array.from(container.querySelectorAll('img[alt=""]'));
+    expect(thumbs.length).toBeGreaterThan(0);
+    for (const t of thumbs) {
+      expect(t.getAttribute('fetchpriority')).not.toBe('high');
+    }
+  });
+});

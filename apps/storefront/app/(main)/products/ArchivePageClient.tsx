@@ -11,17 +11,36 @@ import { trackSearch, normalizeSearchQuery } from '@/lib/tracking';
 import { useAuth } from '@/context/AuthContext';
 import type { ProductCardData, Category } from '@/lib/types';
 
+/** One global facet entry (brand or tag) as fetched server-side. */
+export interface ArchiveFacetOption {
+  name: string;
+  slug: string;
+}
+
 export interface ArchivePageClientProps {
   initialItems: ProductCardData[];
   initialCursor: string | null;
   initialHasMore: boolean;
   initialTotal?: number;
   categories: Category[];
+  /**
+   * Global brand/tag facet lists from the server (PLP scale round).
+   * Optional: when absent or empty (older page payload, facet fetch
+   * failed), the sidebar falls back to deriving options from the loaded
+   * items — the pre-facet behaviour — so the page never breaks.
+   */
+  brandFacets?: ArchiveFacetOption[];
+  tagFacets?: ArchiveFacetOption[];
   filters: { search?: string; category?: string; categoryId?: string; tag?: string; brand?: string; minPrice?: string; maxPrice?: string; sort?: string; page?: string };
   hasStock?: boolean;
 }
 
 const PAGE_SIZE = 24;
+
+/** The archive's long-standing name→slug derivation for facet values. */
+function slugifyFacetValue(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
 
 function SkeletonCard() {
   return (
@@ -222,6 +241,8 @@ export default function ArchivePageClient({
   initialHasMore,
   initialTotal,
   categories,
+  brandFacets,
+  tagFacets,
   filters,
   hasStock,
 }: ArchivePageClientProps) {
@@ -244,6 +265,21 @@ export default function ArchivePageClient({
   const [sortBy, setSortBy] = React.useState(initialSort);
   const [viewMode, setViewMode] = React.useState<'grid' | 'list'>('grid');
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
+  // The filter rail is a fixed off-canvas drawer only below md; at md+
+  // it is the always-visible sidebar. `inert` may therefore apply only
+  // in the mobile + closed state — inert on the desktop sidebar would
+  // disable the filters entirely. matchMedia mirrors the Tailwind md
+  // breakpoint (768px); environments without matchMedia (jsdom) keep
+  // the default false, i.e. never inert.
+  const [isMobileViewport, setIsMobileViewport] = React.useState(false);
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !('matchMedia' in window)) return;
+    const mq = window.matchMedia('(max-width: 767.98px)');
+    const update = () => setIsMobileViewport(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   const [brandSearch, setBrandSearch] = React.useState('');
   const [tagSearch, setTagSearch] = React.useState('');
@@ -348,7 +384,19 @@ export default function ArchivePageClient({
       getId: (p) => p.id,
     });
 
+  // Facet options come from the SERVER-provided global lists (complete
+  // on first render, no scrolling). The pre-facet derivation from loaded
+  // infinite-scroll items remains ONLY as a fallback for when the server
+  // list is absent/empty (facet fetch failed or an older page payload) —
+  // it was incomplete until the visitor scrolled far enough, which at
+  // catalog scale is a correctness bug, not just a perf one.
   const brandOptions = useMemo(() => {
+    const facetNames = (brandFacets || [])
+      .map((f) => f?.name)
+      .filter((n): n is string => typeof n === 'string' && n !== '');
+    if (facetNames.length > 0) {
+      return Array.from(new Set(facetNames)).sort();
+    }
     const set = new Set<string>();
     for (const p of items || []) {
       if (p?.brand?.name) {
@@ -356,9 +404,15 @@ export default function ArchivePageClient({
       }
     }
     return Array.from(set).sort();
-  }, [items]);
+  }, [brandFacets, items]);
 
   const tagOptions = useMemo(() => {
+    const facetNames = (tagFacets || [])
+      .map((f) => f?.name)
+      .filter((n): n is string => typeof n === 'string' && n !== '');
+    if (facetNames.length > 0) {
+      return Array.from(new Set(facetNames)).sort();
+    }
     const set = new Set<string>();
     for (const p of items || []) {
       if (!p) continue;
@@ -367,23 +421,32 @@ export default function ArchivePageClient({
       }
     }
     return Array.from(set).sort();
-  }, [items]);
+  }, [tagFacets, items]);
 
   const categoryTree = useMemo(() => buildCategoryTree(categories || []), [categories]);
 
   const selectedBrands = useMemo(() => {
     if (!filters.brand) return [];
+    // Server facet list first: the selected brand may not be among the
+    // loaded items at all (its products sit beyond the scrolled pages),
+    // in which case the old item lookup left the checkbox unchecked
+    // while the filter was active.
+    const facet = (brandFacets || []).find(
+      (f) => f?.slug && f.slug.toLowerCase() === filters.brand?.toLowerCase(),
+    );
+    if (facet?.name) return [facet.name];
     const match = items.find((p) => p.brand?.slug?.toLowerCase() === filters.brand?.toLowerCase());
     return match?.brand?.name ? [match.brand.name] : [];
-  }, [filters.brand, items]);
+  }, [filters.brand, brandFacets, items]);
 
   const selectedTags = useMemo(() => {
     if (!filters.tag) return [];
     return tagOptions.filter((t) => {
-      const slug = t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-      return slug === filters.tag;
+      const facet = (tagFacets || []).find((f) => f?.name === t);
+      if (facet?.slug && facet.slug.toLowerCase() === filters.tag?.toLowerCase()) return true;
+      return slugifyFacetValue(t) === filters.tag;
     });
-  }, [filters.tag, tagOptions]);
+  }, [filters.tag, tagOptions, tagFacets]);
 
   const visibleItems = useMemo(() => {
     return items || [];
@@ -430,8 +493,14 @@ export default function ArchivePageClient({
   };
 
   const toggleBrand = (brandName: string) => {
+    // Slug resolution order: server facet list (authoritative, covers
+    // brands whose products are not loaded), then a loaded item's brand,
+    // then the name-derived slug — the last two are the pre-facet paths.
+    const facet = (brandFacets || []).find(
+      (f) => f?.name?.toLowerCase() === brandName.toLowerCase(),
+    );
     const match = items.find((p) => p.brand?.name?.toLowerCase() === brandName.toLowerCase());
-    const slug = match?.brand?.slug;
+    const slug = facet?.slug || match?.brand?.slug;
     if (slug) {
       if (filters.brand === slug) {
         applyFilters({ brand: '' });
@@ -439,7 +508,7 @@ export default function ArchivePageClient({
         applyFilters({ brand: slug });
       }
     } else {
-      const fallbackSlug = brandName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      const fallbackSlug = slugifyFacetValue(brandName);
       if (filters.brand === fallbackSlug) {
         applyFilters({ brand: '' });
       } else {
@@ -449,7 +518,8 @@ export default function ArchivePageClient({
   };
 
   const toggleTag = (tagName: string) => {
-    const slug = tagName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const facet = (tagFacets || []).find((f) => f?.name === tagName);
+    const slug = facet?.slug || slugifyFacetValue(tagName);
     if (filters.tag === slug) {
       applyFilters({ tag: '' });
     } else {
@@ -536,7 +606,7 @@ export default function ArchivePageClient({
         />
 
         <div className="flex flex-col md:flex-row gap-6 md:gap-8">
-          <aside className={`
+          <aside inert={isMobileViewport && !isFilterOpen} className={`
             fixed inset-y-0 left-0 z-[100] w-80 max-w-[85vw] bg-white p-6 shadow-2xl transition-transform duration-300 ease-in-out
             md:relative md:inset-auto md:z-0 md:w-64 lg:w-[280px] md:p-0 md:bg-transparent md:shadow-none md:transform-none md:translate-x-0
             md:sticky md:top-24 md:max-h-[calc(100vh-8rem)] md:overflow-y-auto pr-2

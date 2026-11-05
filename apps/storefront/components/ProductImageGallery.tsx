@@ -388,16 +388,21 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
                   src={displayUrl(img, mediaMeta, 'small', !!imgErrors[i], fallbackImage, i)}
                   alt={`${productName} image ${i + 1}`}
                   fill
-                  // P3: exactly ONE priority preload in the gallery.
-                  // Desktop (first in DOM, `medium`) keeps priority; this
-                  // mobile carousel used to ALSO priority-preload the
-                  // `small` variant, so the LCP image was preloaded twice
-                  // in two sizes. Mobile's first image stays eager/high
-                  // so it still fetches immediately on mobile — it just
-                  // no longer emits a second preload.
-                  {...(i === 0
-                    ? { loading: "eager" as const, fetchPriority: "high" as const }
-                    : {})}
+                  // Hero priority (PLP/PDP scale round): the first slide
+                  // is the LCP element on mobile too, so it carries the
+                  // same priority treatment as the desktop slide above —
+                  // `priority` (never lazy) + fetchPriority high. The
+                  // priority BUDGET is still one effective preload: both
+                  // carousels render the hero with the SAME `sizes`, and
+                  // the custom image loader resolves every srcset width
+                  // to the same derivative-variant ladder regardless of
+                  // which variant URL is the src, so the two priority
+                  // srcsets are identical and the browser fetches the
+                  // hero candidate once. (P3's double preload was two
+                  // different single-size preloads; that no longer
+                  // applies.) Slides beyond the first stay unprioritised.
+                  priority={i === 0}
+                  fetchPriority={i === 0 ? "high" : "auto"}
                   sizes="(max-width: 900px) 100vw, 50vw"
                   className={`object-contain img-fade-in ${imgLoaded[i] ? 'opacity-100' : 'opacity-0'}`}
                   onLoad={() => setImgLoaded(prev => ({ ...prev, [i]: true }))}

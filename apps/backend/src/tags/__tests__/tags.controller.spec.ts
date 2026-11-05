@@ -12,7 +12,7 @@ describe('TagsController', () => {
     'merge',
   ];
 
-  const publicMethods = ['findAllPublic'];
+  const publicMethods = ['findAllPublic', 'findFacets'];
 
   describe('admin methods', () => {
     it.each(adminMethods)(

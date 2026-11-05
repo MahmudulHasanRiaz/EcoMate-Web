@@ -4,7 +4,12 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { ProductsService } from './products.service';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  ProductsService,
+  computeEffectivePrice,
+} from './products.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
 import { MediaResolverService } from '../media/media-resolver.service';
@@ -1983,6 +1988,435 @@ describe('ProductsService', () => {
         const call = (prisma.product.update as jest.Mock).mock.calls[0][0];
         expect(call.data.isActive).toBe(false);
         expect(call.data.status).toBeUndefined();
+      });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // PLP scale round — persisted effectivePrice: the pure rule, its
+  // maintenance helper, the DB price sorts (offset + keyset cursor),
+  // the variant-price maintenance wiring, and the SQL backfill
+  // contract that must mirror the JS rule exactly.
+  // ─────────────────────────────────────────────────────────────────
+  describe('effectivePrice (PLP scale round)', () => {
+    describe('computeEffectivePrice', () => {
+      it('simple: the sale price wins over the base price', () => {
+        expect(
+          computeEffectivePrice(
+            { type: 'simple', basePrice: 1200, salePrice: 999 },
+            [],
+          ),
+        ).toBe(999);
+      });
+
+      it('simple: falls back to the base price without a sale', () => {
+        expect(
+          computeEffectivePrice(
+            { type: 'simple', basePrice: 1200, salePrice: null },
+            [],
+          ),
+        ).toBe(1200);
+      });
+
+      it('simple: an explicit zero sale price stays zero (?? not ||)', () => {
+        expect(
+          computeEffectivePrice(
+            { type: 'simple', basePrice: 1200, salePrice: 0 },
+            [],
+          ),
+        ).toBe(0);
+      });
+
+      it('variable: minimum over variants, per-variant sale precedence', () => {
+        expect(
+          computeEffectivePrice(
+            { type: 'variable', basePrice: 2000, salePrice: null },
+            [
+              { price: 900, salePrice: 700 },
+              { price: 600, salePrice: null },
+              // A variant's sale price REPLACES its price even when
+              // higher — the coalesce is not a "cheapest of the two".
+              { price: 400, salePrice: 450 },
+            ],
+          ),
+        ).toBe(450);
+      });
+
+      it('variable: unpriced variants (null, 0, negative) are ignored', () => {
+        expect(
+          computeEffectivePrice(
+            { type: 'variable', basePrice: 2000, salePrice: null },
+            [
+              { price: null, salePrice: null },
+              { price: 0, salePrice: null },
+              { price: -50, salePrice: null },
+              { price: 300, salePrice: null },
+            ],
+          ),
+        ).toBe(300);
+      });
+
+      it('variable: a variant sale price of 0 makes it unpriced, price notwithstanding', () => {
+        expect(
+          computeEffectivePrice(
+            { type: 'variable', basePrice: 2000, salePrice: null },
+            [
+              { price: 500, salePrice: 0 },
+              { price: 800, salePrice: null },
+            ],
+          ),
+        ).toBe(800);
+      });
+
+      it('variable: no priced variant falls back to the product rule', () => {
+        expect(
+          computeEffectivePrice(
+            { type: 'variable', basePrice: 2000, salePrice: 1500 },
+            [
+              { price: null, salePrice: null },
+              { price: 0, salePrice: null },
+            ],
+          ),
+        ).toBe(1500);
+      });
+
+      it('variable: no variants at all falls back to the product rule', () => {
+        expect(
+          computeEffectivePrice(
+            { type: 'variable', basePrice: 2000, salePrice: null },
+            [],
+          ),
+        ).toBe(2000);
+      });
+
+      it('accepts Decimal-shaped values (Prisma Decimal / strings)', () => {
+        expect(
+          computeEffectivePrice(
+            { type: 'simple', basePrice: '1200.50' as any, salePrice: null },
+            [],
+          ),
+        ).toBe(1200.5);
+      });
+    });
+
+    describe('syncEffectivePrice', () => {
+      it('writes the variable minimum when the stored value drifted', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+          id: 'prod-1',
+          type: 'variable',
+          basePrice: 2000,
+          salePrice: null,
+          effectivePrice: 999,
+        });
+        (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
+          { price: 500, salePrice: 450 },
+          { price: 700, salePrice: null },
+          { price: null, salePrice: null },
+          { price: 0, salePrice: null },
+        ]);
+        (prisma.product.update as jest.Mock).mockResolvedValue({});
+
+        const value = await service.syncEffectivePrice('prod-1');
+
+        expect(value).toBe(450);
+        expect(prisma.product.update).toHaveBeenCalledWith({
+          where: { id: 'prod-1' },
+          data: { effectivePrice: 450 },
+        });
+      });
+
+      it('writes nothing when the stored value already matches', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+          id: 'prod-1',
+          type: 'simple',
+          basePrice: 1000,
+          salePrice: 800,
+          effectivePrice: 800,
+        });
+
+        const value = await service.syncEffectivePrice('prod-1');
+
+        expect(value).toBe(800);
+        expect(prisma.product.update).not.toHaveBeenCalled();
+        expect(prisma.productVariant.findMany).not.toHaveBeenCalled();
+      });
+
+      it('returns null for a missing product', async () => {
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+        await expect(service.syncEffectivePrice('ghost')).resolves.toBeNull();
+        expect(prisma.product.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('findAll price sort (offset path)', () => {
+      it('orders by the persisted column in Postgres — a single paged read', async () => {
+        (prisma.product.findMany as jest.Mock).mockResolvedValue([
+          mockProduct,
+        ]);
+        (prisma.product.count as jest.Mock).mockResolvedValue(1);
+
+        await service.findAll({
+          page: 2,
+          perPage: 10,
+          sort: 'basePrice',
+          order: 'asc',
+        });
+
+        expect(prisma.product.findMany).toHaveBeenCalledTimes(1);
+        const call = (prisma.product.findMany as jest.Mock).mock.calls[0][0];
+        expect(call.orderBy).toEqual([
+          { effectivePrice: 'asc' },
+          { id: 'asc' },
+        ]);
+        expect(call.skip).toBe(10);
+        expect(call.take).toBe(10);
+      });
+
+      it('defaults the price direction to desc, tie-break stays id asc', async () => {
+        (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+        (prisma.product.count as jest.Mock).mockResolvedValue(0);
+
+        await service.findAll({ sort: 'price' });
+
+        const call = (prisma.product.findMany as jest.Mock).mock.calls[0][0];
+        expect(call.orderBy).toEqual([
+          { effectivePrice: 'desc' },
+          { id: 'asc' },
+        ]);
+      });
+    });
+
+    describe('findAllCursor price sort (keyset)', () => {
+      const priceRows = (specs: Array<[string, number]>) =>
+        specs.map(([id, price]) => ({
+          id,
+          slug: id,
+          name: id,
+          type: 'simple',
+          basePrice: price,
+          salePrice: null,
+          effectivePrice: price,
+          images: [],
+          variants: [],
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        }));
+
+      it('orders by (effectivePrice, id) and encodes the price key in the cursor', async () => {
+        (prisma.product.findMany as jest.Mock).mockResolvedValue(
+          priceRows([
+            ['p-1', 100],
+            ['p-2', 250.5],
+          ]),
+        );
+        (prisma.product.count as jest.Mock).mockResolvedValue(2);
+
+        const result = await service.findAllCursor({
+          perPage: 2,
+          sort: 'basePrice',
+          order: 'asc',
+        });
+
+        const call = (prisma.product.findMany as jest.Mock).mock.calls[0][0];
+        expect(call.orderBy).toEqual([
+          { effectivePrice: 'asc' },
+          { id: 'asc' },
+        ]);
+        expect(call.where.AND).toBeUndefined();
+        // The cursor payload is `${price}|${id}` — the keyset position.
+        expect(
+          Buffer.from(result.meta.nextCursor!, 'base64url').toString(),
+        ).toBe('250.5|p-2');
+      });
+
+      it('applies the desc keyset filter: price below, or equal price with greater id', async () => {
+        (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+        (prisma.product.count as jest.Mock).mockResolvedValue(0);
+        const cursor = Buffer.from('450.5|p-9', 'utf8').toString(
+          'base64url',
+        );
+
+        await service.findAllCursor({ cursor, sort: 'price', order: 'desc' });
+
+        const call = (prisma.product.findMany as jest.Mock).mock.calls[0][0];
+        expect(call.orderBy).toEqual([
+          { effectivePrice: 'desc' },
+          { id: 'asc' },
+        ]);
+        expect(call.where.AND).toEqual([
+          {
+            OR: [
+              { effectivePrice: { lt: 450.5 } },
+              { effectivePrice: 450.5, id: { gt: 'p-9' } },
+            ],
+          },
+        ]);
+      });
+
+      it('treats a createdAt-shaped cursor as a first page on the price path', async () => {
+        (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+        (prisma.product.count as jest.Mock).mockResolvedValue(0);
+        const legacy = Buffer.from(
+          '2026-01-01T00:00:00.000Z|p-9',
+          'utf8',
+        ).toString('base64url');
+
+        await service.findAllCursor({
+          cursor: legacy,
+          sort: 'basePrice',
+          order: 'asc',
+        });
+
+        const call = (prisma.product.findMany as jest.Mock).mock.calls[0][0];
+        expect(call.where.AND).toBeUndefined();
+      });
+
+      // Stateful fake: applies the service's OWN emitted keyset filter
+      // and orderBy to an in-memory catalogue, the way Postgres would —
+      // so a wrong gt/lt or a flipped tie-break shows up here as
+      // duplicated or skipped products across pages.
+      it('pages a price-sorted catalogue with no duplicates or skips (asc + desc)', async () => {
+        const dataset = priceRows([
+          ['p-a', 100],
+          ['p-b', 200],
+          ['p-c', 200],
+          ['p-d', 200],
+          ['p-e', 350],
+          ['p-f', 900],
+        ]);
+        (prisma.product.count as jest.Mock).mockResolvedValue(dataset.length);
+        (prisma.product.findMany as jest.Mock).mockImplementation(
+          async (args: any) => {
+            let rows = [...dataset];
+            const ands: any[] = args.where?.AND ?? [];
+            const keyset = ands.find(
+              (c: any) =>
+                Array.isArray(c.OR) &&
+                c.OR.some((o: any) => 'effectivePrice' in o),
+            );
+            if (keyset) {
+              const [range, tie] = keyset.OR;
+              rows = rows.filter((r: any) => {
+                const p = Number(r.effectivePrice);
+                const inRange =
+                  range.effectivePrice.gt !== undefined
+                    ? p > range.effectivePrice.gt
+                    : p < range.effectivePrice.lt;
+                const inTie =
+                  p === Number(tie.effectivePrice) && r.id > tie.id.gt;
+                return inRange || inTie;
+              });
+            }
+            const dir = args.orderBy[0].effectivePrice === 'asc' ? 1 : -1;
+            rows.sort((a: any, b: any) => {
+              const d = (Number(a.effectivePrice) - Number(b.effectivePrice)) * dir;
+              if (d !== 0) return d;
+              return a.id < b.id ? -1 : 1; // id ASC tie-break, both ways
+            });
+            return rows.slice(0, args.take);
+          },
+        );
+
+        const collect = async (order: 'asc' | 'desc') => {
+          const seen: string[] = [];
+          let cursor: string | undefined;
+          for (let page = 0; page < 10; page++) {
+            const res = await service.findAllCursor({
+              cursor,
+              perPage: 2,
+              sort: 'basePrice',
+              order,
+            });
+            seen.push(...res.data.map((p: any) => p.id));
+            if (!res.meta.nextCursor) break;
+            cursor = res.meta.nextCursor;
+          }
+          return seen;
+        };
+
+        expect(await collect('asc')).toEqual([
+          'p-a',
+          'p-b',
+          'p-c',
+          'p-d',
+          'p-e',
+          'p-f',
+        ]);
+        expect(await collect('desc')).toEqual([
+          'p-f',
+          'p-e',
+          'p-b',
+          'p-c',
+          'p-d',
+          'p-a',
+        ]);
+      });
+    });
+
+    describe('updateVariant → effectivePrice maintenance', () => {
+      it('recomputes the parent sort price from the post-edit variant set', async () => {
+        (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue(
+          mockVariant,
+        );
+        (prisma.productVariant.update as jest.Mock).mockResolvedValue({
+          ...mockVariant,
+          price: 600,
+          salePrice: 550,
+        });
+        (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+          id: 'prod-1',
+          type: 'variable',
+          basePrice: 2000,
+          salePrice: null,
+          effectivePrice: 800,
+        });
+        (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
+          { price: 600, salePrice: 550 },
+          { price: 900, salePrice: null },
+        ]);
+        (prisma.product.update as jest.Mock).mockResolvedValue({});
+
+        await service.updateVariant('prod-1', 'variant-1', {
+          salePrice: 550,
+        });
+
+        expect(prisma.product.update).toHaveBeenCalledWith({
+          where: { id: 'prod-1' },
+          data: { effectivePrice: 550 },
+        });
+      });
+    });
+
+    describe('migration backfill contract', () => {
+      // Executing the SQL needs a database the unit suite does not
+      // have; the contract is the load-bearing fragments, cross-checked
+      // against the computeEffectivePrice matrix above: same coalesce
+      // order (sale before base/price), same > 0 priced-variant gate,
+      // same MIN aggregate, same product-rule fallback.
+      it('migration SQL mirrors the JS effective-price rule', () => {
+        const sql = fs.readFileSync(
+          path.resolve(
+            __dirname,
+            '..',
+            '..',
+            'prisma',
+            'migrations',
+            '20261105120000_product_effective_price',
+            'migration.sql',
+          ),
+          'utf8',
+        );
+        expect(sql).toContain(
+          'ADD COLUMN "effectivePrice" DECIMAL(10,2) NOT NULL DEFAULT 0',
+        );
+        expect(sql).toContain(
+          'CREATE INDEX "Product_effectivePrice_id_idx" ON "Product"("effectivePrice", "id")',
+        );
+        expect(sql).toContain("p.type = 'variable'");
+        expect(sql).toContain('MIN(COALESCE(v."salePrice", v.price))');
+        expect(sql).toContain('COALESCE(v."salePrice", v.price) > 0');
+        expect(sql).toContain('COALESCE(p."salePrice", p."basePrice")');
+        // Additive-only deploy safety (migration-safety gate).
+        expect(sql).not.toMatch(/\bDROP\b|\bDELETE\b|\bTRUNCATE\b/i);
       });
     });
   });

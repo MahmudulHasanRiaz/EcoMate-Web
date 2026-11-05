@@ -21,6 +21,30 @@ export class TagsService {
     });
   }
 
+  /**
+   * PLP facet list (scale round): only tags carried by at least one
+   * VISIBLE product — active and not a draft, the same gate the public
+   * product reads use. The storefront used to derive its tag options
+   * from already-loaded PLP items, so the list was incomplete until
+   * the visitor had scrolled the whole catalogue. Phase 1: the global
+   * list (no category/search scoping, no per-context counts). Response
+   * shape matches findAll — a bare array of tag rows with
+   * _count.products — the same style as GET /brands.
+   */
+  async findFacets() {
+    return this.prisma.tag.findMany({
+      where: {
+        products: {
+          some: {
+            product: { isActive: true, status: { not: 'draft' } },
+          },
+        },
+      },
+      orderBy: { name: 'asc' },
+      include: { _count: { select: { products: true } } },
+    });
+  }
+
   async findOne(id: string) {
     const tag = await this.prisma.tag.findUnique({
       where: { id },

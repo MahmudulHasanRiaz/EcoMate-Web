@@ -371,6 +371,10 @@ async function main(): Promise<void> {
         sku: `SCALE-${i}`,
         basePrice: base.toFixed(2),
         salePrice: i % 3 === 0 ? Math.round(base * 0.85).toFixed(2) : null,
+        // PLP scale round: simple products, so the persisted sort price
+        // is salePrice ?? basePrice — set it at birth or the seeded
+        // catalogue would sort as all-zero prices.
+        effectivePrice: (i % 3 === 0 ? Math.round(base * 0.85) : base).toFixed(2),
         availabilityMode: (managed ? 'MANAGED_STOCK' : 'ALWAYS_IN_STOCK') as never,
         managedStockQuantity: managed ? 25 : 0,
         manageStock: managed,
