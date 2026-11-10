@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight, Pause, Play, ZoomIn, ZoomOut } from 'lucide-react';
 import Image from 'next/image';
 import { PLACEHOLDER_IMAGE } from "@/lib/constants";
@@ -454,7 +455,12 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
         </div>
       </div>
 
-      {lightboxOpen && (
+      {/* Portal to <body>: the gallery sits inside the PDP's sticky left
+          column, whose stacking context caps this overlay's z-index — the
+          sticky buy column, header and floating widgets painted OVER the
+          lightbox (staging bug, 2026-11-10). At body level z-[100] competes
+          globally and the lightbox always wins. Do not render inline. */}
+      {lightboxOpen && createPortal(
         <div
           className="fixed inset-0 z-[100] bg-black/95 select-none"
           onClick={() => setLightboxOpen(false)}
@@ -558,7 +564,7 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
           {hasMultiple && images.length <= 10 && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 z-30">
               {images.map((_, i) => (
-                <button key={i} onClick={(e) => { e.stopPropagation(); setLightboxIndex(i); setIsZoomed(false); setZoomScale(1); }}
+                <button key={i} aria-label={`View image ${i + 1}`} onClick={(e) => { e.stopPropagation(); setLightboxIndex(i); setIsZoomed(false); setZoomScale(1); }}
                   className={`rounded-full transition-all ${
                     i === lightboxIndex ? 'bg-white w-2.5 h-2.5' : 'bg-white/40 hover:bg-white/70 w-2 h-2'
                   }`} />
@@ -567,13 +573,13 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
           )}
 
           {lightboxIndex > 0 && (
-            <button onClick={(e) => { e.stopPropagation(); lightboxGoPrev(); }}
+            <button onClick={(e) => { e.stopPropagation(); lightboxGoPrev(); }} aria-label="Previous image"
               className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center text-white/80 hover:text-white z-30 transition-all bg-black/40 backdrop-blur-sm hover:bg-black/60 rounded-full border border-white/15">
               <ChevronLeft size={22} strokeWidth={2.5} />
             </button>
           )}
           {lightboxIndex < images.length - 1 && (
-            <button onClick={(e) => { e.stopPropagation(); lightboxGoNext(); }}
+            <button onClick={(e) => { e.stopPropagation(); lightboxGoNext(); }} aria-label="Next image"
               className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center text-white/80 hover:text-white z-30 transition-all bg-black/40 backdrop-blur-sm hover:bg-black/60 rounded-full border border-white/15">
               <ChevronRight size={22} strokeWidth={2.5} />
             </button>
@@ -594,7 +600,8 @@ export function ProductImageGallery({ images: rawImages, productName, badge, med
               <ZoomIn size={20} />
             </button>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
