@@ -30,12 +30,15 @@ import { useAuthStore } from '@/stores/auth-store'
  * key — the backend guard is the real access control). Apply stays
  * disabled until a preview is loaded, a backup id is entered and the
  * operator confirms; the backend re-runs the finder and applies ONLY
- * rows that are still R1/R2.
+ * rows that are still R1/R2/R6/R8. R7 and ambiguous legacy returns
+ * (R8-H) are report-only and are refused by the backend even if sent.
  */
 
 export interface ReconRow {
   id: string
-  category: 'R1' | 'R2' | 'R3' | 'R4'
+  category: 'R1' | 'R2' | 'R3' | 'R4' | 'R6' | 'R7' | 'R8'
+  /** R8 only: terminal/pending rows are applicable; human = report-only. */
+  r8Kind?: 'terminal' | 'pending' | 'human'
   orderDisplayId: string
   returnDisplayId: string | null
   productName: string
@@ -63,7 +66,17 @@ export interface ReconReport {
   generatedAt: string
   imEnabled: boolean
   rows: ReconRow[]
-  counts: { R1: number; R2: number; R3: number; R4: number; R5: Record<string, number> }
+  counts: {
+    R1: number
+    R2: number
+    R3: number
+    R4: number
+    R5: Record<string, number>
+    R6: number
+    R7: number
+    R8: number
+    R8H: number
+  }
   checks: ReconCheck[]
 }
 
@@ -72,8 +85,15 @@ export interface ReconApplyResult {
   applied: string[]
   skipped: { id: string; reason: string }[]
   checks: ReconCheck[]
-  idempotency: { ok: boolean; remainingR1R2: number }
+  idempotency: { ok: boolean; remainingR1R2: number; remainingR6: number; remainingR8: number }
 }
+
+/** Rows the backend will apply: R1/R2/R6 plus evidence-backed R8. */
+export const isApplicableReconRow = (r: ReconRow): boolean =>
+  r.category === 'R1' ||
+  r.category === 'R2' ||
+  r.category === 'R6' ||
+  (r.category === 'R8' && r.r8Kind !== 'human')
 
 const EMPTY_PERMISSIONS: string[] = []
 
@@ -96,9 +116,7 @@ export function Reconciliation() {
       setResult(null)
       setSelected(
         new Set(
-          data.rows
-            .filter((r) => r.category === 'R1' || r.category === 'R2')
-            .map((r) => r.id),
+          data.rows.filter(isApplicableReconRow).map((r) => r.id),
         ),
       )
       toast.success('Reconciliation report loaded — nothing was written.')
@@ -133,7 +151,7 @@ export function Reconciliation() {
   })
 
   const applicableCount = useMemo(
-    () => report?.rows.filter((r) => r.category === 'R1' || r.category === 'R2').length ?? 0,
+    () => report?.rows.filter(isApplicableReconRow).length ?? 0,
     [report],
   )
   const applyDisabled =
@@ -186,8 +204,9 @@ export function Reconciliation() {
                 <p>
                   Run the report first and review every row. Before applying, take a
                   full database backup and verify it restores — then enter its backup
-                  id below. Only R1/R2 rows are ever applied; R3 is report-only and
-                  R4 always needs a human decision.
+                  id below. Only R1/R2/R6/R8 rows are ever applied; R3/R5/R7 are
+                  report-only, and R4 plus ambiguous legacy returns (R8-H) always
+                  need a human decision.
                 </p>
               </div>
             </div>
@@ -216,6 +235,10 @@ export function Reconciliation() {
                   <Badge variant='destructive'>R2 layer-missing: {report.counts.R2}</Badge>
                   <Badge variant='secondary'>R3 report-only: {report.counts.R3}</Badge>
                   <Badge variant='secondary'>R4 human decision: {report.counts.R4}</Badge>
+                  <Badge variant='destructive'>R6 stranded managed: {report.counts.R6}</Badge>
+                  <Badge variant='destructive'>R8 legacy returns: {report.counts.R8}</Badge>
+                  <Badge variant='secondary'>R7 mirror-suspect (report-only): {report.counts.R7}</Badge>
+                  <Badge variant='secondary'>R8-H ambiguous (report-only): {report.counts.R8H}</Badge>
                   {Object.entries(report.counts.R5).map(([k, v]) => (
                     <Badge key={k} variant='outline'>
                       R5 {k}: {v}
@@ -250,7 +273,7 @@ export function Reconciliation() {
                         </TableRow>
                       )}
                       {report.rows.map((r) => {
-                        const applicable = r.category === 'R1' || r.category === 'R2'
+                        const applicable = isApplicableReconRow(r)
                         return (
                           <TableRow key={r.id}>
                             <TableCell>
@@ -264,7 +287,7 @@ export function Reconciliation() {
                             </TableCell>
                             <TableCell>
                               <Badge variant={applicable ? 'destructive' : 'secondary'}>
-                                {r.category}
+                                {r.category === 'R8' && r.r8Kind === 'human' ? 'R8-H' : r.category}
                               </Badge>
                             </TableCell>
                             <TableCell>{r.orderDisplayId}</TableCell>
@@ -347,7 +370,7 @@ export function Reconciliation() {
                     </Button>
                   </div>
                   <p className='mt-2 text-xs text-muted-foreground'>
-                    {applicableCount} applicable (R1/R2) row(s) in this report. Apply is
+                    {applicableCount} applicable (R1/R2/R6/R8) row(s) in this report. Apply is
                     disabled until a preview is loaded, a backup id is entered and the
                     confirmation is ticked. Applying re-checks every row first — rows
                     that no longer qualify are skipped with a reason.
@@ -362,7 +385,7 @@ export function Reconciliation() {
                       Idempotency:{' '}
                       {result.idempotency.ok
                         ? 'OK — no applied row is still missing stock'
-                        : `FAILED — ${result.idempotency.remainingR1R2} R1/R2 row(s) remain; do NOT re-apply, restore from backup and investigate`}
+                        : `FAILED — ${result.idempotency.remainingR1R2} R1/R2, ${result.idempotency.remainingR6} R6, ${result.idempotency.remainingR8} R8 row(s) remain; do NOT re-apply, restore from backup and investigate`}
                     </p>
                     {result.skipped.length > 0 && (
                       <ul className='mt-2 list-disc pl-5 text-sm'>
