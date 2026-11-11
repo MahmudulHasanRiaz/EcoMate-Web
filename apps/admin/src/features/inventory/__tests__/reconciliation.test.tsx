@@ -71,7 +71,61 @@ const REPORT = {
       evidence: 'quantity unknowable',
     },
   ],
-  counts: { R1: 1, R2: 0, R3: 0, R4: 1, R5: { returnPending: 2 } },
+    {
+      id: 'R6|p6||managed',
+      category: 'R6',
+      orderDisplayId: '—',
+      returnDisplayId: null,
+      productName: 'Stranded Widget',
+      variantId: null,
+      layer: 'managed',
+      orderedQty: 0,
+      receivedGoodQty: 0,
+      damagedQty: 0,
+      alreadyRestoredManaged: 0,
+      alreadyRestoredPhysical: 0,
+      missingManagedQty: 0,
+      missingPhysicalQty: 0,
+      evidence: 'IC product with managed residue −2',
+    },
+    {
+      id: 'R8|o8||||managed',
+      category: 'R8',
+      r8Kind: 'terminal',
+      orderDisplayId: 'ORD-8',
+      returnDisplayId: null,
+      productName: 'Legacy Returned Item',
+      variantId: null,
+      layer: 'managed',
+      orderedQty: 1,
+      receivedGoodQty: 0,
+      damagedQty: 0,
+      alreadyRestoredManaged: 0,
+      alreadyRestoredPhysical: 0,
+      missingManagedQty: 0,
+      missingPhysicalQty: 0,
+      evidence: 'legacy return — no Return record (terminal evidence)',
+    },
+    {
+      id: 'R8|o9||||managed',
+      category: 'R8',
+      r8Kind: 'human',
+      orderDisplayId: 'ORD-10',
+      returnDisplayId: null,
+      productName: 'Ambiguous Legacy Item',
+      variantId: null,
+      layer: 'managed',
+      orderedQty: 1,
+      receivedGoodQty: 0,
+      damagedQty: 0,
+      alreadyRestoredManaged: 0,
+      alreadyRestoredPhysical: 0,
+      missingManagedQty: 0,
+      missingPhysicalQty: 0,
+      evidence: 'legacy return — ambiguous evidence',
+    },
+  ],
+  counts: { R1: 1, R2: 0, R3: 0, R4: 1, R5: { returnPending: 2 }, R6: 1, R7: 0, R8: 1, R8H: 1 },
   checks: [
     { key: 'Q1', label: 'Managed adds missing', value: 1, pass: false, detail: 'one row' },
     { key: 'Q8', label: 'Ledger-vs-state', value: 0, pass: true, detail: 'caveat' },
@@ -97,10 +151,10 @@ describe('Reconciliation page', () => {
         return Promise.resolve({
           data: {
             runId: 'run-1',
-            applied: ['R1|r1|p1|v1|managed'],
+            applied: ['R1|r1|p1|v1|managed', 'R6|p6||managed', 'R8|o8||||managed'],
             skipped: [],
             checks: REPORT.checks,
-            idempotency: { ok: true, remainingR1R2: 0 },
+            idempotency: { ok: true, remainingR1R2: 0, remainingR6: 0, remainingR8: 0 },
           },
         })
       return Promise.reject(new Error('unknown url ' + url))
@@ -127,7 +181,7 @@ describe('Reconciliation page', () => {
     await expect.element(page.getByText('RTN-1')).toBeInTheDocument()
     await expect.element(page.getByText(/R1 missed restock: 1/i)).toBeInTheDocument()
 
-    const applyBtn = page.getByRole('button', { name: /Apply 1 selected/i })
+    const applyBtn = page.getByRole('button', { name: /Apply 3 selected/i })
     await expect.element(applyBtn).toBeDisabled()
 
     // R1 row selectable (pre-checked); R4 row never selectable.
@@ -135,6 +189,18 @@ describe('Reconciliation page', () => {
     await expect.element(r1Checkbox).toBeChecked()
     const r4Checkbox = page.getByRole('checkbox', { name: /Select row R4/i })
     await expect.element(r4Checkbox).toBeDisabled()
+
+    // R6 and evidence-backed R8 are applicable (2026-11-11 stock-mode
+    // round); ambiguous R8-H stays report-only and shows as R8-H.
+    const r6Checkbox = page.getByRole('checkbox', { name: /Select row R6/i })
+    await expect.element(r6Checkbox).toBeChecked()
+    const r8Checkbox = page.getByRole('checkbox', { name: /Select row R8\|o8/i })
+    await expect.element(r8Checkbox).toBeChecked()
+    const r8hCheckbox = page.getByRole('checkbox', { name: /Select row R8\|o9/i })
+    await expect.element(r8hCheckbox).toBeDisabled()
+    await expect.element(page.getByText('R8-H', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText(/R6 stranded managed: 1/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/R8 legacy returns: 1/i)).toBeInTheDocument()
 
     // Backup id alone is not enough — confirmation is also required.
     await userEvent.fill(page.getByLabelText(/Backup id/i), 'dump-42')
@@ -146,7 +212,7 @@ describe('Reconciliation page', () => {
     await expect.element(page.getByText(/Apply result \(run run-1\)/i)).toBeInTheDocument()
     expect(mockPost).toHaveBeenCalledWith(
       '/inventory/reconcile/apply',
-      { backupId: 'dump-42', rowIds: ['R1|r1|p1|v1|managed'], confirmed: true },
+      { backupId: 'dump-42', rowIds: ['R1|r1|p1|v1|managed', 'R6|p6||managed', 'R8|o8||||managed'], confirmed: true },
       expect.anything(),
     )
   })
