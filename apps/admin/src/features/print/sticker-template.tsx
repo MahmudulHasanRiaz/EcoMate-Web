@@ -87,7 +87,7 @@ export function getItemProductInfo(item: any): {
   variantBadge: string
   fullTitle: string
 } {
-  const baseName = item.product?.name || item.name || 'Item'
+  const baseName = item.product?.name || item.manualName || item.name || 'Item'
 
   let variantText = ''
   if (Array.isArray(item.variant?.attributeValues) && item.variant.attributeValues.length > 0) {

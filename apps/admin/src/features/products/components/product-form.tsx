@@ -13,11 +13,11 @@ import { MediaPicker } from '@/components/media-picker'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { TagInput } from '@/components/ui/tag-input'
-import { ManagedStockAdjustmentModal } from './managed-stock-adjustment-modal'
 const imgUrl = appUrl
 import { apiClient } from '@/lib/api-client'
 import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
 import { defaultAvailabilityMode } from '@/features/products/lib/availability-defaults'
+import { savedManagedQuantities, shouldShowModeSwitchClearNote } from '@/features/products/lib/managed-stock'
 import { resolveProductSlug, slugifyLatin, slugHasChars } from '@/features/products/lib/product-slug'
 import { isSupportedVideoUrl, cleanDetailRows, cleanDescriptionSections, type DetailRow } from '@/features/products/lib/pdp-fields'
 import { attributesApi } from '@/features/attributes/api'
@@ -166,7 +166,6 @@ export function ProductForm({ open, onOpenChange, currentRow, mode }: Props) {
   const [regenerateConfirm, setRegenerateConfirm] = useState(false)
   const [clearVariantConfirm, setClearVariantConfirm] = useState(false)
   const [localVariants, setLocalVariants] = useState<any[]>([])
-  const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false)
   const [showReviewGuard, setShowReviewGuard] = useState(false)
   const [reviewGuardItems, setReviewGuardItems] = useState<string[]>([])
   const [variantImgMgr, setVariantImgMgr] = useState<{ variantId: string; images: string[] } | null>(null)
@@ -633,7 +632,6 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
       PARTIAL_PAYMENT: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
       CASH_ON_DELIVERY: { enabled: false, partialFixedAmount: '', partialPercentage: '' },
     })
-    setAdjustmentModalOpen(false)
     setShowDiscardConfirm(false)
     setFieldErrors({})
   }
@@ -1174,7 +1172,7 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   // Any nested overlay/dialog open — main dialog must NOT close from outside clicks.
   // Radix Dialog (modal) fires main onOpenChange(false) on any pointerdown outside its
   // content, which includes clicks inside nested dialogs (bulk update, confirmations).
-  const hasSubOverlay = bulkUpdateOpen || clearVariantConfirm || regenerateConfirm || showReviewGuard || adjustmentModalOpen || !!variantImgMgr || showDiscardConfirm || galleryOpen || variantImgGalleryOpen
+  const hasSubOverlay = bulkUpdateOpen || clearVariantConfirm || regenerateConfirm || showReviewGuard || !!variantImgMgr || showDiscardConfirm || galleryOpen || variantImgGalleryOpen
 
   // Closing a plain edit with unsaved edits silently discarded them; warn
   // first. Create/duplicate/draft-edit sessions persist to a server draft on
@@ -1227,6 +1225,24 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
   }
 
   const variantIds = variantList.map((v: any) => v.id || v._tempId)
+
+  // Mode-switch inline note (stock-mode round, owner decision 3): when staff
+  // change the Availability Mode AWAY from Managed Stock on an existing
+  // product, the note lists the CURRENT SAVED managed quantities and states
+  // they all become 0 on save, recorded in the stock ledger. Quantities come
+  // from the loaded product record (fullProduct ?? currentRow) — never from
+  // edited form fields. No modal, no extra click; absent for new products
+  // and when the mode is untouched.
+  const savedProductForModeNote: any = isEdit ? (fullProduct ?? currentRow) : undefined
+  const savedAvailabilityMode = savedProductForModeNote
+    ? (savedProductForModeNote.availabilityMode || (savedProductForModeNote.manageStock ? 'MANAGED_STOCK' : 'INVENTORY_CONTROLLED'))
+    : undefined
+  const showModeSwitchNote = shouldShowModeSwitchClearNote({
+    isExisting: isEdit && !!savedProductForModeNote?.id,
+    savedMode: savedAvailabilityMode,
+    currentMode: availabilityMode,
+  })
+  const modeSwitchQuantities = showModeSwitchNote ? savedManagedQuantities(savedProductForModeNote) : []
 
   return (
     <>
@@ -1514,6 +1530,21 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                     {imEnabled && <option value='INVENTORY_CONTROLLED'>Inventory Controlled</option>}
                   </select>
                 </div>
+                {showModeSwitchNote && (
+                  <div className='bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2' data-testid='mode-switch-clear-note'>
+                    <p className='text-xs text-amber-700 dark:text-amber-300'>
+                      You are changing the Availability Mode away from Managed Stock. On save, the managed stock below will <strong>all become 0</strong>, and the clearing will be recorded in the stock ledger:
+                    </p>
+                    <ul className='mt-1.5 space-y-0.5 text-xs text-amber-700 dark:text-amber-300'>
+                      {modeSwitchQuantities.map((q, i) => (
+                        <li key={i} className='flex items-center justify-between gap-4'>
+                          <span className='truncate'>{q.label}{q.sku ? ` · SKU: ${q.sku}` : ''}</span>
+                          <span className='font-semibold'>{q.quantity}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {availabilityMode === 'MANAGED_STOCK' && type !== 'variable' && (
                   isEdit ? (
                     <div className='space-y-3'>
@@ -1526,13 +1557,10 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                           <Input type='number' value={lowStockQty} onChange={e => setLowStockQty(e.target.value)} placeholder='5' className='h-8 text-xs' />
                         </div>
                       </div>
-                      <div className='flex items-center justify-between bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                      <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
                         <p className='text-xs text-blue-700 dark:text-blue-300'>
-                          Stock adjustments tracked in Managed Stock Ledger.
+                          Stock adjustments tracked in Managed Stock Ledger. Adjust managed stock from the Products list or the Stock page.
                         </p>
-                        <Button type="button" variant="outline" size="sm" onClick={() => { setActiveVariantId(null); setAdjustmentModalOpen(true); }}>
-                          Adjust Stock
-                        </Button>
                       </div>
                     </div>
                   ) : isDuplicate ? (
@@ -1565,13 +1593,10 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                   <div className='space-y-3'>
                     <p className='text-sm text-muted-foreground'>Stock is managed at the variant level.</p>
                     {isEdit && (
-                      <div className='flex items-center justify-between bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
+                      <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
                         <p className='text-xs text-blue-700 dark:text-blue-300'>
-                          Adjust variant stock using the Managed Stock tool.
+                          Adjust variant stock from the Products list or the Stock page — there is no stock edit in this form.
                         </p>
-                        <Button type="button" variant="outline" size="sm" onClick={() => { setActiveVariantId(null); setAdjustmentModalOpen(true); }}>
-                          Adjust Variants
-                        </Button>
                       </div>
                     )}
                   </div>
@@ -1853,7 +1878,6 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                                       onUpdate={(data) => updateVariantMut.mutate({ id: currentRow?.id || createdProductId!, variantId: v.id, data })}
                                       onImagePick={() => openVariantImgMgr(v)}
                                       currencySymbol='৳'
-                                      onAdjustStock={() => { setActiveVariantId(v.id); setAdjustmentModalOpen(true) }}
                                       onDelete={() => {
                                         const pid = currentRow?.id || createdProductId
                                         if (!pid || !v.id) return
@@ -2036,14 +2060,6 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
           </Button>
         </div>
       </DialogContent>
-      {adjustmentModalOpen && currentRow?.id && (
-        <ManagedStockAdjustmentModal
-          open={adjustmentModalOpen}
-          onOpenChange={setAdjustmentModalOpen}
-          initialProductId={currentRow.id}
-          initialVariantId={activeVariantId || undefined}
-        />
-      )}
     </Dialog>
 
     {/* Nested overlays — full modals (Radix), rendered as siblings of the main
@@ -2305,7 +2321,6 @@ function VariantRow({
   onUpdate,
   onImagePick,
   currencySymbol,
-  onAdjustStock,
   onDelete,
 }: {
   variant: ProductResponse['variants'][number]
@@ -2313,7 +2328,6 @@ function VariantRow({
   onUpdate: (data: any) => void
   onImagePick: () => void
   currencySymbol: string
-  onAdjustStock?: () => void
   onDelete?: () => void
 }) {
   const [editing, setEditing] = useState<string | null>(null)
@@ -2451,7 +2465,8 @@ function VariantRow({
           )}
         </div>
 
-        {/* Stock (read-only — edit via Inventory) */}
+        {/* Stock (display only — NO stock-edit pencil here by owner rule;
+            managed stock is edited from the Products list / Stock page) */}
         <div className='min-w-0 flex items-center gap-1.5'>
           <div>
             <p className='font-medium text-xs text-muted-foreground mb-0.5'>Stock</p>
@@ -2459,18 +2474,6 @@ function VariantRow({
               {variant.managedStockQuantity}
             </Badge>
           </div>
-          {onAdjustStock && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 mt-4"
-              onClick={onAdjustStock}
-              title="Adjust Stock"
-            >
-              <Pencil className="h-3 w-3" />
-            </Button>
-          )}
         </div>
 
         {/* Standard Cost */}

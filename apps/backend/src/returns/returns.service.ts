@@ -10,6 +10,7 @@ import { appendOrderTimeline } from '../orders/order-timeline.util';
 import { CancelReturnStockService } from '../stock/cancel-return-stock.service';
 import {
   assertNoCustomizedLines,
+  assertNoManualLines,
   assertNoDuplicateReturn,
   assertReturnEligible,
   COURIER_GUARD_SKIP_REASON,
@@ -159,6 +160,8 @@ export class ReturnsService {
             productId: true,
             variantId: true,
             customization: true,
+            isManual: true,
+            manualName: true,
             product: { select: { name: true } },
           },
         },
@@ -174,6 +177,15 @@ export class ReturnsService {
     if (!RETURN_SOURCES.includes(source)) {
       throw new BadRequestException(`Invalid return source: ${dto.source}`);
     }
+    // Workstream C (decision 6): manual lines are non-returnable /
+    // non-exchangeable. Checked on the RAW request first — a manual-flagged
+    // line carries no productId, so the shape validator below would reject
+    // it with the wrong reason. COURIER-source rows are exempt, exactly
+    // like the customized gate (a parcel physically coming back is a fact).
+    if (source !== 'COURIER') {
+      assertNoManualLines([], (dto.items ?? []) as any[]);
+    }
+
     const items = this.validateItems(dto.items ?? []);
 
     // Hardening (1): shared eligibility guard + 60s duplicate guard. EXCHANGE
@@ -187,6 +199,10 @@ export class ReturnsService {
         ((order as any).items ?? []) as any[],
         items as any[],
         hasCustomization,
+      );
+      assertNoManualLines(
+        ((order as any).items ?? []) as any[],
+        items as any[],
       );
     }
 
@@ -288,10 +304,15 @@ export class ReturnsService {
     // ordered unit is functionally a full return — nothing remains with the
     // customer, so delivered-marking must never apply. Uses the same
     // order-units vs returned-units math as the return-detail coverage line.
-    const orderUnits = (Array.isArray(order.items) ? order.items : []).reduce(
-      (sum: number, item: any) => sum + (Number(item?.quantity) || 0),
-      0,
-    );
+    // Manual lines (Workstream C) are excluded from the ordered units: they
+    // can never be returned, so counting them would make a return that
+    // covers every RETURNABLE unit look partial forever.
+    const orderUnits = (Array.isArray(order.items) ? order.items : [])
+      .filter((item: any) => !item?.isManual)
+      .reduce(
+        (sum: number, item: any) => sum + (Number(item?.quantity) || 0),
+        0,
+      );
     const returnUnits = (Array.isArray(dto.items) ? dto.items : []).reduce(
       (sum, item) => sum + (Number(item?.quantity) || 0),
       0,

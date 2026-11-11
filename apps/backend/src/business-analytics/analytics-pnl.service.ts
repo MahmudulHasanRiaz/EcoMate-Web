@@ -75,7 +75,17 @@ export interface PnlItemInput {
   price: number;
   quantity: number;
   costSnapshot: number | null;
-  costType: 'actual' | 'estimated' | null;
+  /**
+   * 'not_set' = manual line with cost left blank (owner 2026-11-11,
+   * Workstream C): costSnapshot holds the full price, so COGS counts it
+   * exactly like any other snapshot — the line's profit contribution is 0 —
+   * and the line is additionally surfaced in `costNotSet` so the missing
+   * cost stays visible instead of silently reading as a real cost.
+   */
+  costType: 'actual' | 'estimated' | 'not_set' | null;
+  /** Manual order line marker + name snapshot (Workstream C). */
+  isManual?: boolean;
+  manualName?: string | null;
   /** Customization add-on line totals (owner Q15) — revenue + cost. */
   addonAmount?: number;
   addonCostAmount?: number;
@@ -148,6 +158,12 @@ export interface PnlResult {
   partialRecognition: { orders: number; grossSales: number; netSales: number };
   netSales: { amount: number };
   cogs: { amount: number; state: CostState };
+  /**
+   * Manual lines whose cost was never set (Workstream C): their COGS is
+   * already inside `cogs` at full price; this bucket makes the "cost not
+   * set" flag visible at P&L level (units, COGS amount, line count).
+   */
+  costNotSet: { units: number; amount: number; lines: number };
   returnedCogs: { amount: number };
   /** Damage loss re-expensed at its own event date (never a restock). */
   damagedCogs: { amount: number };
@@ -235,6 +251,9 @@ export function computePnl(input: PnlInput): PnlResult {
   let cogsEstimatedUnits = 0;
   let cogsUnavailableUnits = 0;
   let cogsUnavailableItems = 0;
+  let costNotSetUnits = 0;
+  let costNotSetAmount = 0;
+  let costNotSetLines = 0;
   let fulfillment = 0;
   let shipActual = 0;
   let shipEstimated = 0;
@@ -432,9 +451,24 @@ export function computePnl(input: PnlInput): PnlResult {
         // kept share whether or not the base cost snapshot exists (Q15).
         cogs += (item.addonCostAmount ?? 0) * keptShare;
 
+        if (
+          item.costType === 'not_set' &&
+          item.costSnapshot !== null &&
+          item.costSnapshot !== undefined
+        ) {
+          // Manual line, cost blank (Workstream C): the snapshot IS the
+          // full price — COGS counts it, profit contribution is 0, and the
+          // line is flagged in the costNotSet bucket (never 'unavailable':
+          // a cost figure exists, it is just known to be a placeholder).
+          cogs += item.costSnapshot * kept;
+          costNotSetUnits += kept;
+          costNotSetAmount += item.costSnapshot * kept;
+          costNotSetLines += 1;
+          continue;
+        }
         const state = cogsLineState({
           costSnapshot: item.costSnapshot,
-          costType: item.costType,
+          costType: item.costType === 'not_set' ? null : item.costType,
         });
         if (item.costSnapshot !== null && item.costSnapshot !== undefined) {
           cogs += item.costSnapshot * kept;
@@ -456,12 +490,25 @@ export function computePnl(input: PnlInput): PnlResult {
 
       for (let i = 0; i < order.items.length; i++) {
         const item = order.items[i];
-        const state = cogsLineState({
-          costSnapshot: item.costSnapshot,
-          costType: item.costType,
-        });
         // Add-on cost is frozen on the line (Q15): always part of COGS.
         cogs += item.addonCostAmount ?? 0;
+        if (
+          item.costType === 'not_set' &&
+          item.costSnapshot !== null &&
+          item.costSnapshot !== undefined
+        ) {
+          // Manual line, cost blank (Workstream C): COGS = full price
+          // (profit contribution 0), flagged in the costNotSet bucket.
+          cogs += item.costSnapshot * item.quantity;
+          costNotSetUnits += item.quantity;
+          costNotSetAmount += item.costSnapshot * item.quantity;
+          costNotSetLines += 1;
+          continue;
+        }
+        const state = cogsLineState({
+          costSnapshot: item.costSnapshot,
+          costType: item.costType === 'not_set' ? null : item.costType,
+        });
         if (item.costSnapshot !== null && item.costSnapshot !== undefined) {
           cogs += item.costSnapshot * item.quantity;
           if (state === 'actual') cogsActualUnits += item.quantity;
@@ -610,6 +657,11 @@ export function computePnl(input: PnlInput): PnlResult {
     },
     netSales: { amount: netSales },
     cogs: { amount: cogsNet, state: cogsState },
+    costNotSet: {
+      units: costNotSetUnits,
+      amount: costNotSetAmount,
+      lines: costNotSetLines,
+    },
     returnedCogs: { amount: returnedCogs },
     damagedCogs: { amount: damagedCogsExpense },
     grossProfit: { amount: grossProfit },
@@ -880,6 +932,8 @@ export class AnalyticsPnlService {
               quantity: true,
               costSnapshot: true,
               costType: true,
+              isManual: true,
+              manualName: true,
               addonAmount: true,
               addonCostAmount: true,
             },
@@ -977,7 +1031,14 @@ export class AnalyticsPnlService {
           price: Number(i.price),
           quantity: i.quantity,
           costSnapshot: i.costSnapshot === null ? null : Number(i.costSnapshot),
-          costType: i.costType === 'actual' || i.costType === 'estimated' ? i.costType : null,
+          costType:
+            i.costType === 'actual' ||
+            i.costType === 'estimated' ||
+            i.costType === 'not_set'
+              ? i.costType
+              : null,
+          isManual: !!i.isManual,
+          manualName: i.manualName ?? null,
           addonAmount: i.addonAmount == null ? 0 : Number(i.addonAmount),
           addonCostAmount: i.addonCostAmount == null ? 0 : Number(i.addonCostAmount),
         })),

@@ -63,6 +63,6 @@ describe('AdjustStockModal destructive confirm (Fix 3)', () => {
 
     await userEvent.click(ui.getByRole('button', { name: 'Cancel' }))
     expect(mockPost).toHaveBeenCalledTimes(1)
-    await expect.element(ui.getByText(/Adjust Stock:/)).toBeInTheDocument()
+    await expect.element(ui.getByText(/Adjust Physical Stock:/)).toBeInTheDocument()
   })
 })

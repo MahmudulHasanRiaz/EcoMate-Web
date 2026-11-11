@@ -7,10 +7,6 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { MediaService } from '../media/media.service';
 import { CacheService } from '../cache/cache.service';
-import {
-  InitialPhysicalStockService,
-  InitialPhysicalUnit,
-} from '../stock/initial-physical-stock.service';
 import { StockService } from '../stock/stock.service';
 import { ProductsService } from '../products/products.service';
 import * as Papa from 'papaparse';
@@ -45,7 +41,6 @@ export class ImportService {
     private readonly prisma: PrismaService,
     private readonly media: MediaService,
     private readonly cache: CacheService,
-    private readonly initialPhysicalStock: InitialPhysicalStockService,
     // Used only to re-level physical stock when a re-import updates an
     // INVENTORY_CONTROLLED product. Optional so unit constructions that
     // predate it keep working; StockModule is global in the real app.
@@ -254,12 +249,19 @@ export class ImportService {
 
     // 5. Products (SKUs and Slugs)
     const dbProducts = await this.prisma.product.findMany({
-      select: { id: true, sku: true, slug: true },
+      select: { id: true, sku: true, slug: true, availabilityMode: true },
     });
     const productCache = new Map<string, string>();
+    const productModeBySku = new Map<string, string>();
     const slugSet = new Set<string>();
     for (const p of dbProducts) {
-      if (p.sku) productCache.set(p.sku.trim(), p.id);
+      if (p.sku) {
+        productCache.set(p.sku.trim(), p.id);
+        productModeBySku.set(
+          p.sku.trim(),
+          (p as any)?.availabilityMode ?? 'MANAGED_STOCK',
+        );
+      }
       if (p.slug) slugSet.add(p.slug);
     }
 
@@ -281,11 +283,14 @@ export class ImportService {
       value: (maxSortOrderResult._max.sortOrder ?? 0) + 1,
     };
 
-    // B4: a MANAGED_STOCK product created with stock but no physical record is
-    // orderable yet can never be confirmed. Resolve the warehouse ONCE, before
-    // any row is written, so a missing warehouse fails the whole import loudly
-    // instead of leaving silently unconfirmable products behind.
-    const initialWarehouseId = await this.resolveImportWarehouse(rows);
+    // Warehouse for the INVENTORY_CONTROLLED re-import path ONLY, resolved
+    // ONCE before any row is written. MANAGED_STOCK imports never resolve
+    // one: since the auto-mirror removal their CSV quantity stays in the
+    // managed counter and no physical row is fabricated for them.
+    const icWarehouseId = await this.resolveImportWarehouse(
+      groups,
+      productModeBySku,
+    );
 
     let processedCount = 0;
     const groupEntries = Object.entries(groups);
@@ -331,7 +336,7 @@ export class ImportService {
           variantCache,
           slugSet,
           sortOrderObj,
-          initialWarehouseId,
+          icWarehouseId,
         );
       } catch (err) {
         const error = err as Error;
@@ -402,21 +407,54 @@ export class ImportService {
   }
 
   /**
-   * B4: warehouse for the physical layer when the CSV carries managed units.
-   * Called before any row is written (dry runs return earlier and never write),
-   * so a missing warehouse fails the import loudly instead of producing
-   * products that can be ordered but never confirmed. Returns null when
-   * Inventory Management is off — the managed counter is authoritative then and
-   * nothing needs seeding.
+   * Warehouse for the INVENTORY_CONTROLLED re-import path ONLY: the CSV
+   * Stock cell for an existing IC product IS physical stock, levelled via
+   * setPhysicalStockLevel, so it needs a warehouse to land in. Called
+   * before any row is written (dry runs return earlier and never write),
+   * so a missing warehouse fails the import loudly instead of silently
+   * dropping the IC stock.
+   *
+   * MANAGED_STOCK groups never trigger resolution — their quantity stays
+   * in the managed counter and no physical row is fabricated (the fifth
+   * auto-mirror, removed with the others), so a managed-only import
+   * succeeds even with no warehouse anywhere, exactly like product
+   * create. Returns null when no group re-imports an IC product with
+   * stock, or when Inventory Management is off — the physical layer is
+   * unused then and nothing needs levelling.
    */
   private async resolveImportWarehouse(
-    rows: CsvRowWithMeta[],
+    groups: Record<string, CsvRowWithMeta[]>,
+    productModeBySku: Map<string, string>,
   ): Promise<string | null> {
-    const hasManagedUnits = rows.some(
-      (row) => (this.parseInt(row.data.Stock) ?? 0) > 0,
+    const hasIcUnits = Object.entries(groups).some(
+      ([parentSku, groupRows]) =>
+        productModeBySku.get(parentSku) === 'INVENTORY_CONTROLLED' &&
+        groupRows.some((row) => (this.parseInt(row.data.Stock) ?? 0) > 0),
     );
-    if (!hasManagedUnits) return null;
-    return this.initialPhysicalStock.resolveWarehouse('MANAGED_STOCK', 1);
+    if (!hasIcUnits) return null;
+
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'inventory_enabled' },
+    });
+    if (setting?.value !== 'true') return null;
+
+    const warehouse =
+      (await this.prisma.warehouse.findFirst({
+        where: { isActive: true, type: 'main' },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      })) ??
+      (await this.prisma.warehouse.findFirst({
+        where: { isActive: true },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      }));
+    if (warehouse) return warehouse.id;
+
+    throw new BadRequestException(
+      'Inventory Management is enabled and this import updates INVENTORY_CONTROLLED stock, but no active warehouse exists. ' +
+        'Activate a warehouse before importing — the CSV stock for an INVENTORY_CONTROLLED product is physical stock and has nowhere to go.',
+    );
   }
 
   private async processProductGroupCached(
@@ -434,7 +472,7 @@ export class ImportService {
     variantCache: Map<string, string>,
     slugSet: Set<string>,
     sortOrderObj: { value: number },
-    initialWarehouseId: string | null = null,
+    icWarehouseId: string | null = null,
   ): Promise<void> {
     const hasParentRow = rows.some(
       (r) => !(r.data.Type || 'simple').toLowerCase().includes('variation'),
@@ -460,8 +498,6 @@ export class ImportService {
 
     let productId: string;
     const hasVariations = variationRows.length > 0;
-    // Units created by THIS run that must also exist in the physical layer.
-    const physicalUnits: InitialPhysicalUnit[] = [];
     // Stored availability mode of an EXISTING product (undefined for new
     // products, which are always MANAGED_STOCK by schema default).
     let existingMode: string | undefined;
@@ -502,14 +538,9 @@ export class ImportService {
         slugSet,
         sortOrderObj,
       );
-
-      const parentType = (parentRow.data.Type || 'simple').toLowerCase().trim();
-      const parentIsVariable =
-        parentType === 'variable' || parentType === 'variable-subscription';
-      const parentStock = this.parseInt(parentRow.data.Stock);
-      if (!parentIsVariable && parentStock !== undefined && parentStock > 0) {
-        physicalUnits.push({ quantity: parentStock });
-      }
+      // A newly created product is always MANAGED_STOCK: its CSV stock
+      // already landed in the managed counter inside createProductCached.
+      // No physical row is fabricated for it (auto-mirror removed).
     }
 
     this.logger.log(
@@ -539,24 +570,24 @@ export class ImportService {
         mediaCache,
         variantCache,
         productCache,
-        physicalUnits,
         {
           productMode: existingMode ?? 'MANAGED_STOCK',
-          warehouseId: initialWarehouseId,
+          warehouseId: icWarehouseId,
         },
       );
     }
 
     // Re-import of an existing INVENTORY_CONTROLLED simple product: the
     // CSV Stock cell re-levels the physical layer at the resolved
-    // warehouse (the CREATE path's mirror semantics, as a level set).
+    // warehouse, as a level set. This is a LEGITIMATE physical entry —
+    // for an IC product the CSV stock IS physical stock — not a mirror.
     // Variable IC products are levelled per variant inside
     // processVariationCached; MANAGED_STOCK products keep the managed
-    // counter write in updateProductCached.
+    // counter write in updateProductCached and get NO physical row.
     if (
       existingProductId &&
       existingMode === 'INVENTORY_CONTROLLED' &&
-      initialWarehouseId
+      icWarehouseId
     ) {
       const parentType = (parentRow.data.Type || 'simple').toLowerCase().trim();
       const parentIsVariable =
@@ -565,25 +596,10 @@ export class ImportService {
       if (!parentIsVariable && parentStock !== undefined) {
         await this.setPhysicalStockLevel({
           productId,
-          warehouseId: initialWarehouseId,
+          warehouseId: icWarehouseId,
           quantity: parentStock,
         });
       }
-    }
-
-    if (initialWarehouseId && physicalUnits.length > 0) {
-      const parent = await this.prisma.product.findUnique({
-        where: { id: productId },
-        select: { warehouseId: true },
-      });
-      await this.initialPhysicalStock.mirrorUnits({
-        productId,
-        productWarehouseId: parent?.warehouseId ?? null,
-        warehouseId: initialWarehouseId,
-        units: physicalUnits,
-        reference: 'Initial stock on CSV import',
-        performedBy: 'csv-import',
-      });
     }
 
     // Parent price fallback for variable products: when the CSV leaves the
@@ -798,12 +814,14 @@ export class ImportService {
 
   /**
    * Bring the physical layer at `warehouseId` to exactly `quantity` units
-   * for one product/variant — the update-path counterpart of the CREATE
-   * path's mirrorUnits (which ADDs the CSV quantity onto an empty layer).
-   * A WooCommerce Stock cell is a LEVEL, not a delta: on re-import the
-   * physical quantity must BECOME the CSV value, so the signed difference
-   * is applied through the stock engine (which writes the ledger and
-   * refuses to deduct below what reservations leave available).
+   * for one product/variant — the level-set entry point used ONLY for
+   * INVENTORY_CONTROLLED re-imports, whose CSV Stock cell IS physical
+   * stock. A WooCommerce Stock cell is a LEVEL, not a delta: on re-import
+   * the physical quantity must BECOME the CSV value, so the signed
+   * difference is applied through the stock engine (which writes the
+   * ledger and refuses to deduct below what reservations leave
+   * available). MANAGED_STOCK imports never call this — their quantity
+   * stays in the managed counter.
    */
   private async setPhysicalStockLevel(params: {
     productId: string;
@@ -1004,10 +1022,11 @@ export class ImportService {
     mediaCache: Map<string, string>,
     variantCache: Map<string, string>,
     productCache: Map<string, string>,
-    physicalUnits?: InitialPhysicalUnit[],
     // Parent product's availability mode + the import's resolved physical
     // warehouse (IM on). For INVENTORY_CONTROLLED parents a re-import
     // applies stock to the physical layer, never the managed counters.
+    // For MANAGED_STOCK parents the warehouse is never used: variant
+    // stock stays in the managed counter, no physical row is fabricated.
     stockCtx?: { productMode: string; warehouseId: string | null },
   ): Promise<void> {
     const data = row.data;
@@ -1144,7 +1163,8 @@ export class ImportService {
         salePrice: salePrice ?? undefined,
         // A variant newly added to an INVENTORY_CONTROLLED product gets no
         // managed counter either — its units land in the physical layer
-        // via the physicalUnits mirror below.
+        // via setPhysicalStockLevel below (a legitimate IC entry: for an
+        // IC product the CSV stock IS physical stock).
         managedStockQuantity:
           stockCtx?.productMode === 'INVENTORY_CONTROLLED' ? 0 : stock,
         image: mainImage || undefined,
@@ -1163,8 +1183,22 @@ export class ImportService {
 
     variantCache.set(varSku, variant.id);
 
-    if (stock > 0) {
-      physicalUnits?.push({ variantId: variant.id, quantity: stock });
+    // Only a variant newly added to an INVENTORY_CONTROLLED product seeds
+    // the physical layer, via the level-set path. A variant of a
+    // MANAGED_STOCK product (including every variant of a newly created
+    // product) keeps its units in the managed counter ONLY — no physical
+    // row is fabricated for it.
+    if (
+      stock > 0 &&
+      stockCtx?.productMode === 'INVENTORY_CONTROLLED' &&
+      stockCtx.warehouseId
+    ) {
+      await this.setPhysicalStockLevel({
+        productId,
+        variantId: variant.id,
+        warehouseId: stockCtx.warehouseId,
+        quantity: stock,
+      });
     }
 
     if (mainImage) {

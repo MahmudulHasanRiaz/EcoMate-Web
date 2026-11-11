@@ -48,6 +48,17 @@ export class OrderItemDto {
   customization?: CustomizationSelectionDto;
   @IsInt() @Min(1) @Max(9999) quantity: number;
   @IsNumber() @Min(0) @Max(1000000000) price: number;
+  /**
+   * Manual order item (owner 2026-11-11, Workstream C) — Admin-only.
+   * When `isManual` is true the line is product-less: `manualName` is the
+   * staff-typed name (required, non-empty), `price` is taken as entered,
+   * and `cost` is the optional staff-entered unit cost used for P&L COGS.
+   * The service rejects manual lines from non-staff callers and validates
+   * the name/cost server-side (see OrdersService.assertValidManualItem).
+   */
+  @IsOptional() @IsBoolean() isManual?: boolean;
+  @IsOptional() @IsString() @MaxLength(300) manualName?: string;
+  @IsOptional() @IsNumber() @Min(0) @Max(1000000000) cost?: number;
 }
 
 export class CreateOrderDto {
@@ -208,7 +219,11 @@ export class UpdateOrderDto {
 }
 
 export class UpdateOrderItemDto {
-  @IsString() productId: string;
+  /**
+   * Optional because a MANUAL line (Workstream C) has no product. The
+   * service requires productId unless `isManual` is true.
+   */
+  @IsOptional() @IsString() productId?: string;
   @IsOptional() @IsString() variantId?: string;
   @IsInt() @Min(1) quantity: number;
   @IsNumber() price: number;
@@ -216,6 +231,10 @@ export class UpdateOrderItemDto {
   @ValidateNested()
   @Type(() => CustomizationSelectionDto)
   customization?: CustomizationSelectionDto;
+  /** Manual order item (owner 2026-11-11) — see OrderItemDto. */
+  @IsOptional() @IsBoolean() isManual?: boolean;
+  @IsOptional() @IsString() @MaxLength(300) manualName?: string;
+  @IsOptional() @IsNumber() @Min(0) @Max(1000000000) cost?: number;
 }
 
 export class CreatePaymentDto {

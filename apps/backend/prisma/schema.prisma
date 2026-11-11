@@ -1077,7 +1077,13 @@ model OrderItem {
   quantity             Int      @default(1)
   price                Decimal  @db.Decimal(10, 2)
   costSnapshot         Decimal? @db.Decimal(10, 2)
-  costType             String? // 'estimated' | 'actual'
+  costType             String? // 'estimated' | 'actual' | 'not_set' (manual line, cost blank — owner 2026-11-11)
+  // Manual order item (owner 2026-11-11, Workstream C): a product-less line
+  // staff add from Admin order create/edit/detail. productId stays NULL;
+  // manualName is the name snapshot (OrderItem has no other name column).
+  // isManual=false + manualName NULL for every pre-existing/product line.
+  isManual             Boolean  @default(false)
+  manualName           String?
   managedStockReserved Boolean  @default(false)
   managedStockDeducted Boolean  @default(false)
   sourceWarehouseId    String?

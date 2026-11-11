@@ -285,7 +285,14 @@ export class PackingService {
           id: i.id,
           productId: i.productId ?? product?.id ?? null,
           variantId: i.variantId ?? null,
-          productName: product?.name ?? 'Unknown',
+          // Manual lines (Workstream C) have no product — fall back to the
+          // line's name snapshot instead of "Unknown".
+          productName:
+            product?.name ??
+            ((i as any).isManual ? (i as any).manualName : null) ??
+            'Unknown',
+          isManual: !!(i as any).isManual,
+          manualName: (i as any).manualName ?? null,
           variantName: variantAttrs || '',
           sku: variant?.sku ?? '',
           quantity: i.quantity,

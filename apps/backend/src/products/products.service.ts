@@ -22,10 +22,6 @@ import {
 import { CacheService } from '../cache/cache.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { StockService } from '../stock/stock.service';
-import {
-  InitialPhysicalStockService,
-  InitialPhysicalUnit,
-} from '../stock/initial-physical-stock.service';
 
 function slugify(text: string): string {
   return text
@@ -72,7 +68,6 @@ export class ProductsService {
     private readonly stockRouter: StockRouterService,
     private readonly mediaResolver: MediaResolverService,
     private readonly stockService: StockService,
-    private readonly initialPhysicalStock: InitialPhysicalStockService,
     private readonly customization: CustomizationService,
   ) {}
 
@@ -257,59 +252,98 @@ export class ProductsService {
   }
 
   /**
-   * B4: with Inventory Management ON, confirming a MANAGED_STOCK order
-   * allocates PHYSICAL stock, so units that exist only in the managed counter
-   * can never be confirmed. New products (and published drafts) therefore
-   * mirror their initial units into the physical layer at creation.
+   * Mode-switch cleanup (2026-11-11, directive §2): when a product leaves
+   * MANAGED_STOCK, EVERY managed counter becomes 0 and every clearing is
+   * written to ManagedStockLedger — for ALL signs, ALL types, on EVERY
+   * save path (update, draft autosave, publish). This ONE helper is the
+   * only implementation; the paths must never grow divergent copies.
    *
-   * The warehouse is resolved BEFORE the product row is written so a missing
-   * warehouse fails the request loudly instead of leaving behind a product
-   * that can be ordered but never fulfilled. The same seeding runs on the CSV
-   * import path through InitialPhysicalStockService.
+   * Per counter (simple/combo: the product row; variable: each variant):
+   *   qty > 0 → OUT / ADJUSTMENT, quantity = qty, before → 0 (existing
+   *             note wording kept verbatim);
+   *   qty < 0 → IN / ADJUSTMENT, quantity = |qty|, stockBefore = the
+   *             negative value → stockAfter 0 — the negative is visibly
+   *             CLEARED, never left stranded and never sign-flipped;
+   *   qty = 0 → a quantity-0 ADJUSTMENT note row (stockBefore 0 →
+   *             stockAfter 0). The ledger schema represents this cleanly
+   *             (quantity is a plain Int, stockBefore/After nullable), so
+   *             the mode change itself stays auditable even when there
+   *             was nothing to clear.
+   * Quantities are read FRESH from the stored rows at call time (callers
+   * invoke this AFTER their main update), so a draft whose variants were
+   * wholesale-replaced in the same save is cleaned on its final values.
    */
-  private initialStockOf(dto: {
-    type?: string;
-    managedStockQuantity?: number;
-    variants?: Array<{ managedStockQuantity?: number }>;
-  }): number {
-    if (dto.type === 'variable') {
-      return (dto.variants ?? []).reduce(
-        (sum, v) => sum + (v.managedStockQuantity ?? 0),
-        0,
-      );
-    }
-    return dto.managedStockQuantity ?? 0;
-  }
-
-  private async mirrorInitialStockToPhysical(params: {
-    product: any;
-    avMode: string;
-    warehouseId: string | null;
+  private async clearManagedStockForModeChange(params: {
+    productId: string;
+    fromMode: string;
+    toMode: string;
     performedBy?: string;
   }): Promise<void> {
-    const { product, avMode, warehouseId, performedBy } = params;
-    if (!warehouseId || avMode !== 'MANAGED_STOCK') return;
-
-    const units: InitialPhysicalUnit[] = [];
-    if (product.type === 'variable') {
-      for (const variant of product.variants ?? []) {
-        const quantity = Number(variant.managedStockQuantity) || 0;
-        if (quantity > 0) units.push({ variantId: variant.id, quantity });
-      }
-    } else {
-      const quantity = Number(product.managedStockQuantity) || 0;
-      if (quantity > 0) units.push({ quantity });
-    }
-    if (units.length === 0) return;
-
-    await this.initialPhysicalStock.mirrorUnits({
-      productId: product.id,
-      productWarehouseId: product.warehouseId ?? null,
-      warehouseId,
-      units,
-      reference: 'Initial stock on product creation',
-      performedBy,
+    const { productId, fromMode, toMode, performedBy } = params;
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { type: true, managedStockQuantity: true },
     });
+    if (!product) return;
+
+    const recordClearing = async (args: {
+      variantId?: string;
+      qty: number;
+      variant: boolean;
+    }) => {
+      await this.prisma.managedStockLedger.create({
+        data: {
+          productId,
+          ...(args.variantId ? { variantId: args.variantId } : {}),
+          quantity: Math.abs(args.qty),
+          direction: args.qty < 0 ? 'IN' : 'OUT',
+          type: 'ADJUSTMENT',
+          stockBefore: args.qty,
+          stockAfter: 0,
+          note: args.variant
+            ? `Mode changed from ${fromMode} to ${toMode} — variant snapshot: ${args.qty} units`
+            : `Mode changed from ${fromMode} to ${toMode} — snapshot: ${args.qty} units`,
+          performedById: performedBy,
+        },
+      });
+    };
+
+    if (product.type === 'variable') {
+      const variants =
+        (await this.prisma.productVariant.findMany({
+          where: { productId },
+          select: { id: true, managedStockQuantity: true },
+        })) ?? [];
+      for (const v of variants) {
+        const qty = v.managedStockQuantity ?? 0;
+        await recordClearing({ variantId: v.id, qty, variant: true });
+        if (qty !== 0) {
+          await this.prisma.productVariant.update({
+            where: { id: v.id },
+            data: { managedStockQuantity: 0 },
+          });
+        }
+      }
+      if ((product.managedStockQuantity ?? 0) !== 0) {
+        await this.prisma.product.update({
+          where: { id: productId },
+          data: { managedStockQuantity: 0 },
+        });
+      }
+      return;
+    }
+
+    // simple + combo (a combo's own counter lives on the product row,
+    // exactly like a simple product's — previously combo had NO cleanup
+    // branch at all and its quantity survived the switch).
+    const qty = product.managedStockQuantity ?? 0;
+    await recordClearing({ qty, variant: false });
+    if (qty !== 0) {
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { managedStockQuantity: 0 },
+      });
+    }
   }
 
   private buildWhere(query: {
@@ -1077,12 +1111,6 @@ export class ProductsService {
             ? 'INVENTORY_CONTROLLED'
             : 'MANAGED_STOCK');
 
-    const initialWarehouseId = await this.initialPhysicalStock.resolveWarehouse(
-      avMode,
-      this.initialStockOf(dto as any),
-      dto.warehouseId,
-    );
-
     const scalars = {
       name: dto.name,
       slug: dto.slug,
@@ -1305,12 +1333,10 @@ export class ProductsService {
       }
     }
 
-    await this.mirrorInitialStockToPhysical({
-      product,
-      avMode,
-      warehouseId: initialWarehouseId,
-    });
-
+    // No initial-stock mirror (2026-11-11): creating a product writes
+    // ONLY its managed counter; physical stock enters exclusively
+    // through physical entry points, so creation also succeeds with no
+    // warehouse anywhere.
     return product;
   }
 
@@ -1481,55 +1507,12 @@ export class ProductsService {
           });
         }
       } else if (p.availabilityMode === 'MANAGED_STOCK') {
-        if (p.type !== 'variable' && p.type !== 'combo') {
-          if (p.managedStockQuantity > 0) {
-            await this.prisma.managedStockLedger.create({
-              data: {
-                productId: id,
-                quantity: p.managedStockQuantity,
-                direction: 'OUT',
-                type: 'ADJUSTMENT',
-                stockBefore: p.managedStockQuantity,
-                stockAfter: 0,
-                note: `Mode changed from MANAGED_STOCK to ${newMode} — snapshot: ${p.managedStockQuantity} units`,
-                performedById: performedBy,
-              },
-            });
-            await this.prisma.product.update({
-              where: { id },
-              data: { managedStockQuantity: 0 },
-            });
-          }
-        } else if (p.type === 'variable') {
-          const variants = await this.prisma.productVariant.findMany({
-            where: { productId: id },
-          });
-          for (const v of variants) {
-            if (v.managedStockQuantity > 0) {
-              await this.prisma.managedStockLedger.create({
-                data: {
-                  productId: id,
-                  variantId: v.id,
-                  quantity: v.managedStockQuantity,
-                  direction: 'OUT',
-                  type: 'ADJUSTMENT',
-                  stockBefore: v.managedStockQuantity,
-                  stockAfter: 0,
-                  note: `Mode changed from MANAGED_STOCK to ${newMode} — variant snapshot: ${v.managedStockQuantity} units`,
-                  performedById: performedBy,
-                },
-              });
-              await this.prisma.productVariant.update({
-                where: { id: v.id },
-                data: { managedStockQuantity: 0 },
-              });
-            }
-          }
-          await this.prisma.product.update({
-            where: { id },
-            data: { managedStockQuantity: 0 },
-          });
-        }
+        await this.clearManagedStockForModeChange({
+          productId: id,
+          fromMode: p.availabilityMode,
+          toMode: newMode,
+          performedBy,
+        });
       }
     }
 
@@ -1995,6 +1978,24 @@ export class ProductsService {
           }
         }
       }
+      // Mode-switch cleanup on the draft path too (2026-11-11): leaving
+      // MANAGED_STOCK in an autosave clears + ledgers every managed
+      // counter via the SAME helper update() uses. Runs after the main
+      // update (incl. any wholesale variant replacement), so it reads
+      // the final stored quantities. performedBy is not threaded into
+      // the draft endpoints, so the ledger actor stays unset here.
+      if (
+        p.availabilityMode === 'MANAGED_STOCK' &&
+        newMode &&
+        newMode !== 'MANAGED_STOCK' &&
+        newMode !== p.availabilityMode
+      ) {
+        await this.clearManagedStockForModeChange({
+          productId: id,
+          fromMode: p.availabilityMode,
+          toMode: newMode,
+        });
+      }
       await this.cache.invalidateByPrefix('product:');
     } catch (e) {
       this.mapProductWriteError(e);
@@ -2100,8 +2101,8 @@ export class ProductsService {
     data.status = 'active';
     data.isActive = true;
 
-    // Publishing is creation-equivalent: the same initial-stock mirror runs
-    // for a draft that goes live with MANAGED_STOCK units.
+    // No initial-stock mirror on publish either (2026-11-11): the
+    // physical layer is entered only through physical entry points.
     const finalType = dto.type || p.type;
     // Stored variants of a variable draft published WITHOUT a payload
     // variant set: one read feeds both the initial-stock sum below and
@@ -2132,11 +2133,6 @@ export class ProductsService {
     } else {
       initialStock = dto.managedStockQuantity ?? p.managedStockQuantity ?? 0;
     }
-    const initialWarehouseId = await this.initialPhysicalStock.resolveWarehouse(
-      newMode,
-      initialStock,
-      dto.warehouseId ?? p.warehouseId,
-    );
 
     if (dto.variants) {
       data.variants = {
@@ -2226,11 +2222,17 @@ export class ProductsService {
         }
       }
 
-      await this.mirrorInitialStockToPhysical({
-        product,
-        avMode: newMode,
-        warehouseId: initialWarehouseId,
-      });
+      // Mode-switch cleanup on the publish path (2026-11-11): a draft
+      // stored as MANAGED_STOCK that publishes into another mode gets
+      // the same clear + ledger treatment as update()/updateDraft().
+      if (p.availabilityMode === 'MANAGED_STOCK' && newMode !== 'MANAGED_STOCK') {
+        await this.clearManagedStockForModeChange({
+          productId: id,
+          fromMode: p.availabilityMode,
+          toMode: newMode,
+        });
+      }
+
 
       // Creation-equivalent ledger entry (create() writes one; publish did not).
       if (newMode === 'MANAGED_STOCK' && finalType !== 'variable' && initialStock > 0) {

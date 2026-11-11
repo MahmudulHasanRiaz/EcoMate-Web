@@ -488,3 +488,26 @@ describe('products fetch wiring', () => {
     expect(r.variants).toHaveLength(0);
   });
 });
+
+describe('manual order lines (WS-C) — excluded from product-wise analytics', () => {
+  it('expandLine returns no attribution for a product-less manual line', () => {
+    const manual = line(null, 150, 2, {
+      costSnapshot: 150,
+      costType: 'not_set' as any,
+    });
+    expect(expandLine(manual)).toEqual([]);
+  });
+
+  it('computeProductPnl ignores manual lines entirely (no phantom product row)', () => {
+    const r = run([
+      order('om1', [
+        line('A', 500, 1),
+        line(null, 150, 2, { costSnapshot: 150, costType: 'not_set' as any }),
+      ]),
+    ]);
+    const a = byKey(r, 'A', null);
+    expect(a.units).toBe(1);
+    expect(r.variants).toHaveLength(1);
+    expect(r.totals.gross).toBe(500);
+  });
+});

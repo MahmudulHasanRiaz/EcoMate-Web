@@ -3,7 +3,6 @@ import { InventoryService } from '../inventory.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StockService } from '../../stock/stock.service';
 import { StockRouterService } from '../../stock/stock-router.service';
-import { InitialPhysicalStockService } from '../../stock/initial-physical-stock.service';
 import { CostingLotService } from '../../stock/costing-lot.service';
 import { CacheService } from '../../cache/cache.service';
 import { ManagedStockLedgerService } from '../managed-stock-ledger.service';
@@ -107,10 +106,6 @@ describe('InventoryService — productLookup', () => {
         { provide: CostingLotService, useValue: {} },
         { provide: ManagedStockLedgerService, useValue: {} },
         { provide: CacheService, useValue: {} },
-        {
-          provide: InitialPhysicalStockService,
-          useValue: { resolveWarehouse: jest.fn() },
-        },
       ],
     }).compile();
 
@@ -391,5 +386,49 @@ describe('InventoryService — productLookup', () => {
 
     const res2 = await service.productLookup({ q: 'sku', perPage: 5000 });
     expect(res2.meta.perPage).toBe(50);
+  });
+
+  describe('INVENTORY_CONTROLLED figures + managed scoping (2026-11-11)', () => {
+    const icProduct = {
+      id: 'prod-gadget',
+      name: 'Audit Gadget',
+      sku: 'GADGET-1',
+      type: 'simple',
+      availabilityMode: 'INVENTORY_CONTROLLED',
+      // A stale managed counter that must NEVER be reported as on-hand.
+      managedStockQuantity: 40,
+      reservedStock: 5,
+      variants: [],
+    };
+
+    it('never reports managed on-hand for an IC product without physical rows (zeroed, still selectable)', async () => {
+      findMany().mockResolvedValue([icProduct]);
+      const res = await service.productLookup({ q: 'GADGET-1' });
+      expect(res.data).toHaveLength(1);
+      expect(res.data[0]).toMatchObject({
+        productId: 'prod-gadget',
+        onHand: 0,
+        reserved: 0,
+        available: 0,
+      });
+    });
+
+    it('reports the PHYSICAL figures for an IC product when physical rows exist (transfers keep working)', async () => {
+      findMany().mockResolvedValue([icProduct]);
+      (prisma.physicalInventory.groupBy as jest.Mock).mockResolvedValue([
+        { productId: 'prod-gadget', variantId: null, _sum: { quantity: 9, reservedQuantity: 4 } },
+      ]);
+      const res = await service.productLookup({ q: 'GADGET-1', warehouseId: 'wh-main' });
+      expect(res.data[0]).toMatchObject({ onHand: 9, reserved: 4, available: 5 });
+    });
+
+    it('availabilityMode=MANAGED_STOCK scopes BOTH lookup phases (the bulk-adjust managed path)', async () => {
+      findMany().mockResolvedValue([]);
+      await service.productLookup({ q: 'shirt', availabilityMode: 'MANAGED_STOCK' });
+      expect(findMany().mock.calls.length).toBeGreaterThan(1);
+      for (const call of findMany().mock.calls) {
+        expect(call[0].where.availabilityMode).toBe('MANAGED_STOCK');
+      }
+    });
   });
 });

@@ -27,6 +27,15 @@ import {
   ITEM_EDIT_WARNING_STATUSES,
 } from './item-edit-policy'
 import { ExchangePaidConfirm, isPaidConfirmValid } from './components/exchange-paid-confirm'
+import {
+  EMPTY_MANUAL_FORM,
+  buildManualCartItem,
+  cartItemFromManualOrderItem,
+  isCostNotSet,
+  manualItemPayload,
+  validateManualForm,
+  type ManualFormValues,
+} from './manual-item'
 import { CustomizationInput } from './components/customization-input'
 import { snapshotToSelection, selectionAddonTotal, snapshotAddonTotal } from '@/lib/customization'
 import { apiClient } from '@/lib/api-client'
@@ -162,6 +171,10 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   const [productSearching, setProductSearching] = useState(false)
   const [cartItems, setCartItems] = useState<any[]>([])
   const [showProductDropdown, setShowProductDropdown] = useState(false)
+  // Manual order item (Workstream C): the product dropdown's footer row
+  // swaps the dropdown body to this compact inline form.
+  const [manualMode, setManualMode] = useState(false)
+  const [manualForm, setManualForm] = useState<ManualFormValues>(EMPTY_MANUAL_FORM)
   const productInputRef = useRef<HTMLInputElement>(null)
 
   const [shippingCharge, setShippingCharge] = useState('')
@@ -384,19 +397,23 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   setCartItems(
     isExchange
       ? []
-      : (o.items || []).map((i: any) => ({
-          itemId: i.id,
-          productId: i.productId,
-          variantId: i.variantId || null,
-          product: i.product
-            ? { ...i.product, name: i.variant ? `${i.product.name} (${variantLabel(i.variant)})` : i.product.name }
-            : { name: i.product?.name || 'Product' },
-          variant: i.variant || null,
-          quantity: i.quantity,
-          price: Number(i.price),
-          customization: i.customization ?? undefined,
-          _selection: snapshotToSelection(i.customization),
-        })),
+      : (o.items || []).map((i: any) =>
+          i.isManual
+            ? cartItemFromManualOrderItem(i)
+            : {
+                itemId: i.id,
+                productId: i.productId,
+                variantId: i.variantId || null,
+                product: i.product
+                  ? { ...i.product, name: i.variant ? `${i.product.name} (${variantLabel(i.variant)})` : i.product.name }
+                  : { name: i.combo?.name || 'Product' },
+                variant: i.variant || null,
+                quantity: i.quantity,
+                price: Number(i.price),
+                customization: i.customization ?? undefined,
+                _selection: snapshotToSelection(i.customization),
+              },
+        ),
   )
 
   // Money is inherited on an EDIT but starts fresh on an EXCHANGE (§2: no
@@ -639,6 +656,24 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     })
   }
 
+  // Manual item add (Workstream C): a product-less cart line — name, qty,
+  // price, optional cost — built by the shared manual-item helpers.
+  const addManualItem = () => {
+    if (itemsBlocked) return
+    const err = validateManualForm(manualForm)
+    if (err) {
+      toast.error(err)
+      return
+    }
+    const item = buildManualCartItem(manualForm)
+    setCartItems(prev => [...prev, item])
+    toast.success(`${item.manualName} added`)
+    setManualForm(EMPTY_MANUAL_FORM)
+    setManualMode(false)
+    setProductSearch('')
+    setShowProductDropdown(false)
+  }
+
   // Line-item mutators are no-ops once the status gate locks items. Guarding the
   // handlers (rather than only disabling the buttons) means keyboard, dropdown
   // and mobile entry points are all covered by one rule.
@@ -707,15 +742,19 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
 
   const buildPayload = () => {
     const payload: any = {
-      items: cartItems.map(item => ({
-        productId: item.productId,
-        quantity: parseInt(item.quantity as any) || 1,
-        price: parseFloat(item.price as any) || 0,
-        ...(item.variantId ? { variantId: item.variantId } : {}),
-        ...((item._selection ?? snapshotToSelection(item.customization))
-          ? { customization: item._selection ?? snapshotToSelection(item.customization) }
-          : {}),
-      })),
+      items: cartItems.map(item =>
+        item.isManual
+          ? manualItemPayload(item)
+          : {
+              productId: item.productId,
+              quantity: parseInt(item.quantity as any) || 1,
+              price: parseFloat(item.price as any) || 0,
+              ...(item.variantId ? { variantId: item.variantId } : {}),
+              ...((item._selection ?? snapshotToSelection(item.customization))
+                ? { customization: item._selection ?? snapshotToSelection(item.customization) }
+                : {}),
+            },
+      ),
       shippingCharge: parseFloat(shippingCharge) || 0,
       discount: parseFloat(discount) || 0,
       discountType,
@@ -1479,8 +1518,75 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                   </div>
 
                   {/* Dropdown Menu */}
-                  {showProductDropdown && productResults.length > 0 && (
+                  {showProductDropdown && (manualMode || productResults.length > 0 || (productSearch.trim().length > 0 && !productSearching)) && (
                     <div className='absolute z-30 mt-1.5 w-full bg-background border rounded-xl shadow-xl overflow-hidden'>
+                      {manualMode ? (
+                        <div className='p-3.5 space-y-2.5'>
+                          <p className='text-xs font-semibold text-foreground'>Manual item</p>
+                          <div>
+                            <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Name</Label>
+                            <Input
+                              value={manualForm.name}
+                              onChange={e => setManualForm(f => ({ ...f, name: e.target.value }))}
+                              placeholder='e.g. Gift wrapping'
+                              className='h-9 text-sm'
+                              autoFocus
+                            />
+                          </div>
+                          <div className='grid grid-cols-3 gap-2'>
+                            <div>
+                              <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Qty</Label>
+                              <Input
+                                type='number'
+                                min='1'
+                                step='1'
+                                value={manualForm.quantity}
+                                onChange={e => setManualForm(f => ({ ...f, quantity: e.target.value }))}
+                                className='h-9 text-sm'
+                              />
+                            </div>
+                            <div>
+                              <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Unit price (৳)</Label>
+                              <Input
+                                type='number'
+                                min='0'
+                                step='0.01'
+                                value={manualForm.price}
+                                onChange={e => setManualForm(f => ({ ...f, price: e.target.value }))}
+                                placeholder='0'
+                                className='h-9 text-sm'
+                              />
+                            </div>
+                            <div>
+                              <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Cost (optional — for profit calculation)</Label>
+                              <Input
+                                type='number'
+                                min='0'
+                                step='0.01'
+                                value={manualForm.cost}
+                                onChange={e => setManualForm(f => ({ ...f, cost: e.target.value }))}
+                                placeholder='—'
+                                className='h-9 text-sm'
+                              />
+                            </div>
+                          </div>
+                          <div className='flex justify-end gap-2 pt-1'>
+                            <Button
+                              type='button'
+                              variant='ghost'
+                              size='sm'
+                              className='h-8 text-xs'
+                              onClick={() => { setManualMode(false); setManualForm(EMPTY_MANUAL_FORM) }}
+                            >
+                              Cancel
+                            </Button>
+                            <Button type='button' size='sm' className='h-8 text-xs' onClick={addManualItem}>
+                              Add
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
                       <div className='px-3.5 py-2 bg-muted/40 border-b flex items-center justify-between text-xs text-muted-foreground'>
                         <span>{productResults.length} product{productResults.length > 1 ? 's' : ''} found</span>
                         <span className='text-[11px] hidden sm:inline'>Tap product to add or select variant</span>
@@ -1539,6 +1645,17 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                           )
                         })}
                       </div>
+                      {!isExchange && (
+                        <button
+                          type='button'
+                          onClick={() => setManualMode(true)}
+                          className='w-full px-3.5 py-2.5 border-t flex items-center gap-2 text-sm font-medium text-primary hover:bg-muted/60 transition-colors'
+                        >
+                          <Plus className='h-4 w-4' /> Add manual item
+                        </button>
+                      )}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1576,6 +1693,12 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                                     <div className='h-9 w-9 rounded-md border bg-muted flex items-center justify-center shrink-0'><Package className='h-4 w-4 text-muted-foreground' /></div>
                                   )}
                                   <span className='text-sm font-semibold truncate max-w-[200px] text-foreground'>{item.product.name}</span>
+                                  {item.isManual && (
+                                    <Badge variant='outline' className='text-[10px] h-4.5 font-normal shrink-0'>Manual</Badge>
+                                  )}
+                                  {isCostNotSet(item) && (
+                                    <span className='text-[11px] font-medium text-amber-600 dark:text-amber-500 shrink-0'>Cost not set</span>
+                                  )}
                                 </div>
                                 {item.product?.customizations?.length > 0 && (
                                   <div className='mt-2'>
@@ -1650,6 +1773,14 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                               )}
                               <div className='min-w-0 flex-1'>
                                 <p className='text-xs font-semibold text-foreground line-clamp-1'>{item.product.name}</p>
+                                {item.isManual && (
+                                  <div className='flex items-center gap-1.5 mt-0.5'>
+                                    <Badge variant='outline' className='text-[10px] font-normal'>Manual</Badge>
+                                    {isCostNotSet(item) && (
+                                      <span className='text-[11px] font-medium text-amber-600 dark:text-amber-500'>Cost not set</span>
+                                    )}
+                                  </div>
+                                )}
                                 {(item.variant?.name || item.variantId) && (
                                   <Badge variant='outline' className='text-[10px] mt-0.5 font-normal'>
                                     {item.variant?.name || item.variant?.sku || 'Variant'}

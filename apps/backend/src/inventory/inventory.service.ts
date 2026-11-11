@@ -7,7 +7,6 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { StockRouterService } from '../stock/stock-router.service';
-import { InitialPhysicalStockService } from '../stock/initial-physical-stock.service';
 import { CostingLotService, CostingLotShortfallError } from '../stock/costing-lot.service';
 import { CacheService } from '../cache/cache.service';
 import { ManagedStockLedgerService } from './managed-stock-ledger.service';
@@ -32,6 +31,7 @@ const PRODUCT_LOOKUP_SELECT = {
   sku: true,
   type: true,
   images: true,
+  availabilityMode: true,
   managedStockQuantity: true,
   reservedStock: true,
   variants: {
@@ -64,7 +64,6 @@ export class InventoryService {
     private readonly costingLotService: CostingLotService,
     private readonly managedStockLedgerService: ManagedStockLedgerService,
     private readonly cache: CacheService,
-    private readonly initialPhysicalStock: InitialPhysicalStockService,
   ) {}
 
   async lowStock() {
@@ -682,131 +681,6 @@ export class InventoryService {
     });
   }
 
-  /**
-   * Warehouse for the physical mirror, resolved automatically — never a new
-   * demand on the user (owner rule 2026-10-28: updates must auto-align with
-   * whatever state already exists). Resolution order:
-   *   (a) the product's own warehouseId, when set (unchanged behavior for
-   *       well-formed products);
-   *   (b) the warehouse of the product's existing PhysicalInventory rows —
-   *       this variant's row first, then any row for the product (the
-   *       Woo-imported / legacy case: physical stock exists somewhere, but
-   *       the product field was never set, and no admin screen can set it);
-   *   (c) the first active 'main' warehouse, else the first active warehouse
-   *       (InitialPhysicalStockService.resolveWarehouse, same fallback the
-   *       creation paths use).
-   * Returns null when the mirror does not apply at all (zero quantity,
-   * non-MANAGED_STOCK mode, or Inventory Management off). Throws ONLY when
-   * Inventory Management is on, the product is MANAGED_STOCK, and literally
-   * no warehouse exists anywhere — the zero-warehouse edge. Fail-loud is
-   * deliberate here (owner decision 2026-10-28): proceeding with no
-   * warehouse would write managed stock while silently skipping the
-   * physical mirror — silent layer divergence, the exact failure mode the
-   * audit history fights — whereas a loud error names the missing
-   * warehouse, and the case is near-impossible in practice (IM implies a
-   * warehouse exists). The throw below preserves the pre-existing message
-   * for that edge.
-   */
-  private async resolveMirrorWarehouse(params: {
-    product: {
-      id: string;
-      availabilityMode?: string | null;
-      warehouseId?: string | null;
-      name?: string | null;
-    };
-    variantId?: string | null;
-    quantity: number;
-  }): Promise<string | null> {
-    if (params.quantity === 0) return null;
-    if (params.product.availabilityMode !== 'MANAGED_STOCK') return null;
-    const imEnabled = await this.stockRouter.isInventoryManagementEnabled();
-    if (!imEnabled) return null;
-    if (params.product.warehouseId) return params.product.warehouseId;
-
-    const physicalRow =
-      (params.variantId
-        ? await this.prisma.physicalInventory.findFirst({
-            where: {
-              productId: params.product.id,
-              variantId: params.variantId,
-            },
-            orderBy: { createdAt: 'asc' },
-            select: { warehouseId: true },
-          })
-        : null) ??
-      (await this.prisma.physicalInventory.findFirst({
-        where: { productId: params.product.id },
-        orderBy: { createdAt: 'asc' },
-        select: { warehouseId: true },
-      }));
-    if (physicalRow) return physicalRow.warehouseId;
-
-    try {
-      const resolved = await this.initialPhysicalStock.resolveWarehouse(
-        'MANAGED_STOCK',
-        Math.abs(params.quantity),
-      );
-      if (resolved) return resolved;
-    } catch {
-      // resolveWarehouse throws for the no-active-warehouse case with an
-      // initial-stock message; rethrow with the adjustment-context message
-      // below so staff see the same wording this path always had.
-    }
-    throw new BadRequestException(
-      `"${params.product.name ?? 'Product'}" has no warehouse set — the physical layer cannot mirror this adjustment while Inventory Management is on.`,
-    );
-  }
-
-  /**
-   * Stock audit #5 (owner 2026-10-23): a manual adjustment of a
-   * MANAGED_STOCK product must move BOTH layers while Inventory Management
-   * is on — the same rule the order/return flows follow (router 'add' =
-   * both layers). Adjusting only the managed counter silently diverged the
-   * two layers. IM off → managed only (the physical record is not that
-   * client's engine). The warehouse is resolved automatically by
-   * resolveMirrorWarehouse and, when it came from a fallback, persisted onto
-   * the product so later adjusts don't re-resolve (precedent: mirrorUnits).
-   */
-  private async mirrorAdjustmentToPhysical(params: {
-    product: {
-      id: string;
-      availabilityMode?: string | null;
-      warehouseId?: string | null;
-      name?: string | null;
-    };
-    variantId?: string | null;
-    quantity: number;
-    reason?: string;
-    performedBy?: string;
-    tx?: Prisma.TransactionClient;
-  }): Promise<void> {
-    const warehouseId = await this.resolveMirrorWarehouse({
-      product: params.product,
-      variantId: params.variantId,
-      quantity: params.quantity,
-    });
-    if (!warehouseId) return;
-    if (!params.product.warehouseId) {
-      await (params.tx ?? this.prisma).product.update({
-        where: { id: params.product.id },
-        data: { warehouseId },
-      });
-    }
-    await this.stockService.operatePhysical('add', {
-      productId: params.product.id,
-      variantId: params.variantId ?? undefined,
-      warehouseId,
-      quantity: params.quantity,
-      reference: params.reason
-        ? `adjust-${params.reason}`
-        : 'manual-adjustment',
-      performedBy: params.performedBy,
-      tx: params.tx,
-      ledgerType: 'ADJUSTMENT',
-      referenceType: 'ADJUSTMENT',
-    });
-  }
-
   async adjust(
     productId?: string,
     quantity?: number,
@@ -934,13 +808,6 @@ export class InventoryService {
             productName: item.product.name,
             quantity: qty,
           });
-          await this.mirrorAdjustmentToPhysical({
-            product: item.product,
-            variantId: item.variantId,
-            quantity: qty,
-            reason: reason || `Combo "${combo.name}" stock adjustment`,
-            performedBy,
-          });
         } else if (item.product.manageStock) {
           const avail = item.product.managedStockQuantity;
           if (qty < 0 && avail + qty < 0) {
@@ -979,12 +846,6 @@ export class InventoryService {
             productId: item.productId,
             productName: item.product.name,
             quantity: qty,
-          });
-          await this.mirrorAdjustmentToPhysical({
-            product: item.product,
-            quantity: qty,
-            reason: reason || `Combo "${combo.name}" stock adjustment`,
-            performedBy,
           });
         } else {
           skipped.push(
@@ -1036,18 +897,10 @@ export class InventoryService {
         removalQty: Math.abs(Math.min(q, 0)),
         confirmed: confirmDestructive,
       });
-      // Fail-fast warehouse resolution (2026-10-28): the mirror used to
-      // throw AFTER the managed write, leaving managed written + physical
-      // flat — the very divergence the mirror exists to prevent. Resolve
-      // before any write so a missing warehouse fails with zero writes.
-      // (The simple-product path is already atomic via the shared tx in
-      // adjustProductWithRetry; the combo path still writes-then-mirrors
-      // per item — pre-existing, out of this change's scope.)
-      await this.resolveMirrorWarehouse({
-        product: variant.product,
-        variantId,
-        quantity: q,
-      });
+      // Layers are independent (owner decision 2026-11-11): a managed
+      // adjust writes ONLY the managed counter — no warehouse is resolved
+      // and no physical row is touched, so it succeeds even when no
+      // warehouse exists anywhere.
       const op =
         q >= 0
           ? this.stockService.add.bind(this.stockService)
@@ -1059,13 +912,6 @@ export class InventoryService {
         reference: reason ? `adjust-${reason}` : 'manual-adjustment',
         performedBy,
         ledgerType: ManagedStockMovementType.ADJUSTMENT,
-      });
-      await this.mirrorAdjustmentToPhysical({
-        product: variant.product,
-        variantId,
-        quantity: q,
-        reason,
-        performedBy,
       });
       return {
         id: variant.id,
@@ -1148,14 +994,6 @@ export class InventoryService {
               tx,
               ledgerType: ManagedStockMovementType.ADJUSTMENT,
             });
-            await this.mirrorAdjustmentToPhysical({
-              product,
-              quantity,
-              reason,
-              performedBy,
-              tx,
-            });
-
             return tx.product.findUnique({
               where: { id: productId },
               select: {
@@ -1190,10 +1028,26 @@ export class InventoryService {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     productId?: string;
+    /**
+     * Scoped managed view (2026-11-11, directive §3): `view: 'managed'`
+     * (or an explicit availabilityMode) restricts the list to that mode —
+     * for the managed view that means MANAGED_STOCK only, so
+     * INVENTORY_CONTROLLED / ALWAYS_* rows leave the Managed tab. The
+     * filter is OPT-IN because this endpoint also feeds mode-agnostic
+     * surfaces (inventory detail by productId, the overview KPI total,
+     * reports) that must keep seeing every product; the PHYSICAL view
+     * never uses this endpoint at all (it reads /inventory/physical).
+     */
+    view?: string;
+    availabilityMode?: string;
   }) {
     const page = params.page || 1;
     const perPage = params.perPage || 20;
     const where: any = { isActive: true };
+    const scopedMode =
+      params.availabilityMode ??
+      (params.view === 'managed' ? 'MANAGED_STOCK' : undefined);
+    if (scopedMode) where.availabilityMode = scopedMode;
 
     // Exact product lookup (2026-11-02): the inventory detail page used to
     // pass the product UUID as `search`, which only matches name/SKU
@@ -1255,6 +1109,9 @@ export class InventoryService {
       // ProductVariant.)
       const dir = params.sortOrder === 'asc' ? 'ASC' : 'DESC';
       const conds: Prisma.Sql[] = [Prisma.sql`p."isActive" = true`];
+      if (scopedMode) {
+        conds.push(Prisma.sql`p."availabilityMode" = ${scopedMode}`);
+      }
       if (params.productId) {
         conds.push(Prisma.sql`p.id = ${params.productId}`);
       }
@@ -1435,6 +1292,15 @@ export class InventoryService {
     q?: string;
     warehouseId?: string;
     perPage?: number;
+    /**
+     * Managed-only scoping (2026-11-11, directive §3): the bulk-adjust
+     * (managed) consumer passes availabilityMode='MANAGED_STOCK' so only
+     * managed-mode products are offered there. Deliberately OPT-IN and
+     * NOT the default: transfers (warehouseId-scoped, physical figures)
+     * and purchase orders legitimately look up INVENTORY_CONTROLLED
+     * products through this same endpoint and must keep finding them.
+     */
+    availabilityMode?: string;
   }) {
     const perPage = Math.min(
       Math.max(params.perPage ?? 25, 1),
@@ -1476,6 +1342,12 @@ export class InventoryService {
       // parent row — that parent row is what used to be silently selectable.
       // A parent-SKU search therefore returns the parent's variants and forces
       // a variant choice instead of letting the parent itself be picked.
+      // INVENTORY_CONTROLLED units never report MANAGED figures
+      // (2026-11-11): their stock lives in the physical layer, so until
+      // physical rows override below, the managed fallback is zeroed —
+      // a stale managed counter must not masquerade as on-hand here.
+      // MANAGED_STOCK units keep the managed fallback exactly as before.
+      const isIc = (p as any).availabilityMode === 'INVENTORY_CONTROLLED';
       if (p.type === 'variable') {
         for (const v of p.variants) {
           const key = `${p.id}:${v.id}`;
@@ -1493,9 +1365,11 @@ export class InventoryService {
                 .join(' / ') || v.sku,
             sku: v.sku,
             type: 'variant',
-            available: this.managedAvailable('variant', v.managedStockQuantity, v.reservedStock),
-            onHand: v.managedStockQuantity,
-            reserved: v.reservedStock ?? 0,
+            available: isIc
+              ? 0
+              : this.managedAvailable('variant', v.managedStockQuantity, v.reservedStock),
+            onHand: isIc ? 0 : v.managedStockQuantity,
+            reserved: isIc ? 0 : (v.reservedStock ?? 0),
             image: this.lookupImage((p as any).images),
             exactSku:
               (v.sku?.toLowerCase() ?? '') === lowered || (p.sku?.toLowerCase() ?? '') === lowered,
@@ -1515,9 +1389,11 @@ export class InventoryService {
         variantName: null,
         sku: p.sku,
         type: 'product',
-        available: this.managedAvailable('product', p.managedStockQuantity, p.reservedStock),
-        onHand: p.managedStockQuantity,
-        reserved: p.reservedStock ?? 0,
+        available: isIc
+          ? 0
+          : this.managedAvailable('product', p.managedStockQuantity, p.reservedStock),
+        onHand: isIc ? 0 : p.managedStockQuantity,
+        reserved: isIc ? 0 : (p.reservedStock ?? 0),
         image: this.lookupImage((p as any).images),
         exactSku: (p.sku?.toLowerCase() ?? '') === lowered,
       });
@@ -1530,6 +1406,9 @@ export class InventoryService {
     // buried row no matter how large the catalogue is.
     const exactWhere: Prisma.ProductWhereInput = {
       isActive: true,
+      ...(params.availabilityMode
+        ? { availabilityMode: params.availabilityMode as any }
+        : {}),
       OR: [
         { sku: { equals: q, mode: 'insensitive' } },
         { variants: { some: { sku: { equals: q, mode: 'insensitive' } } } },
@@ -1570,6 +1449,9 @@ export class InventoryService {
       }));
       const fuzzyWhere: Prisma.ProductWhereInput = {
         isActive: true,
+        ...(params.availabilityMode
+          ? { availabilityMode: params.availabilityMode as any }
+          : {}),
         AND: [
           ...tokenClauses,
           ...(seen.size > 0 ? [{ id: { notIn: [...seen] } }] : []),

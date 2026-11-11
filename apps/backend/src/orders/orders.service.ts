@@ -92,6 +92,7 @@ import {
 } from '../dispatch-cancel/dispatch-cancel-eligibility';
 import {
   assertNoCustomizedLines,
+  assertNoManualLines,
   assertNoDuplicateReturn,
   assertReturnEligible,
   generateReturnDisplayId,
@@ -260,6 +261,8 @@ const PUBLIC_DISPLAY_SELECT = {
       id: true,
       quantity: true,
       price: true,
+      isManual: true,
+      manualName: true,
       product: { select: { name: true, slug: true, images: true } },
     },
   },
@@ -290,6 +293,8 @@ const PUBLIC_TOKEN_SELECT = {
       price: true,
       comboId: true,
       productId: true,
+      isManual: true,
+      manualName: true,
       product: {
         select: { name: true, slug: true, images: true, category: { select: { name: true } } },
       },
@@ -1509,18 +1514,22 @@ export class OrdersService {
       }
     }
 
-    return order.items.map((item) => {
-      const keys = [item.variantId, item.productId].filter(Boolean) as string[];
-      const total = keys.reduce((sum, k) => sum + (dispatched.get(k) ?? 0), 0);
-      return {
-        orderItemId: item.id,
-        productId: item.productId,
-        variantId: item.variantId ?? null,
-        ordered: item.quantity,
-        dispatched: total,
-        remaining: Math.max(0, item.quantity - total),
-      };
-    });
+    return order.items
+      // Manual lines (Workstream C) have no product/variant key a dispatch
+      // mapping could ever reference — they are not fulfillable units.
+      .filter((item) => !(item as any).isManual)
+      .map((item) => {
+        const keys = [item.variantId, item.productId].filter(Boolean) as string[];
+        const total = keys.reduce((sum, k) => sum + (dispatched.get(k) ?? 0), 0);
+        return {
+          orderItemId: item.id,
+          productId: item.productId,
+          variantId: item.variantId ?? null,
+          ordered: item.quantity,
+          dispatched: total,
+          remaining: Math.max(0, item.quantity - total),
+        };
+      });
   }
 
   private async getDefaultOfficeNote(): Promise<string | null> {
@@ -1582,6 +1591,22 @@ export class OrdersService {
     // `warnings` so the operator UI can surface them.
     const warnings: string[] = [];
     const isStaffCreate = !!userId && !isCustomer;
+
+    // Manual order items are Admin-only (owner decision 7, 2026-11-11):
+    // a storefront/guest/customer payload carrying one is refused outright
+    // — the storefront never sends them, so this can only be a forged or
+    // buggy client. Staff creates validate each line's shape here so a bad
+    // line fails before any transaction work begins.
+    if (dto.items?.some((i) => i.isManual)) {
+      if (!isStaffCreate) {
+        throw new BadRequestException(
+          'Manual items can only be added by staff.',
+        );
+      }
+      for (const item of dto.items) {
+        if (item.isManual) this.assertValidManualItem(item);
+      }
+    }
 
     // Optional secondary contact number (staff-entered on manual orders).
     // Normalized like every other phone. An invalid value is refused loudly
@@ -1995,6 +2020,12 @@ export class OrdersService {
       };
 
       for (const item of dto.items) {
+        if (item.isManual) {
+          // Manual line (Workstream C): skips product/variant/combo lookup
+          // AND price resolution entirely — the staff-entered price stands.
+          // Shape was validated before the transaction (staff gate above).
+          continue;
+        }
         if (item.comboId) {
           const combo = comboMap.get(item.comboId);
           if (!combo) {
@@ -2355,6 +2386,12 @@ export class OrdersService {
       // evaluateForCart from the product/variant prices (never trusted
       // from the caller). customerKey marks the order path, where
       // per-customer caps and first-order checks run under row locks.
+      // Manual lines (Workstream C, owner decision 5): no line-level
+      // special handling. They carry no product, so they cannot match a
+      // product/category-scoped automatic rule and fall out of the eval
+      // items below via the productId filter — but they ARE part of the
+      // subtotal, so order-level coupon/manual percentage discounts still
+      // apply to them through `discountBase` exactly like any other line.
       const discountEvalItems = dto.items
         .filter((i) => !i.comboId)
         .map((i) => {
@@ -2688,6 +2725,26 @@ export class OrdersService {
           items: {
             create: dto.items.map((i) => {
               const resolved = resolvedCustomizations.get(i);
+              if (i.isManual) {
+                // Manual line: product-less, cost frozen at creation per
+                // owner decision 4 (see manualCostFields).
+                const cost = this.manualCostFields(i);
+                return {
+                  productId: null,
+                  variantId: null,
+                  comboId: null,
+                  comboSelection: undefined,
+                  quantity: i.quantity,
+                  price: i.price,
+                  isManual: true,
+                  manualName: (i.manualName ?? '').trim(),
+                  costSnapshot: cost.costSnapshot,
+                  costType: cost.costType,
+                  customization: undefined,
+                  addonAmount: undefined,
+                  addonCostAmount: undefined,
+                };
+              }
               return {
                 productId: i.productId,
                 variantId: i.variantId,
@@ -2893,6 +2950,9 @@ export class OrdersService {
       }
 
       for (const item of dto.items) {
+        // Manual lines SKIP every stock path (Workstream C): no reserve,
+        // no allocation, no ledger — they must never create stock work.
+        if (item.isManual) continue;
         const createdItem = created.items.find((ci) => {
           if (item.comboId) {
             return ci.comboId === item.comboId;
@@ -3161,6 +3221,69 @@ export class OrdersService {
    * rejected earlier, and the physical (INVENTORY_CONTROLLED) engine already
    * throws on insufficient physical stock at reservation time.
    */
+  /**
+   * Manual order item validation (owner 2026-11-11, Workstream C).
+   * A manual line is product-less: staff name + price are taken as entered.
+   * Returns the trimmed name. Throws on an empty name, a non-positive or
+   * non-integer quantity, a negative price, or a negative cost.
+   */
+  private assertValidManualItem(item: {
+    manualName?: string | null;
+    quantity: number;
+    price: number;
+    cost?: number | null;
+    productId?: string | null;
+    variantId?: string | null;
+    comboId?: string | null;
+    customization?: unknown;
+  }): string {
+    const name = (item.manualName ?? '').trim();
+    if (!name) {
+      throw new BadRequestException('A manual item needs a name.');
+    }
+    if (item.productId || item.variantId || item.comboId) {
+      throw new BadRequestException(
+        'A manual item cannot also reference a product, variant, or combo.',
+      );
+    }
+    if (item.customization) {
+      throw new BadRequestException('Manual items do not support customization.');
+    }
+    if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+      throw new BadRequestException('A manual item quantity must be a positive integer.');
+    }
+    if (!(Number(item.price) >= 0)) {
+      throw new BadRequestException('A manual item price cannot be negative.');
+    }
+    if (
+      item.cost !== undefined &&
+      item.cost !== null &&
+      !(Number(item.cost) >= 0)
+    ) {
+      throw new BadRequestException('A manual item cost cannot be negative.');
+    }
+    return name;
+  }
+
+  /**
+   * Cost snapshot for a manual line (owner decision 4, 2026-11-11):
+   * staff-entered cost → costSnapshot = cost, costType 'actual';
+   * cost blank → costSnapshot = price (COGS = full price, profit
+   * contribution exactly 0) with the explicit 'not_set' marker P&L and
+   * the order detail surface as the "cost not set" flag. A manual line's
+   * cost is NEVER overwritten later — it has no physical fulfilment, so
+   * the FIFO delivery overwrite and the confirm-time estimate skip it.
+   */
+  private manualCostFields(item: {
+    price: number;
+    cost?: number | null;
+  }): { costSnapshot: number; costType: string } {
+    if (item.cost !== undefined && item.cost !== null) {
+      return { costSnapshot: Number(item.cost), costType: 'actual' };
+    }
+    return { costSnapshot: Number(item.price), costType: 'not_set' };
+  }
+
   private assertManagedAvailability(opts: {
     name: string;
     availabilityMode?: string | null;
@@ -3282,10 +3405,30 @@ export class OrdersService {
     // so the test is `!== undefined` rather than "has rows". Omitting `items`
     // entirely still means "leave them alone".
     if (dto.items !== undefined) {
+      // Manual lines (Workstream C): validate up front — updateOrder is a
+      // staff-only path, so the Admin-only gate is the route itself.
+      for (const item of dto.items) {
+        if (item.isManual) this.assertValidManualItem(item);
+      }
+      // Line identity for the diff: product lines key on variant/product;
+      // manual lines (no product) key on their name so an edit reads as an
+      // update of the same line instead of a remove + add pair.
+      const lineKeyOf = (i: any): string =>
+        i.variantId ||
+        i.productId ||
+        (i.isManual
+          ? `manual:${(i.manualName ?? '').trim().toLowerCase()}`
+          : i.id || '');
+      const lineLabelOf = (i: any): string =>
+        i.product?.name ||
+        (i.isManual ? i.manualName : undefined) ||
+        i.manualName ||
+        i.productId?.slice(0, 8) ||
+        '?';
       // Build a detailed diff of item changes
       const oldMap = new Map(
         order.items.map((i: any) => {
-          const key = i.variantId || i.productId || i.id;
+          const key = lineKeyOf(i);
           return [
             key,
             {
@@ -3293,18 +3436,18 @@ export class OrdersService {
               variantId: i.variantId,
               quantity: i.quantity,
               price: Number(i.price),
-              productName: i.product?.name,
+              productName: lineLabelOf(i),
             },
           ];
         }),
       );
       const changes: string[] = [];
       for (const newItem of dto.items) {
-        const key = newItem.variantId || newItem.productId || '';
+        const key = lineKeyOf(newItem);
         const old = oldMap.get(key);
         if (!old) {
           changes.push(
-            `Added: ${newItem.quantity}x ${newItem.productId?.slice(0, 8) || '?'} @ ৳${newItem.price}`,
+            `Added: ${newItem.quantity}x ${lineLabelOf(newItem)} @ ৳${newItem.price}`,
           );
         } else if (
           old.quantity !== newItem.quantity ||
@@ -3562,6 +3705,48 @@ export class OrdersService {
         await tx.orderItem.createMany({
           data: dto.items.map((i) => {
             const resolved = editCustomizations.get(i);
+            if (i.isManual) {
+              // Manual line recreate (Workstream C): an explicit `cost` in
+              // the payload wins; without one, a same-named existing manual
+              // line keeps its frozen cost (an untouched line must not lose
+              // its 'actual' cost — or gain a fake one — just because the
+              // order was edited); a brand-new cost-less line falls back to
+              // the decision-4 rule (costSnapshot = price, 'not_set').
+              let costFields: { costSnapshot: number; costType: string };
+              if (i.cost !== undefined && i.cost !== null) {
+                costFields = this.manualCostFields(i);
+              } else {
+                const prior = (order.items as any[]).find(
+                  (o) =>
+                    o.isManual &&
+                    (o.manualName ?? '').trim().toLowerCase() ===
+                      (i.manualName ?? '').trim().toLowerCase(),
+                );
+                costFields =
+                  prior && prior.costSnapshot !== null && prior.costSnapshot !== undefined
+                    ? {
+                        costSnapshot: Number(prior.costSnapshot),
+                        costType: prior.costType ?? 'not_set',
+                      }
+                    : this.manualCostFields(i);
+              }
+              return {
+                orderId: id,
+                productId: null,
+                variantId: null,
+                comboId: null,
+                comboSelection: undefined,
+                quantity: i.quantity,
+                price: i.price,
+                isManual: true,
+                manualName: (i.manualName ?? '').trim(),
+                costSnapshot: costFields.costSnapshot,
+                costType: costFields.costType,
+                customization: undefined,
+                addonAmount: undefined,
+                addonCostAmount: undefined,
+              };
+            }
             return {
               orderId: id,
               productId: i.productId,
@@ -3687,6 +3872,8 @@ export class OrdersService {
           else newItemQueues.set(key, [ni]);
         }
         for (const item of dto.items) {
+          // Manual lines SKIP stock reservation (Workstream C).
+          if (item.isManual) continue;
           const key = item.comboId
             ? `c:${item.comboId}`
             : `p:${item.productId}|${item.variantId ?? ''}`;
@@ -4755,6 +4942,8 @@ export class OrdersService {
             variantId: true,
             quantity: true,
             customization: true,
+            isManual: true,
+            manualName: true,
             product: { select: { name: true } },
           },
         },
@@ -4775,6 +4964,12 @@ export class OrdersService {
           `Partial status (current: ${statusName ?? 'unknown'}).`,
       );
     }
+    // Workstream C (decision 6): a manual-flagged returning line is refused
+    // with the manual reason BEFORE shape validation (it has no productId,
+    // so the shape check would otherwise mask the real reason).
+    if (Array.isArray(dto.items)) {
+      assertNoManualLines([], dto.items as any[]);
+    }
     const items = this.validateStaffPartialItems(
       dto.items,
       ((order as any).items ?? []) as {
@@ -4790,6 +4985,13 @@ export class OrdersService {
       ((order as any).items ?? []) as any[],
       items as any[],
       hasCustomization,
+    );
+
+    // Workstream C (decision 6): manual lines are non-returnable too —
+    // the same gate pattern as the customized check above.
+    assertNoManualLines(
+      ((order as any).items ?? []) as any[],
+      items as any[],
     );
 
     // Hardening (1): the shared eligibility guard — an active FULL blocks a
@@ -5287,6 +5489,82 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     this.assertItemsEditable(order.status?.name);
 
+    // Manual line (Workstream C): addItem is a staff-only route, so the
+    // Admin-only gate is the route itself. No product lookup, no stock
+    // reservation — the line is written with its frozen manual cost.
+    if (dto.isManual) {
+      const manualName = this.assertValidManualItem(dto);
+      const cost = this.manualCostFields(dto);
+      const addedManual = await this.prisma.$transaction(async (tx) => {
+        await tx.orderItem.create({
+          data: {
+            orderId,
+            productId: null,
+            variantId: null,
+            quantity: dto.quantity,
+            price: dto.price,
+            isManual: true,
+            manualName,
+            costSnapshot: cost.costSnapshot,
+            costType: cost.costType,
+          },
+        });
+        const items = [
+          ...order.items.map((i) => ({
+            price: Number(i.price),
+            quantity: i.quantity,
+            addonAmount: Number(i.addonAmount ?? 0),
+          })),
+          { price: dto.price, quantity: dto.quantity, addonAmount: 0 },
+        ];
+        const { subtotal, total } = this.recalculate(
+          items,
+          Number(order.shippingCharge),
+          Number(order.discount),
+          order.discountType || 'flat',
+        );
+        const timeline = [
+          ...this.parseTimeline(order.timeline),
+          {
+            type: 'item_added',
+            visibility: 'public',
+            timestamp: new Date().toISOString(),
+            ...(performedBy ? { performedBy } : {}),
+            note: `Manual item added: ${manualName} (${dto.quantity}x @ ৳${dto.price})`,
+          },
+        ];
+        return tx.order.update({
+          where: { id: orderId },
+          data: {
+            subtotal,
+            total,
+            timeline: timeline as any,
+            ...(shouldAutoAssign(userId, order.assignedToId)
+              ? { assignedToId: userId, assignedAt: new Date() }
+              : {}),
+          },
+          include: {
+            items: {
+              include: {
+                product: {
+                  select: { id: true, name: true, images: true, slug: true },
+                },
+              },
+            },
+          },
+        });
+      });
+      await this.invalidateAnalytics();
+      await this.refreshCodAlert(orderId);
+      return addedManual;
+    }
+
+    if (!dto.productId) {
+      throw new BadRequestException(
+        'An item must reference a product, or be a manual item (isManual).',
+      );
+    }
+
     let addedProduct: {
       availabilityMode: string;
       name: string;
@@ -5507,7 +5785,7 @@ export class OrdersService {
           visibility: 'public',
           timestamp: new Date().toISOString(),
           ...(performedBy ? { performedBy } : {}),
-          note: `Item removed: ${removedItem.productId?.slice(0, 8)} (${removedItem.quantity}x @ ৳${Number(removedItem.price)})`,
+          note: `Item removed: ${(removedItem as any).isManual ? (removedItem as any).manualName : removedItem.productId?.slice(0, 8)} (${removedItem.quantity}x @ ৳${Number(removedItem.price)})`,
         },
       ];
 
@@ -5962,7 +6240,11 @@ export class OrdersService {
               slug: i.product.slug,
               images: i.product.images,
             }
-          : null,
+          : i.isManual && i.manualName
+            ? // Manual line (Workstream C): no product relation — the name
+              // snapshot is the only name the line has.
+              { name: i.manualName, slug: null, images: [] }
+            : null,
       })),
       total: order.total,
       trackingUrl:
@@ -6811,6 +7093,10 @@ export class OrdersService {
     if (!order) return;
 
     for (const item of order.items) {
+      // Manual lines (Workstream C): their cost was frozen at creation from
+      // the staff-entered cost (or price, 'not_set') and is NEVER
+      // overwritten — no standardCost, no FIFO actual exists for them.
+      if ((item as any).isManual) continue;
       const cost = item.variant?.standardCost ?? item.product?.standardCost;
       if (cost != null) {
         await (tx || this.prisma).orderItem.update({
@@ -6981,6 +7267,9 @@ export class OrdersService {
       }
 
       // ── 2. Standalone Items ──────────────────────────────────────────────────
+      // Manual lines (Workstream C) are explicitly SKIPPED: product-less by
+      // construction, they must never block confirm or create stock work.
+      if ((item as any).isManual || !item.productId) continue;
       const product = item.product;
       if (!product) continue;
       if (product.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
@@ -7345,7 +7634,10 @@ export class OrdersService {
     // from the first line item keep both sides (browser + CAPI) in lockstep.
     const firstItem = itemsList[0];
     const contentName = firstItem
-      ? firstItem.product?.name || firstItem.combo?.name || undefined
+      ? firstItem.product?.name ||
+        firstItem.combo?.name ||
+        (firstItem.isManual ? firstItem.manualName : undefined) ||
+        undefined
       : undefined;
     const contentCategory = firstItem?.product?.category?.name || undefined;
 

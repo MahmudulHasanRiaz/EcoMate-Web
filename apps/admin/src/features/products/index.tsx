@@ -21,6 +21,7 @@ import { type ProductResponse } from './api'
 import { categoriesApi } from '@/features/categories/api'
 import { MultiSearchableSelect, type MultiSearchableOption } from '@/components/ui/multi-searchable-select'
 import { ManagedStockAdjustmentModal } from './components/managed-stock-adjustment-modal'
+import { isManagedAdjustableProduct } from './lib/managed-stock'
 import { PriceLabelOptionsModal } from '@/features/print/components/price-label-options-modal'
 
 export function Products() {
@@ -426,6 +427,28 @@ export function Products() {
             >
               <XCircle className='h-3.5 w-3.5 text-amber-600 dark:text-amber-400' /> Deactivate
             </Button>
+            {/* Adjust Stock: SINGLE selected product only, and only when it
+                is MANAGED_STOCK mode (owner rule — not offered at all for
+                non-managed products). Combo-type products are also excluded:
+                the managed modal cannot wire the backend comboId path (it
+                addresses the separate Combo entity), and combo stock is
+                component-derived. Multi-select falls back to the Stock
+                page's Bulk Adjust, so no Adjust appears then. */}
+            {selectedIds.length === 1 && (() => {
+              const selectedProduct = (data?.data || []).find((p) => p.id === selectedIds[0])
+              if (!isManagedAdjustableProduct(selectedProduct)) return null
+              return (
+                <Button
+                  variant='outline'
+                  size='sm'
+                  className='h-8 text-xs rounded-lg gap-1.5 border-border/70 shadow-2xs'
+                  onClick={() => { setAdjustmentProductId(selectedIds[0]); setAdjustmentModalOpen(true) }}
+                  disabled={isBulkPending}
+                >
+                  <Package className='h-3.5 w-3.5 text-muted-foreground' /> Adjust Stock
+                </Button>
+              )
+            })()}
             <Button
               variant='outline'
               size='sm'

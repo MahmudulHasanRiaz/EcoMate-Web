@@ -13,8 +13,10 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DESTRUCTIVE_CONFIRM_MESSAGE, isDestructiveAdjustmentError } from '@/lib/destructive-adjustment'
 import { Loader2, X, Package, Check, ChevronRight, Search as SearchIcon } from 'lucide-react'
 import { toast } from 'sonner'
+import { canApplyManagedAdjustment, filterManagedStockProducts } from '../lib/managed-stock'
+import { MANAGED_ADJUST_TITLE } from '@/features/inventory/utils/adjust-dialog-routing'
 
-export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProductId, initialVariantId }: { open: boolean, onOpenChange: (open: boolean) => void, initialProductId?: string, initialVariantId?: string }) {
+export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProductId, initialVariantId, onSuccess }: { open: boolean, onOpenChange: (open: boolean) => void, initialProductId?: string, initialVariantId?: string, onSuccess?: () => void }) {
   const qc = useQueryClient()
 
   const [productId, setProductId] = useState(initialProductId || '')
@@ -39,9 +41,36 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
-    if (open && initialProductId) {
+    if (!open) return
+    if (initialProductId) {
       setProductId(initialProductId)
-      if (initialVariantId) setVariantId(initialVariantId)
+      // Clear the previous product's display fields so the detail fetch
+      // below repopulates them for THIS product (reopening the modal with a
+      // different pre-filled product must not keep the old name/type).
+      setProductName('')
+      setProductType(null)
+      setProductImage('')
+      // Also clear the previous product's loaded mode, variant list and
+      // variant selection: until THIS product's detail fetch lands, the
+      // loaded mode is unknown (null) and Apply stays blocked — a stale
+      // MANAGED_STOCK from the previous product must never green-light an
+      // adjustment for a pre-filled non-managed product.
+      setSelectedProductAvailability(null)
+      setVariants([])
+      setVariantId(initialVariantId || '')
+    } else {
+      // Opened WITHOUT a pre-fill (toolbar "Adjust Stock"): never inherit
+      // the product a previous pre-filled session left in state (the
+      // close-time reset keeps the product when it was opened pre-filled,
+      // so without this the toolbar modal reopened on the last selected
+      // product instead of a blank search).
+      setProductId('')
+      setProductName('')
+      setProductType(null)
+      setProductImage('')
+      setSelectedProductAvailability(null)
+      setVariants([])
+      setVariantId('')
     }
   }, [open, initialProductId, initialVariantId])
 
@@ -53,7 +82,12 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
     searchTimer.current = setTimeout(async () => {
       try {
         const res = await apiClient.get('/products', { params: { search: productSearch, perPage: 50 } })
-        setSearchResults((res.data as any)?.data || [])
+        // Mode-filtered search (owner rule): only MANAGED_STOCK products are
+        // offered at all — a non-managed product must never be selectable
+        // here and blocked only at submit. The list payload carries the full
+        // product row, so `availabilityMode` is available client-side; the
+        // endpoint has no availabilityMode query param.
+        setSearchResults(filterManagedStockProducts((res.data as any)?.data || []))
       } catch { setSearchResults([]) }
       setSearching(false)
     }, 350)
@@ -73,7 +107,14 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
       }
       setVariants(p?.variants || [])
       setSelectedProductAvailability(p?.availabilityMode || null)
-      if (p?.variants?.length > 0) setVariantId(p.variants[0].id)
+      if (p?.variants?.length > 0) {
+        // Keep a pre-filled variant (initialVariantId from the Products list
+        // / Stock page) when it belongs to this product; otherwise default
+        // to the first variant so a variable product always has one picked.
+        setVariantId((prev) =>
+          prev && p.variants.some((v: any) => v.id === prev) ? prev : p.variants[0].id,
+        )
+      }
     }).catch(() => { setVariants([]); setSelectedProductAvailability(null) }).finally(() => setLoadingVariants(false))
   }, [productId, productType, productName])
 
@@ -85,6 +126,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
       qc.invalidateQueries({ queryKey: ['inventory-logs'] })
       resetDialog()
       toast.success('Managed stock adjusted')
+      onSuccess?.()
     },
     onError: (err: any) => {
       // Guard refusal is matched by CODE, never by English message text.
@@ -112,11 +154,14 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
   const isVar = productType === 'variable'
 
   const qtyNum = parseInt(quantity)
-  const qtyValid = quantity !== '' && !isNaN(qtyNum) && qtyNum !== 0
-  const showAdjustBtn = productId && qtyValid && (!isVar || variantId)
+  const showAdjustBtn = canApplyManagedAdjustment({ productId, quantity, isVariable: isVar, variantId, availabilityMode: selectedProductAvailability })
 
   const handleAdjust = () => {
-    if (selectedProductAvailability && selectedProductAvailability !== 'MANAGED_STOCK') {
+    // Hard gate (not just a disabled button): the loaded mode must be
+    // MANAGED_STOCK for THIS product. `null` (detail fetch still pending
+    // or failed) is also blocked — a pre-filled non-managed product can
+    // never slip through on a stale/unknown mode.
+    if (selectedProductAvailability !== 'MANAGED_STOCK') {
       toast.error('Stock adjustments not allowed for this product availability mode')
       return
     }
@@ -146,7 +191,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
     <Dialog open={open} onOpenChange={(v) => { if (!v) setTimeout(resetDialog, 0); else onOpenChange(true) }}>
       <DialogContent className='sm:max-w-[540px]'>
         <DialogHeader>
-          <DialogTitle>Adjust Managed Stock</DialogTitle>
+          <DialogTitle>{MANAGED_ADJUST_TITLE}</DialogTitle>
         </DialogHeader>
         <div className='space-y-5'>
 

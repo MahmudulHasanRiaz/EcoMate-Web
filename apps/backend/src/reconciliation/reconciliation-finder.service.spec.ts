@@ -26,9 +26,15 @@ function makeService(scenario: any = {}) {
     physicalInventoryLedger: {
       findMany: jest.fn(async () => scenario.physicalLedger ?? []),
     },
+    costingLot: {
+      findMany: jest.fn(async () => scenario.costingLots ?? []),
+    },
     order: {
       findMany: jest.fn(async (args: any) => {
         const statusIn = args?.where?.status?.name?.in as string[] | undefined;
+        if (statusIn && statusIn.includes('Return Pending')) {
+          return scenario.legacyOrders ?? [];
+        }
         if (statusIn && statusIn.includes('Cancelled') && statusIn.length === 2) {
           return scenario.r3Orders ?? [];
         }
@@ -340,6 +346,202 @@ describe('ReconciliationFinderService', () => {
       imOffInventoryControlled: 4,
     });
     expect(report.imEnabled).toBe(false);
+  });
+
+  it('R6: INVENTORY_CONTROLLED simple product with stranded positive managed qty', async () => {
+    const { service } = makeService({
+      q4Products: [
+        { id: 'p9', name: 'Gadget', type: 'simple', managedStockQuantity: 5, variants: [] },
+      ],
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R6).toBe(1);
+    const row = report.rows.find((r) => r.category === 'R6')!;
+    expect(row.productId).toBe('p9');
+    expect(row.variantId).toBeNull();
+    expect(row.strandedManagedQty).toBe(5);
+    expect(row.missingManagedQty).toBe(0); // not a return-restore row
+    expect(row.evidence).toContain('managedStockQuantity=5');
+  });
+
+  it('R6: variable product with a NEGATIVE stranded variant qty (the pre-fix survivor)', async () => {
+    const { service } = makeService({
+      q4Products: [
+        {
+          id: 'p10',
+          name: 'Tee',
+          type: 'variable',
+          managedStockQuantity: 0,
+          variants: [
+            { id: 'v10a', managedStockQuantity: 0 },
+            { id: 'v10b', managedStockQuantity: -3 },
+          ],
+        },
+      ],
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R6).toBe(1);
+    const row = report.rows.find((r) => r.category === 'R6')!;
+    expect(row.variantId).toBe('v10b');
+    expect(row.strandedManagedQty).toBe(-3);
+  });
+
+  it('R6: ledger residue — managed entries after the mode-change entry, qty already 0', async () => {
+    const { service } = makeService({
+      q4Products: [
+        { id: 'p11', name: 'Residue', type: 'simple', managedStockQuantity: 0, variants: [] },
+      ],
+      managedLedger: [
+        {
+          productId: 'p11',
+          variantId: null,
+          note: 'Mode changed from MANAGED_STOCK to INVENTORY_CONTROLLED — snapshot: 4 units',
+          performedAt: new Date('2026-09-01T10:00:00.000Z'),
+        },
+        {
+          productId: 'p11',
+          variantId: null,
+          note: 'Reserved for ORD-260902-0001',
+          performedAt: new Date('2026-09-02T10:00:00.000Z'),
+        },
+      ],
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R6).toBe(1);
+    const row = report.rows.find((r) => r.category === 'R6')!;
+    expect(row.strandedManagedQty).toBe(0);
+    expect(row.evidence).toContain('ledger residue');
+  });
+
+  it('R6: clean IC product (mode-change entry is the LAST ledger entry) is NOT flagged', async () => {
+    const { service } = makeService({
+      q4Products: [
+        { id: 'p12', name: 'Clean', type: 'simple', managedStockQuantity: 0, variants: [] },
+      ],
+      managedLedger: [
+        {
+          productId: 'p12',
+          variantId: null,
+          note: 'Mode changed from MANAGED_STOCK to INVENTORY_CONTROLLED — snapshot: 4 units',
+          performedAt: new Date('2026-09-01T10:00:00.000Z'),
+        },
+      ],
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R6).toBe(0);
+  });
+
+  it('R7: physical row with NO costing lot and NO physical-ledger origin is report-only flagged; a lot-backed row is not', async () => {
+    const { service } = makeService({
+      q4Physical: [
+        { id: 'pi-1', productId: 'p7', variantId: null, warehouseId: 'w1', quantity: 4 },
+        { id: 'pi-2', productId: 'p8', variantId: null, warehouseId: 'w1', quantity: 2 },
+      ],
+      products: [
+        { id: 'p7', name: 'Mirror Mug' },
+        { id: 'p8', name: 'Real Mug' },
+      ],
+      costingLots: [{ productId: 'p8', variantId: null, warehouseId: 'w1' }],
+      physicalLedger: [],
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R7).toBe(1);
+    const row = report.rows.find((r) => r.category === 'R7')!;
+    expect(row.productId).toBe('p7');
+    expect(row.productName).toBe('Mirror Mug');
+    expect(row.physicalQty).toBe(4);
+    expect(row.warehouseId).toBe('w1');
+    expect(row.missingPhysicalQty).toBe(0); // never an apply target
+  });
+
+  it('R8 terminal: Returned order with timeline evidence and NO Return record is backfillable', async () => {
+    const { service } = makeService({
+      legacyOrders: [
+        {
+          id: 'oL1',
+          displayId: 'ORD-L1',
+          status: { name: 'Returned' },
+          timeline: [
+            { status: 'Return Pending', timestamp: '2026-08-01T10:00:00.000Z', performedBy: 'staff@shop.com' },
+            { status: 'Returned', timestamp: '2026-08-03T10:00:00.000Z', performedBy: 'staff@shop.com' },
+          ],
+          items: [{ productId: 'p1', quantity: 2 }],
+        },
+      ],
+      returns: [],
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R8).toBe(1);
+    expect(report.counts.R8H).toBe(0);
+    const row = report.rows.find((r) => r.category === 'R8')!;
+    expect(row.r8Kind).toBe('terminal');
+    expect(row.legacyAt).toBe('2026-08-03T10:00:00.000Z');
+    expect(row.legacyActor).toBe('staff@shop.com');
+    expect(row.orderId).toBe('oL1');
+  });
+
+  it('R8 pending: Return Pending order with NO Return record is backfillable as REQUESTED only', async () => {
+    const { service } = makeService({
+      legacyOrders: [
+        {
+          id: 'oL2',
+          displayId: 'ORD-L2',
+          status: { name: 'Return Pending' },
+          timeline: [
+            { status: 'Return Pending', timestamp: '2026-08-05T10:00:00.000Z', performedBy: 'staff@shop.com' },
+          ],
+          items: [{ productId: 'p1', quantity: 1 }],
+        },
+      ],
+      returns: [],
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R8).toBe(1);
+    const row = report.rows.find((r) => r.category === 'R8')!;
+    expect(row.r8Kind).toBe('pending');
+    expect(row.legacyAt).toBe('2026-08-05T10:00:00.000Z');
+    expect(row.evidence).toContain('never marks a return received');
+  });
+
+  it('R8-H: Returned order with NO timeline transition is report-only (date never fabricated)', async () => {
+    const { service } = makeService({
+      legacyOrders: [
+        {
+          id: 'oL3',
+          displayId: 'ORD-L3',
+          status: { name: 'Returned' },
+          timeline: [],
+          items: [{ productId: 'p1', quantity: 1 }],
+        },
+      ],
+      returns: [],
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R8).toBe(0);
+    expect(report.counts.R8H).toBe(1);
+    const row = report.rows.find((r) => r.category === 'R8')!;
+    expect(row.r8Kind).toBe('human');
+    expect(row.evidence).toContain('R8-H');
+  });
+
+  it('R8: an order that already HAS a Return record is not listed (idempotency key)', async () => {
+    const { service } = makeService({
+      legacyOrders: [
+        {
+          id: 'oL1',
+          displayId: 'ORD-L1',
+          status: { name: 'Returned' },
+          timeline: [
+            { status: 'Returned', timestamp: '2026-08-03T10:00:00.000Z', performedBy: 'staff@shop.com' },
+          ],
+          items: [{ productId: 'p1', quantity: 2 }],
+        },
+      ],
+      returns: [{ orderId: 'oL1' }],
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R8).toBe(0);
+    expect(report.rows.filter((r) => r.category === 'R8')).toHaveLength(0);
   });
 
   it('IM off: physical layer is never expected (managed-only scope)', async () => {

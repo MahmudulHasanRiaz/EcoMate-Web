@@ -160,7 +160,7 @@ export interface RtnOrderResponse {
   status: { id: string; name: string; color: string }
   returnOfOrderId: string | null
   returnOfOrder: { id: string; displayId: string; status: { id: string; name: string } } | null
-  items: { id: string; productId: string; variantId?: string | null; comboId?: string | null; quantity: number; price: number | string; product: { id: string; name: string; sku?: string } | null; variant?: { id: string; sku?: string } | null; combo?: { id: string; name: string } | null }[]
+  items: { id: string; productId: string | null; variantId?: string | null; comboId?: string | null; quantity: number; price: number | string; isManual?: boolean; manualName?: string | null; costSnapshot?: number | string | null; costType?: string | null; product: { id: string; name: string; sku?: string } | null; variant?: { id: string; sku?: string } | null; combo?: { id: string; name: string } | null }[]
   returnedAt: string | null
   stockRestored: boolean
   createdAt: string
@@ -464,7 +464,7 @@ export const ordersApi = {
       { timeout: 120_000 },
     ),
   addNote: (orderId: string, note: string, visibility: 'public' | 'private') => apiClient.post(`/orders/${orderId}/note`, { note, visibility }),
-  addItem: (orderId: string, data: { productId: string; quantity: number; price: number; variantId?: string }) => apiClient.post(`/orders/${orderId}/items`, data),
+  addItem: (orderId: string, data: { productId?: string; quantity: number; price: number; variantId?: string; isManual?: boolean; manualName?: string; cost?: number }) => apiClient.post(`/orders/${orderId}/items`, data),
   removeItem: (orderId: string, itemId: string) => apiClient.delete(`/orders/${orderId}/items/${itemId}`),
   bulkAssign: (ids: string[], assignedToId: string | null) => apiClient.post('/orders/bulk/assign', { ids, assignedToId }),
   rotateViewToken: (orderId: string) => apiClient.post<{ id: string; viewToken: string; displayId: string }>(`/orders/${orderId}/rotate-view-token`),

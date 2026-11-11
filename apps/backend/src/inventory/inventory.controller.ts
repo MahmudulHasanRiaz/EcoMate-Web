@@ -106,6 +106,8 @@ export class InventoryController {
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string,
     @Query('productId') productId?: string,
+    @Query('view') view?: string,
+    @Query('availabilityMode') availabilityMode?: string,
   ) {
     return this.inventoryService.stockOverview({
       page: this.clampPage(page),
@@ -116,6 +118,8 @@ export class InventoryController {
       sortBy,
       sortOrder: sortOrder as 'asc' | 'desc' | undefined,
       productId,
+      view,
+      availabilityMode,
     });
   }
 
@@ -133,11 +137,13 @@ export class InventoryController {
     @Query('q') q?: string,
     @Query('warehouseId') warehouseId?: string,
     @Query('perPage') perPage?: string,
+    @Query('availabilityMode') availabilityMode?: string,
   ) {
     return this.inventoryService.productLookup({
       q,
       warehouseId,
       perPage: this.clampPerPage(perPage, 25),
+      availabilityMode,
     });
   }
 
@@ -273,11 +279,11 @@ export class InventoryController {
   /**
    * Stock reconciliation report (2026-10-30 directive §2.3/§2.8).
    *
-   * READ-ONLY: returns the finder table (R1–R5) + the Q1–Q8 verification
+   * READ-ONLY: returns the finder table (R1–R7) + the Q1–Q8 verification
    * set and writes NOTHING. (This route previously triggered the blanket
    * boot heal on demand — that apply path is deleted. The only write path
    * is POST /inventory/reconcile/apply below, which applies ONLY
-   * still-R1/R2 rows, never a blanket heal.)
+   * still-R1/R2/R6/R8 rows, never a blanket heal; R7 and R8-H are report-only.)
    */
   @Roles('superadmin', 'admin', 'employee')
   @Permissions('run_stock_reconciliation')
@@ -289,8 +295,8 @@ export class InventoryController {
 
   /**
    * Guarded reconciliation Apply (§2.8): re-runs the finder, applies ONLY
-   * rows that are still R1/R2 and listed in rowIds, via the guarded
-   * restore primitives. Requires a tested backup id + explicit
+   * rows that are still R1/R2/R6/R8 and listed in rowIds, via the guarded
+   * restore primitives (R7 and R8-H are explicitly refused). Requires a tested backup id + explicit
    * confirmation; refuses while another run is RUNNING (409) and while
    * STOCK_RECONCILE_ON_BOOT=true is present in the environment. The
    * acting user is recorded from the auth token, never from the body.
