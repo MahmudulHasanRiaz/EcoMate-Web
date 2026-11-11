@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
 import path from 'path'
+import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { defineConfig, loadEnv, createLogger } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -19,6 +20,82 @@ export default defineConfig(({ mode }) => {
     .map((h) => h.trim())
     .filter(Boolean);
 
+  const isTest = process.argv.some((a) => a.includes('vitest'))
+  // Vitest browser mode: Vite's dep optimizer otherwise discovers packages
+  // lazily AS TEST FILES IMPORT THEM and rebundles mid-run. Every rebundle
+  // reloads the test server and can hand components a second copy of React
+  // ("Invalid hook call … more than one copy of React"), failing whole test
+  // files at random on cold-cache runners — the 2026-11-11 cancelled CI run's
+  // own log shows 276 such hook errors after 7 optimizer reloads, while
+  // warm-cache local runs stayed green. Fix: in test mode pre-bundle every
+  // package the browser can request — the bare specifiers src/ imports
+  // directly (roots + subpaths like react-dom/client) — before the first
+  // test, and disable discovery, so no mid-run reload can occur. The list
+  // is derived by scanning src/, so future imports are covered
+  // automatically. Transitive deps need no entry: esbuild inlines them
+  // into their importer's chunk.
+  const testOptimizeInclude = (() => {
+    // Two kinds of packages must never be optimizer entries, or the
+    // optimizer itself aborts the run: CSS-only packages (tw-animate-css —
+    // no JS entry to resolve) and config-only Node plugins (@tailwindcss/
+    // vite — drags in a native .node binding). Scanning src/ imports
+    // already excludes both (neither is imported from src/); roots are
+    // additionally required to show a real JS entry (main/module or a JS
+    // exports["."] target, read from the node_modules chain directly —
+    // require.resolve('pkg/package.json') throws for the many packages
+    // whose exports map does not expose that subpath) so types-only
+    // imports are dropped too.
+    const nmRoots = [
+      path.join(import.meta.dirname, 'node_modules'),
+      path.join(import.meta.dirname, '../../node_modules'),
+      path.join(import.meta.dirname, '../../../node_modules'),
+    ]
+    const hasJsEntry = (name: string): boolean => {
+      for (const root of nmRoots) {
+        const pkgPath = path.join(root, name, 'package.json')
+        if (!existsSync(pkgPath)) continue
+        try {
+          const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+          const dot = pkg.exports?.['.']
+          const flat = (v: unknown): string[] =>
+            typeof v === 'string' ? [v] : v && typeof v === 'object' ? Object.values(v).flatMap(flat) : []
+          return [pkg.module, pkg.main, ...flat(dot)].some(
+            (c) => typeof c === 'string' && /\.(m?js|cjs)$/.test(c),
+          )
+        } catch {
+          return true
+        }
+      }
+      return true
+    }
+    const rootOf = (spec: string) =>
+      spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]
+    try {
+      const specs = new Set<string>()
+      const srcDir = path.join(import.meta.dirname, 'src')
+      for (const entry of readdirSync(srcDir, { recursive: true }) as string[]) {
+        if (!/\.(ts|tsx)$/.test(entry)) continue
+        let text: string
+        try {
+          text = readFileSync(path.join(srcDir, entry), 'utf-8')
+        } catch {
+          continue // a directory can carry a .ts-like name — skip unreadables
+        }
+        for (const m of text.matchAll(/(?:from\s+|import\s*\(?\s*)['"]([^'"]+)['"]/g)) {
+          const spec = m[1]
+          if (spec.startsWith('.') || spec.startsWith('/') || spec.startsWith('@/')) continue
+          if (rootOf(spec) === 'vitest') continue // the runner's own module
+          specs.add(rootOf(spec))
+          if (spec !== rootOf(spec)) specs.add(spec)
+        }
+      }
+      // Subpaths are trusted as real JS imports; roots must show a JS entry.
+      return [...specs].filter((s) => s !== rootOf(s) || hasJsEntry(s))
+    } catch {
+      return []
+    }
+  })()
+
   return {
     base: process.env.VITE_BASE || '/admin/',
     // Test runs (vitest browser mode) intentionally have no backend behind
@@ -26,7 +103,7 @@ export default defineConfig(({ mode }) => {
     // mock API at the client level; a few exercise real failure paths).
     // Silence exactly that noise so real errors stay visible. Dev/build
     // logging is untouched (argv has no 'vitest' there).
-    ...(process.argv.some((a) => a.includes('vitest'))
+    ...(isTest
       ? {
           customLogger: (() => {
             const base = createLogger()
@@ -146,12 +223,20 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    optimizeDeps: {
-      // @dnd-kit resolves its own React copy when externalized under vitest
-      // browser mode ("Invalid hook call" via useMemo) — pre-bundle it so the
-      // deduped React is used, like in dev/build.
-      include: ['@ecomate/shared-types', '@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
-    },
+    optimizeDeps: isTest
+      ? {
+          // Test mode: pre-bundle everything up front (see testOptimizeInclude
+          // above) and never discover mid-run — a mid-run rebundle reloads the
+          // server and duplicates React, failing random test files.
+          include: [...new Set(['@ecomate/shared-types', ...testOptimizeInclude])],
+          noDiscovery: true,
+        }
+      : {
+          // @dnd-kit resolves its own React copy when externalized under vitest
+          // browser mode ("Invalid hook call" via useMemo) — pre-bundle it so the
+          // deduped React is used, like in dev/build.
+          include: ['@ecomate/shared-types', '@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
+        },
     test: {
       silent: 'passed-only',
       unstubEnvs: true,

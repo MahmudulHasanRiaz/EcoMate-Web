@@ -70,7 +70,6 @@ const REPORT = {
       missingPhysicalQty: 0,
       evidence: 'quantity unknowable',
     },
-  ],
     {
       id: 'R6|p6||managed',
       category: 'R6',
