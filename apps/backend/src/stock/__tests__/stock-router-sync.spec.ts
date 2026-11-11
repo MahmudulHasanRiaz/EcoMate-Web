@@ -1,12 +1,12 @@
 import { StockRouterService } from '../stock-router.service';
 
 /**
- * syncManagedStock routing (inventory audit fix round, WS1 item 9).
+ * syncManagedStock routing — AFTER the 2026-11-11 mirror removal.
  *
- * The flag is merchant-settable through the product DTO. For an
- * INVENTORY_CONTROLLED product with IM on, opting in makes the managed
- * counters MIRROR the physical legs; without the flag the managed side is
- * untouched, exactly as before. MANAGED_STOCK routing never changes.
+ * The flag is still merchant-settable through the product DTO, but it no
+ * longer has ANY effect: for an INVENTORY_CONTROLLED product with IM on,
+ * the managed counters NEVER move, flag on or off — physical is the only
+ * layer. MANAGED_STOCK routing never changed and ignores the flag too.
  */
 describe('StockRouterService — syncManagedStock', () => {
   const router = new StockRouterService({} as any);
@@ -34,16 +34,15 @@ describe('StockRouterService — syncManagedStock', () => {
     });
   });
 
-  describe('INVENTORY_CONTROLLED + IM on, sync ON (managed mirrors physical)', () => {
+  describe('INVENTORY_CONTROLLED + IM on, sync ON (flag IGNORED — managed never moves)', () => {
     it.each([
-      ['reserve', 'reserve', 'allocate'],
-      ['release', 'release', 'release'],
-      ['deduct', 'deduct', 'fulfill'],
-      ['add', 'add', 'add'],
-      // No managed leg at allocate: the hold was already placed at reserve.
+      ['reserve', 'skip', 'allocate'],
+      ['release', 'skip', 'release'],
+      ['deduct', 'skip', 'fulfill'],
+      ['add', 'skip', 'add'],
       ['allocate', 'skip', 'allocate'],
       ['check', 'skip', 'check'],
-      ['scrap', 'scrap', 'skip'],
+      ['scrap', 'skip', 'skip'],
     ])('%s → ms=%s pi=%s', (op, ms, pi) => {
       const d = router.resolve('INVENTORY_CONTROLLED', op, true, true);
       expect(d.ms).toBe(ms);

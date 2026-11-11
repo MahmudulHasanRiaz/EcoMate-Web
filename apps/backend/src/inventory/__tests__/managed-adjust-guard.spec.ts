@@ -21,9 +21,6 @@ describe('InventoryService — managed-stock destructive guard', () => {
   const stockRouter: any = {
     isInventoryManagementEnabled: jest.fn().mockResolvedValue(false),
   };
-  const initialPhysicalStock: any = {
-    resolveWarehouse: jest.fn(),
-  };
   const ledger: any = { record: jest.fn() };
   const service = new InventoryService(
     prisma,
@@ -32,7 +29,6 @@ describe('InventoryService — managed-stock destructive guard', () => {
     {} as any,
     ledger,
     { invalidateByPrefix: jest.fn() } as any,
-    initialPhysicalStock,
   );
 
   const product = (over: Record<string, any> = {}) => ({
@@ -52,7 +48,6 @@ describe('InventoryService — managed-stock destructive guard', () => {
     prisma.product.findUnique.mockResolvedValue(product());
     prisma.product.update.mockResolvedValue(product());
     prisma.physicalInventory.findFirst.mockResolvedValue(null);
-    initialPhysicalStock.resolveWarehouse.mockResolvedValue('wh-main');
     stockService.scrap.mockResolvedValue([]);
     stockService.add.mockResolvedValue([]);
   });
@@ -153,8 +148,8 @@ describe('InventoryService — managed-stock destructive guard', () => {
     expect(stockService.scrap).toHaveBeenCalled();
   });
 
-  describe('physical mirror (stock audit #5, owner 2026-10-23)', () => {
-    it('mirrors the adjustment to the physical layer when IM is ON', async () => {
+  describe('NO physical mirror (owner decision 2026-11-11 — layers independent)', () => {
+    it('does NOT touch the physical layer even when IM is ON and a warehouse is set', async () => {
       stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
       prisma.product.findUnique.mockResolvedValue(
         product({ warehouseId: 'wh-1' }),
@@ -163,176 +158,23 @@ describe('InventoryService — managed-stock destructive guard', () => {
       await service.adjust('prod-1', 5, 'recount');
 
       expect(stockService.add).toHaveBeenCalled();
-      expect(stockService.operatePhysical).toHaveBeenCalledWith(
-        'add',
-        expect.objectContaining({
-          productId: 'prod-1',
-          warehouseId: 'wh-1',
-          quantity: 5,
-          ledgerType: 'ADJUSTMENT',
-        }),
-      );
-      // Field already set → nothing to persist.
+      expect(stockService.operatePhysical).not.toHaveBeenCalled();
       expect(prisma.product.update).not.toHaveBeenCalled();
     });
 
-    it('does NOT touch the physical layer when IM is OFF', async () => {
-      stockRouter.isInventoryManagementEnabled.mockResolvedValue(false);
+    it('managed adjust SUCCEEDS when no warehouse exists anywhere (zero-warehouse case)', async () => {
+      stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
       prisma.product.findUnique.mockResolvedValue(
-        product({ warehouseId: 'wh-1' }),
+        product({ warehouseId: null }),
       );
+      prisma.physicalInventory.findFirst.mockResolvedValue(null);
 
-      await service.adjust('prod-1', 5, 'recount');
-
+      await expect(service.adjust('prod-1', 5, 'recount')).resolves.toBeDefined();
+      expect(stockService.add).toHaveBeenCalled();
       expect(stockService.operatePhysical).not.toHaveBeenCalled();
     });
 
-    it('falls back to the warehouse of the product\'s existing physical rows when the product field is unset', async () => {
-      // 2026-10-28 staging case: Woo-imported hoodie has physical rows at
-      // Dhaka Eco but Product.warehouseId = null — the mirror must use the
-      // rows, not fail on the field. The resolved warehouse is persisted
-      // onto the product so later adjusts don't re-resolve.
-      stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
-      prisma.product.findUnique.mockResolvedValue(
-        product({ warehouseId: null }),
-      );
-      prisma.physicalInventory.findFirst.mockResolvedValue({
-        warehouseId: 'wh-phys',
-      });
-
-      await service.adjust('prod-1', 5, 'recount');
-
-      expect(stockService.operatePhysical).toHaveBeenCalledWith(
-        'add',
-        expect.objectContaining({
-          productId: 'prod-1',
-          warehouseId: 'wh-phys',
-          quantity: 5,
-          ledgerType: 'ADJUSTMENT',
-        }),
-      );
-      expect(prisma.product.update).toHaveBeenCalledWith({
-        where: { id: 'prod-1' },
-        data: { warehouseId: 'wh-phys' },
-      });
-    });
-
-    it('falls back to the first active main warehouse when no physical row exists', async () => {
-      stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
-      prisma.product.findUnique.mockResolvedValue(
-        product({ warehouseId: null }),
-      );
-      prisma.physicalInventory.findFirst.mockResolvedValue(null);
-      initialPhysicalStock.resolveWarehouse.mockResolvedValue('wh-main');
-
-      await service.adjust('prod-1', 5, 'recount');
-
-      expect(initialPhysicalStock.resolveWarehouse).toHaveBeenCalledWith(
-        'MANAGED_STOCK',
-        5,
-      );
-      expect(stockService.operatePhysical).toHaveBeenCalledWith(
-        'add',
-        expect.objectContaining({ warehouseId: 'wh-main' }),
-      );
-      expect(prisma.product.update).toHaveBeenCalledWith({
-        where: { id: 'prod-1' },
-        data: { warehouseId: 'wh-main' },
-      });
-    });
-
-    it('throws only when no warehouse exists anywhere (zero-warehouse edge)', async () => {
-      // The old "fails loud when IM is ON but the product has no warehouse"
-      // test becomes this: the field being null is no longer enough to
-      // throw — only a total absence of any warehouse still throws, with
-      // the same message staff already know.
-      stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
-      prisma.product.findUnique.mockResolvedValue(
-        product({ warehouseId: null }),
-      );
-      prisma.physicalInventory.findFirst.mockResolvedValue(null);
-      initialPhysicalStock.resolveWarehouse.mockRejectedValue(
-        new BadRequestException('no active warehouse'),
-      );
-
-      await expect(service.adjust('prod-1', 5, 'recount')).rejects.toThrow(
-        /no warehouse set/,
-      );
-    });
-
-    it('variant path prefers this variant\'s physical row', async () => {
-      stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
-      prisma.product.findUnique.mockResolvedValue(null);
-      prisma.productVariant.findUnique.mockResolvedValue({
-        id: 'var-1',
-        sku: 'TP-1-RED',
-        managedStockQuantity: 8,
-        reservedStock: 0,
-        product: {
-          id: 'prod-1',
-          name: 'Test Product',
-          type: 'variable',
-          manageStock: true,
-          availabilityMode: 'MANAGED_STOCK',
-          warehouseId: null,
-        },
-      });
-      prisma.physicalInventory.findFirst.mockResolvedValue({
-        warehouseId: 'wh-var',
-      });
-
-      await service.adjust(undefined, 5, 'recount', 'admin@x', 'var-1');
-
-      expect(stockService.add).toHaveBeenCalled();
-      expect(stockService.operatePhysical).toHaveBeenCalledWith(
-        'add',
-        expect.objectContaining({
-          variantId: 'var-1',
-          warehouseId: 'wh-var',
-        }),
-      );
-      expect(prisma.product.update).toHaveBeenCalledWith({
-        where: { id: 'prod-1' },
-        data: { warehouseId: 'wh-var' },
-      });
-    });
-
-    it('variant path falls back to any physical row for the product when this variant has none', async () => {
-      stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
-      prisma.product.findUnique.mockResolvedValue(null);
-      prisma.productVariant.findUnique.mockResolvedValue({
-        id: 'var-1',
-        sku: 'TP-1-RED',
-        managedStockQuantity: 8,
-        reservedStock: 0,
-        product: {
-          id: 'prod-1',
-          name: 'Test Product',
-          type: 'variable',
-          manageStock: true,
-          availabilityMode: 'MANAGED_STOCK',
-          warehouseId: null,
-        },
-      });
-      prisma.physicalInventory.findFirst.mockImplementation(
-        (args: any) =>
-          Promise.resolve(
-            args.where.variantId ? null : { warehouseId: 'wh-other' },
-          ),
-      );
-
-      await service.adjust(undefined, 5, 'recount', 'admin@x', 'var-1');
-
-      expect(stockService.operatePhysical).toHaveBeenCalledWith(
-        'add',
-        expect.objectContaining({
-          variantId: 'var-1',
-          warehouseId: 'wh-other',
-        }),
-      );
-    });
-
-    it('variant path resolves the warehouse before writing: missing warehouse → zero writes', async () => {
+    it('variant path also succeeds with no warehouse anywhere and writes no physical row', async () => {
       stockRouter.isInventoryManagementEnabled.mockResolvedValue(true);
       prisma.product.findUnique.mockResolvedValue(null);
       prisma.productVariant.findUnique.mockResolvedValue({
@@ -350,26 +192,39 @@ describe('InventoryService — managed-stock destructive guard', () => {
         },
       });
       prisma.physicalInventory.findFirst.mockResolvedValue(null);
-      initialPhysicalStock.resolveWarehouse.mockRejectedValue(
-        new BadRequestException('no active warehouse'),
-      );
 
       await expect(
         service.adjust(undefined, 5, 'recount', 'admin@x', 'var-1'),
-      ).rejects.toThrow(/no warehouse set/);
-      expect(stockService.add).not.toHaveBeenCalled();
-      expect(stockService.scrap).not.toHaveBeenCalled();
+      ).resolves.toBeDefined();
+      expect(stockService.add).toHaveBeenCalled();
       expect(stockService.operatePhysical).not.toHaveBeenCalled();
       expect(prisma.product.update).not.toHaveBeenCalled();
     });
 
+    it('combo path writes managed only — no physical row for any component', async () => {
+      prisma.product.findUnique.mockResolvedValue(null);
+      prisma.combo.findUnique.mockResolvedValue({
+        id: 'combo-1',
+        name: 'Bundle',
+        items: [
+          {
+            productId: 'prod-1',
+            variantId: null,
+            quantity: 2,
+            product: product(),
+            variant: null,
+          },
+        ],
+      });
+      prisma.product.update.mockResolvedValue(product());
+
+      await service.adjust(undefined, 3, 'recount', 'admin@x', undefined, 'combo-1');
+
+      expect(stockService.operatePhysical).not.toHaveBeenCalled();
+      expect(ledger.record).toHaveBeenCalled();
+    });
+
     it('refuses a MANAGED_STOCK product whose manageStock flag is false (the guard gates on the flag, not the mode)', async () => {
-      // Regression lock for the 2026-10-27 staging report: a CSV-imported
-      // variable product (MANAGED_STOCK mode, manageStock=false) hit exactly
-      // this refusal in the "Adjust Managed Stock" dialog. The guard itself
-      // is correct — the fix repairs the flag at the write paths and in
-      // stored data — but this test pins the refusal to the flag so a
-      // future mode-only change cannot silently reopen it.
       prisma.product.findUnique.mockResolvedValue(
         product({ manageStock: false, availabilityMode: 'MANAGED_STOCK' }),
       );
@@ -381,4 +236,5 @@ describe('InventoryService — managed-stock destructive guard', () => {
       expect(stockService.scrap).not.toHaveBeenCalled();
     });
   });
+
 });

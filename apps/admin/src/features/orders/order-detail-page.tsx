@@ -39,6 +39,14 @@ import { OrderSummaryCard } from '@/features/orders/order-summary-card'
 import { OrderEditLockGuard } from '@/features/orders/order-edit-lock'
 import { ExchangeOrderSection } from '@/features/exchanges/exchange-order-section'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
+import {
+  EMPTY_MANUAL_FORM,
+  isCostNotSet,
+  manualItemPayload,
+  orderLineName,
+  validateManualForm,
+  type ManualFormValues,
+} from '@/features/orders/manual-item'
 import { CustomerEditSheet, resolveCustomerEditInitial } from '@/features/orders/customer-edit-sheet'
 import { apiClient } from '@/lib/api-client'
 import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
@@ -299,6 +307,11 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
   const [productSearchResults, setProductSearchResults] = useState<any[]>([])
   const [productSearchQuery, setProductSearchQuery] = useState('')
   const [selectedProductForVariants, setSelectedProductForVariants] = useState<any>(null)
+  // Manual order item (Workstream C): this page's item editor has its OWN
+  // add-item path (not the create form's shared component), so the manual
+  // form is wired here too, using the same shared helpers.
+  const [manualFormOpen, setManualFormOpen] = useState(false)
+  const [manualForm, setManualForm] = useState<ManualFormValues>(EMPTY_MANUAL_FORM)
 
   // ── Customer sheet state ──────────────────────────────────────────
   const [showCustomerSheet, setShowCustomerSheet] = useState(false)
@@ -622,20 +635,56 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
     }
   }
 
+  // Manual item add (Workstream C): appends a product-less line to the
+  // working items; the cost (when given) rides along on the line and is
+  // serialized by manualItemPayload in handleSaveItems.
+  function addManualItemDetail() {
+    const err = validateManualForm(manualForm)
+    if (err) {
+      toast.error(err)
+      return
+    }
+    const costGiven = manualForm.cost.trim() !== ''
+    setOrderItems(prev => [
+      ...prev,
+      {
+        isManual: true,
+        manualName: manualForm.name.trim(),
+        productId: null,
+        variantId: null,
+        product: null,
+        combo: null,
+        quantity: parseInt(manualForm.quantity as any) || 1,
+        price: parseFloat(manualForm.price as any) || 0,
+        ...(costGiven ? { cost: parseFloat(manualForm.cost as any) || 0 } : {}),
+        costType: costGiven ? 'actual' : 'not_set',
+        costSnapshot: costGiven
+          ? parseFloat(manualForm.cost as any) || 0
+          : parseFloat(manualForm.price as any) || 0,
+      },
+    ])
+    setManualForm(EMPTY_MANUAL_FORM)
+    setManualFormOpen(false)
+  }
+
   async function handleSaveItems() {
     try {
       await updateMut.mutateAsync({
         id,
         data: {
-          items: orderItems.map((i: any) => ({
-            productId: i.productId,
-            variantId: i.variantId,
-            quantity: i.quantity,
-            price: Number(i.price),
-            // Round-trip the working selection so the server can tell an
-            // unchanged customization from a changed one (Q19 lock).
-            customization: i._selection ?? snapshotToSelection(i.customization),
-          })),
+          items: orderItems.map((i: any) =>
+            i.isManual
+              ? manualItemPayload(i)
+              : {
+                  productId: i.productId,
+                  variantId: i.variantId,
+                  quantity: i.quantity,
+                  price: Number(i.price),
+                  // Round-trip the working selection so the server can tell an
+                  // unchanged customization from a changed one (Q19 lock).
+                  customization: i._selection ?? snapshotToSelection(i.customization),
+                },
+          ),
         },
       })
       // Only exit the inline editor when the save succeeded — on failure the
@@ -1118,8 +1167,14 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                                     </div>
                                   )}
                                   <div className='min-w-0 flex-1 space-y-1'>
-                                    <span className='text-sm font-medium text-foreground block leading-snug'>{item.product?.name}</span>
+                                    <span className='text-sm font-medium text-foreground block leading-snug'>{orderLineName(item)}</span>
                                     <div className='flex flex-wrap items-center gap-1.5'>
+                                      {item.isManual && (
+                                        <Badge variant='outline' className='text-[10px] h-4.5 font-normal'>Manual</Badge>
+                                      )}
+                                      {isCostNotSet(item) && (
+                                        <span className='text-[11px] font-medium text-amber-600 dark:text-amber-500'>Cost not set</span>
+                                      )}
                                       {item.variant && item.variant.attributeValues?.length > 0 && (
                                         <span className='inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-muted/60 text-muted-foreground border border-border/40'>
                                           {item.variant.attributeValues.map((av: any) => av.attributeValue?.value).filter(Boolean).join(' / ')}
@@ -1257,8 +1312,14 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                               </div>
                             )}
                             <div className='min-w-0 flex-1 space-y-1'>
-                              <span className='text-sm font-medium text-foreground block leading-snug line-clamp-2'>{item.product?.name}</span>
+                              <span className='text-sm font-medium text-foreground block leading-snug line-clamp-2'>{orderLineName(item)}</span>
                               <div className='flex flex-wrap items-center gap-1.5'>
+                                {item.isManual && (
+                                  <Badge variant='outline' className='text-[10px] h-4.5 font-normal'>Manual</Badge>
+                                )}
+                                {isCostNotSet(item) && (
+                                  <span className='text-[11px] font-medium text-amber-600 dark:text-amber-500'>Cost not set</span>
+                                )}
                                 {item.variant && item.variant.attributeValues?.length > 0 && (
                                   <span className='inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-muted/60 text-muted-foreground border border-border/40'>
                                     {item.variant.attributeValues.map((av: any) => av.attributeValue?.value).filter(Boolean).join(' / ')}
@@ -1430,6 +1491,82 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                           </CommandList>
                         )}
                       </Command>
+                      {/* Manual item (Workstream C): this page's own add-item
+                          path — same inline form pattern as the create form. */}
+                      {!manualFormOpen ? (
+                        <button
+                          type='button'
+                          onClick={() => setManualFormOpen(true)}
+                          className='mt-2 w-full px-3 py-2 border border-dashed rounded-lg flex items-center gap-2 text-sm font-medium text-primary hover:bg-muted/50 transition-colors'
+                        >
+                          <Plus className='h-4 w-4' /> Add manual item
+                        </button>
+                      ) : (
+                        <div className='mt-2 p-3 border rounded-lg space-y-2.5 bg-muted/20'>
+                          <p className='text-xs font-semibold text-foreground'>Manual item</p>
+                          <div>
+                            <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Name</Label>
+                            <Input
+                              value={manualForm.name}
+                              onChange={e => setManualForm(f => ({ ...f, name: e.target.value }))}
+                              placeholder='e.g. Gift wrapping'
+                              className='h-9 text-sm'
+                              autoFocus
+                            />
+                          </div>
+                          <div className='grid grid-cols-3 gap-2'>
+                            <div>
+                              <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Qty</Label>
+                              <Input
+                                type='number'
+                                min='1'
+                                step='1'
+                                value={manualForm.quantity}
+                                onChange={e => setManualForm(f => ({ ...f, quantity: e.target.value }))}
+                                className='h-9 text-sm'
+                              />
+                            </div>
+                            <div>
+                              <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Unit price (৳)</Label>
+                              <Input
+                                type='number'
+                                min='0'
+                                step='0.01'
+                                value={manualForm.price}
+                                onChange={e => setManualForm(f => ({ ...f, price: e.target.value }))}
+                                placeholder='0'
+                                className='h-9 text-sm'
+                              />
+                            </div>
+                            <div>
+                              <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Cost (optional — for profit calculation)</Label>
+                              <Input
+                                type='number'
+                                min='0'
+                                step='0.01'
+                                value={manualForm.cost}
+                                onChange={e => setManualForm(f => ({ ...f, cost: e.target.value }))}
+                                placeholder='—'
+                                className='h-9 text-sm'
+                              />
+                            </div>
+                          </div>
+                          <div className='flex justify-end gap-2 pt-1'>
+                            <Button
+                              type='button'
+                              variant='ghost'
+                              size='sm'
+                              className='h-8 text-xs'
+                              onClick={() => { setManualFormOpen(false); setManualForm(EMPTY_MANUAL_FORM) }}
+                            >
+                              Cancel
+                            </Button>
+                            <Button type='button' size='sm' className='h-8 text-xs' onClick={addManualItemDetail}>
+                              Add
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </CardContent>

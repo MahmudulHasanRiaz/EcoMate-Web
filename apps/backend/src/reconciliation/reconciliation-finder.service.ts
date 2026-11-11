@@ -41,9 +41,57 @@ import { StockReconciliationService } from '../stock/stock-reconciliation.servic
  *        courier-reported return with NO Return record at all). Never
  *        applied — a system cannot invent a quantity no record holds.
  *   R5 — out of scope, counts only (see buildReport).
+ *   R6 — (2026-11-11, stock-mode round §5) product is
+ *        INVENTORY_CONTROLLED but a managed quantity is stranded on it,
+ *        or its managed ledger carries residue of an uncleaned mode
+ *        switch. APPLY-ABLE: heal zeroes the managed qty and writes the
+ *        mode-change ledger entry, exactly as products.service does.
+ *        A unit (product row for simple/combo, variant row for
+ *        variable products) is flagged when EITHER:
+ *          (a) stranded quantity — managedStockQuantity ≠ 0 (any sign;
+ *              the pre-fix mode-switch cleanup skipped qty ≤ 0, combos
+ *              and the draft path, stranding negatives in particular);
+ *          (b) ledger residue — the unit's ManagedStockLedger contains
+ *              a mode-change entry (type='ADJUSTMENT', note starting
+ *              'Mode changed from MANAGED_STOCK to
+ *              INVENTORY_CONTROLLED') AND at least one further managed
+ *              entry performed AFTER it: managed stock kept moving
+ *              after the switch, so the switch was never cleaned up.
+ *              The heal's own mode-change entry becomes the last entry,
+ *              so a re-run finds no residue (idempotency key).
+ *   R7 — (2026-11-11, stock-mode round §5) REPORT-ONLY, never applied:
+ *        a PhysicalInventory row with quantity > 0 whose
+ *        product|variant|warehouse key has NO CostingLot AND NO
+ *        PhysicalInventoryLedger row — no legitimate origin record, so
+ *        it looks like a legacy mirror copy from the removed
+ *        auto-mirror behaviour. Deleting stock automatically would be
+ *        unsafe; a human dispositions each row.
+ *   R8 — (2026-11-11, owner decision) legacy Return-record backfill:
+ *        orders that were returned the pre-Return-system way (Return
+ *        Pending → staff directly marked Returned) have NO Return row.
+ *        Evidence source = the order's own timeline (status entries
+ *        {status, timestamp, performedBy} written by updateStatus) —
+ *        never a fabricated date. Classification (shared verbatim with
+ *        the apply service via classifyLegacyReturn):
+ *          terminal — current status Returned + a parseable 'Returned'
+ *            timeline transition: backfill a RESTOCKED, stockReconciled
+ *            Return (receivedAt = transition date) whose restore is an
+ *            ALREADY-DONE fact — the apply writes per-return evidence
+ *            keys (return-<returnId>, the real receive path's keying)
+ *            with stockBefore == stockAfter and moves NO stock.
+ *          pending — current status Return Pending + a parseable
+ *            'Return Pending' transition and NO 'Returned' transition:
+ *            backfill a REQUESTED Return only. It is NEVER marked
+ *            received (receive is always a manual employee act).
+ *          human (sub-label R8-H, report-only) — ambiguous evidence:
+ *            missing/unparseable transition date, contradictory
+ *            transitions, partial-return indications, a PARTIAL
+ *            dispatch, a Damaged order that passed through Returned,
+ *            or an order with no lines. Never backfilled.
+ *        Idempotency key: orderId + absence of a Return row.
  */
 
-export type ReconCategory = 'R1' | 'R2' | 'R3' | 'R4';
+export type ReconCategory = 'R1' | 'R2' | 'R3' | 'R4' | 'R6' | 'R7' | 'R8';
 export type ReconLayer = 'managed' | 'physical' | 'both';
 
 export interface ReconRow {
@@ -65,6 +113,18 @@ export interface ReconRow {
   missingManagedQty: number;
   missingPhysicalQty: number;
   evidence: string;
+  /** R6 only: the signed managed quantity stranded on the unit. */
+  strandedManagedQty?: number;
+  /** R7 only: the physical quantity on the suspected mirror row. */
+  physicalQty?: number;
+  /** R7 only: the warehouse the suspected mirror row sits in. */
+  warehouseId?: string | null;
+  /** R8 only: 'terminal' | 'pending' are backfillable; 'human' = R8-H. */
+  r8Kind?: 'terminal' | 'pending' | 'human';
+  /** R8 only: ISO timestamp of the decisive historical transition. */
+  legacyAt?: string;
+  /** R8 only: historical actor recorded on that transition, if any. */
+  legacyActor?: string | null;
 }
 
 export interface ReconCheck {
@@ -85,12 +145,73 @@ export interface ReconReport {
     R3: number;
     R4: number;
     R5: Record<string, number>;
+    R6: number;
+    R7: number;
+    /** Backfillable R8 rows (terminal + pending). */
+    R8: number;
+    /** Report-only R8-H rows (ambiguous legacy evidence). */
+    R8H: number;
   };
   checks: ReconCheck[];
 }
 
 export const RECEIVED_RETURN_STATUSES = ['RECEIVED', 'RESTOCKED', 'CLOSED'] as const;
 const TERMINAL_ORDER_STATUSES = ['Delivered', 'Partial', 'Cancelled', 'Returned'];
+
+/**
+ * The mode-change ledger evidence key (R6 branch (b)): products.service
+ * writes the cleanup entry on a MANAGED_STOCK → INVENTORY_CONTROLLED
+ * switch as type='ADJUSTMENT' with a note in this exact wording family.
+ */
+export const MODE_CHANGE_TO_IC_NOTE_PREFIX =
+  'Mode changed from MANAGED_STOCK to INVENTORY_CONTROLLED';
+
+export interface LegacyReturnClassification {
+  kind: 'terminal' | 'pending' | 'human';
+  pendingAt: Date | null;
+  returnedAt: Date | null;
+  /** performedBy recorded on the decisive timeline transition. */
+  actor: string | null;
+  /** For kind='human': why the evidence is ambiguous (R8-H reason). */
+  reason: string;
+}
+
+export interface ManagedModeResidue {
+  residue: boolean;
+  /** performedAt of the last mode-change entry, when one exists. */
+  lastModeChangeAt: Date | null;
+  /** Managed entries performed after that mode-change entry. */
+  laterEntries: number;
+}
+
+/**
+ * Pure residue computation over one unit's managed ledger entries
+ * (any order — sorted here by performedAt). Residue = a mode-change
+ * entry exists AND at least one managed entry was performed after it.
+ */
+export function computeManagedModeResidue(
+  entries: { note?: string | null; performedAt?: Date | string | null }[],
+): ManagedModeResidue {
+  const sorted = [...entries].sort((a, b) => {
+    const ta = a.performedAt ? new Date(a.performedAt as any).getTime() : 0;
+    const tb = b.performedAt ? new Date(b.performedAt as any).getTime() : 0;
+    return ta - tb;
+  });
+  let lastIdx = -1;
+  for (let i = 0; i < sorted.length; i++) {
+    const note = sorted[i].note ?? '';
+    if (note.startsWith(MODE_CHANGE_TO_IC_NOTE_PREFIX)) lastIdx = i;
+  }
+  if (lastIdx < 0) return { residue: false, lastModeChangeAt: null, laterEntries: 0 };
+  const laterEntries = sorted.length - 1 - lastIdx;
+  return {
+    residue: laterEntries > 0,
+    lastModeChangeAt: sorted[lastIdx].performedAt
+      ? new Date(sorted[lastIdx].performedAt as any)
+      : null,
+    laterEntries,
+  };
+}
 
 @Injectable()
 export class ReconciliationFinderService {
@@ -210,6 +331,141 @@ export class ReconciliationFinderService {
       map.set(key, (map.get(key) ?? 0) + (r.quantity ?? 0));
     }
     return map;
+  }
+
+  /**
+   * R6 branch (b) evidence for ONE unit, against any client (the apply
+   * service re-checks it inside its transaction with the tx client).
+   * Keyed exactly as the ledger is keyed: productId + variantId (null
+   * for the product-level unit).
+   */
+  async managedModeResidue(
+    productId: string,
+    variantId: string | null,
+    client: PrismaService | any = this.prisma,
+  ): Promise<ManagedModeResidue> {
+    const entries = await client.managedStockLedger.findMany({
+      where: { productId, variantId: variantId ?? null },
+      select: { note: true, performedAt: true },
+      orderBy: { performedAt: 'asc' },
+    });
+    return computeManagedModeResidue(entries);
+  }
+
+  /** IM flag, exposed for the apply service's R8 coverage decision. */
+  async isInventoryManagementEnabled(): Promise<boolean> {
+    return this.stockRouter.isInventoryManagementEnabled();
+  }
+
+  /**
+   * R8 legacy classification — the SINGLE definition shared by the
+   * finder (report) and the apply service (in-transaction re-check), so
+   * a row can never be reported backfillable and then classified
+   * differently at write time. Evidence = the order timeline's status
+   * entries ({status, timestamp, performedBy}, as updateStatus writes
+   * them); the LAST transition of each kind wins, mirroring the
+   * analytics metric-contract's latestTransition pattern. A date is
+   * used only when present AND parseable — never fabricated.
+   */
+  classifyLegacyReturn(order: {
+    statusName: string;
+    timeline: unknown;
+  }): LegacyReturnClassification {
+    const entries: any[] = Array.isArray(order.timeline) ? order.timeline : [];
+    const lastOf = (status: string): any | null => {
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i]?.status === status) return entries[i];
+      }
+      return null;
+    };
+    const parseTs = (e: any | null): Date | null => {
+      if (!e?.timestamp) return null;
+      const d = new Date(e.timestamp);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    const actorOf = (e: any | null): string | null =>
+      typeof e?.performedBy === 'string' && e.performedBy ? e.performedBy : null;
+    const pendingEntry = lastOf('Return Pending');
+    const returnedEntry = lastOf('Returned');
+    const pendingAt = parseTs(pendingEntry);
+    const returnedAt = parseTs(returnedEntry);
+    const partialNote = [pendingEntry?.note, returnedEntry?.note].some(
+      (n) => typeof n === 'string' && /partial/i.test(n),
+    );
+    const base = { pendingAt, returnedAt, actor: null as string | null, reason: '' };
+
+    if (order.statusName === 'Returned') {
+      if (!returnedEntry) {
+        return {
+          ...base,
+          kind: 'human',
+          reason:
+            'order status is Returned but the timeline holds NO Returned ' +
+            'transition — the return date is unknowable from records and ' +
+            'is never fabricated',
+        };
+      }
+      if (!returnedAt) {
+        return {
+          ...base,
+          kind: 'human',
+          reason: 'the Returned timeline transition has no parseable timestamp',
+        };
+      }
+      if (partialNote) {
+        return {
+          ...base,
+          kind: 'human',
+          reason:
+            'the return transition note indicates a PARTIAL return — the ' +
+            'legacy blanket flow was full-order, so quantities are ambiguous',
+        };
+      }
+      return { ...base, kind: 'terminal', actor: actorOf(returnedEntry) };
+    }
+
+    if (order.statusName === 'Return Pending') {
+      if (returnedEntry) {
+        return {
+          ...base,
+          kind: 'human',
+          reason:
+            'the timeline shows a Returned transition but the order status ' +
+            'is Return Pending — contradictory evidence',
+        };
+      }
+      if (!pendingEntry || !pendingAt) {
+        return {
+          ...base,
+          kind: 'human',
+          reason:
+            'no parseable Return Pending timeline transition — the date is ' +
+            'unknowable from records and is never fabricated',
+        };
+      }
+      if (partialNote) {
+        return {
+          ...base,
+          kind: 'human',
+          reason:
+            'the Return Pending transition note indicates a PARTIAL return — ' +
+            'quantities are ambiguous for a full-order backfill',
+        };
+      }
+      return { ...base, kind: 'pending', actor: actorOf(pendingEntry) };
+    }
+
+    // Damaged (the only other candidate status the finder passes in):
+    // a return was completed and the order later went Damaged — tangled
+    // with the damage write-off flow, human disposition only.
+    return {
+      ...base,
+      kind: 'human',
+      actor: actorOf(returnedEntry),
+      reason:
+        'the order passed through Returned and is now Damaged — the return ' +
+        'evidence is tangled with the damage flow; human disposition required',
+    };
   }
 
   async buildReport(): Promise<ReconReport> {
@@ -608,6 +864,253 @@ export class ReconciliationFinderService {
       }
     }
 
+    // ── R6: stranded managed qty / mode-switch residue on IC products ──
+    const icStrandedProducts = await this.prisma.product.findMany({
+      where: { availabilityMode: 'INVENTORY_CONTROLLED' },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        managedStockQuantity: true,
+        variants: { select: { id: true, managedStockQuantity: true } },
+      },
+    });
+    if (icStrandedProducts.length) {
+      const icLedger = await this.prisma.managedStockLedger.findMany({
+        where: { productId: { in: icStrandedProducts.map((p) => p.id) } },
+        select: { productId: true, variantId: true, note: true, performedAt: true },
+      });
+      const ledgerByUnit = new Map<string, { note?: string | null; performedAt?: any }[]>();
+      for (const e of icLedger) {
+        const key = `${e.productId}|${e.variantId ?? ''}`;
+        const arr = ledgerByUnit.get(key) ?? [];
+        arr.push(e);
+        ledgerByUnit.set(key, arr);
+      }
+      for (const p of icStrandedProducts) {
+        const units: { variantId: string | null; qty: number }[] = [];
+        if (p.type === 'variable') {
+          for (const v of p.variants ?? []) {
+            units.push({ variantId: v.id, qty: v.managedStockQuantity });
+          }
+          // The product row itself is also a unit when it carries qty
+          // (the variable cleanup zeroes it, but a stranded residue
+          // there is the same defect class).
+          if (p.managedStockQuantity !== 0) {
+            units.push({ variantId: null, qty: p.managedStockQuantity });
+          }
+        } else {
+          // simple + combo hold their managed quantity on the product row
+          units.push({ variantId: null, qty: p.managedStockQuantity });
+        }
+        for (const u of units) {
+          const residue = computeManagedModeResidue(
+            ledgerByUnit.get(`${p.id}|${u.variantId ?? ''}`) ?? [],
+          );
+          if (u.qty === 0 && !residue.residue) continue;
+          const evidenceParts = [
+            `mode=INVENTORY_CONTROLLED type=${p.type}`,
+            u.qty !== 0
+              ? `managedStockQuantity=${u.qty} ≠ 0 — stranded by a mode switch ` +
+                'without cleanup (the pre-fix cleanup skipped qty ≤ 0, combos ' +
+                'and the draft path)'
+              : 'managedStockQuantity=0',
+          ];
+          if (residue.residue) {
+            evidenceParts.push(
+              `managed ledger residue: ${residue.laterEntries} managed entr` +
+                `${residue.laterEntries === 1 ? 'y' : 'ies'} performed after the last ` +
+                `mode-change entry (note '${MODE_CHANGE_TO_IC_NOTE_PREFIX}…'` +
+                `${residue.lastModeChangeAt ? `, performedAt=${residue.lastModeChangeAt.toISOString()}` : ''}) ` +
+                '— managed stock kept moving after the switch',
+            );
+          }
+          rows.push({
+            id: this.rowId('R6', null, '', p.id, u.variantId, 'managed'),
+            category: 'R6',
+            orderId: '',
+            orderDisplayId: '',
+            returnId: null,
+            returnDisplayId: null,
+            productId: p.id,
+            productName: p.name,
+            variantId: u.variantId,
+            layer: 'managed',
+            orderedQty: 0,
+            receivedGoodQty: 0,
+            damagedQty: 0,
+            alreadyRestoredManaged: 0,
+            alreadyRestoredPhysical: 0,
+            missingManagedQty: 0,
+            missingPhysicalQty: 0,
+            strandedManagedQty: u.qty,
+            evidence: evidenceParts.join('; '),
+          });
+        }
+      }
+    }
+
+    // ── R7 (REPORT-ONLY): suspected legacy mirror copies in physical ──
+    const mirrorCandidates = await this.prisma.physicalInventory.findMany({
+      where: { quantity: { gt: 0 } },
+      select: {
+        id: true,
+        productId: true,
+        variantId: true,
+        warehouseId: true,
+        quantity: true,
+      },
+    });
+    if (mirrorCandidates.length) {
+      const [lots, physLedgerKeys] = await Promise.all([
+        this.prisma.costingLot.findMany({
+          select: { productId: true, variantId: true, warehouseId: true },
+        }),
+        this.prisma.physicalInventoryLedger.findMany({
+          select: { productId: true, variantId: true, warehouseId: true },
+        }),
+      ]);
+      const keyOf = (r: { productId: string; variantId: string | null; warehouseId: string }) =>
+        `${r.productId}|${r.variantId ?? ''}|${r.warehouseId}`;
+      const lotKeys = new Set(lots.map(keyOf));
+      const ledgerKeys = new Set(physLedgerKeys.map(keyOf));
+      const candidateProductIds = [
+        ...new Set(mirrorCandidates.map((r) => r.productId)),
+      ];
+      const candidateProducts = await this.prisma.product.findMany({
+        where: { id: { in: candidateProductIds } },
+        select: { id: true, name: true },
+      });
+      const candidateNameById = new Map(candidateProducts.map((p) => [p.id, p.name]));
+      for (const r of mirrorCandidates) {
+        const key = keyOf(r);
+        if (lotKeys.has(key) || ledgerKeys.has(key)) continue;
+        rows.push({
+          id: ['R7', r.productId, r.variantId ?? '', 'physical', r.warehouseId].join('|'),
+          category: 'R7',
+          orderId: '',
+          orderDisplayId: '',
+          returnId: null,
+          returnDisplayId: null,
+          productId: r.productId,
+          productName: candidateNameById.get(r.productId) ?? r.productId,
+          variantId: r.variantId ?? null,
+          layer: 'physical',
+          orderedQty: 0,
+          receivedGoodQty: 0,
+          damagedQty: 0,
+          alreadyRestoredManaged: 0,
+          alreadyRestoredPhysical: 0,
+          missingManagedQty: 0,
+          missingPhysicalQty: 0,
+          physicalQty: r.quantity,
+          warehouseId: r.warehouseId,
+          evidence:
+            `PhysicalInventory quantity=${r.quantity} in warehouse=${r.warehouseId} ` +
+            'with NO CostingLot and NO PhysicalInventoryLedger row for this ' +
+            'product|variant|warehouse — no legitimate origin record; suspected ' +
+            'legacy mirror copy from the removed auto-mirror behaviour. ' +
+            'Report only — never auto-applied; human disposition required.',
+        });
+      }
+    }
+
+    // ── R8: legacy orders with NO Return record (pre-Return-system) ────
+    const legacyOrders = await this.prisma.order.findMany({
+      where: {
+        trashedAt: null,
+        status: { name: { in: ['Return Pending', 'Returned', 'Damaged'] } },
+      },
+      select: {
+        id: true,
+        displayId: true,
+        timeline: true,
+        status: { select: { name: true } },
+        items: { select: { productId: true, quantity: true } },
+      },
+    });
+    if (legacyOrders.length) {
+      const legacyIds = legacyOrders.map((o) => o.id);
+      const [existingReturns, partialDispatches] = await Promise.all([
+        this.prisma.return.findMany({
+          where: { orderId: { in: legacyIds } },
+          select: { orderId: true },
+        }),
+        this.prisma.dispatch.findMany({
+          where: { orderId: { in: legacyIds }, status: 'PARTIAL' },
+          select: { orderId: true },
+        }),
+      ]);
+      const returnCovered = new Set(existingReturns.map((r) => r.orderId));
+      const partialDispatchOrders = new Set(partialDispatches.map((d) => d.orderId));
+      for (const o of legacyOrders) {
+        if (returnCovered.has(o.id)) continue; // idempotency key: a Return row exists
+        const statusName = (o.status as any)?.name ?? '';
+        const entries: any[] = Array.isArray(o.timeline) ? (o.timeline as any[]) : [];
+        const hasReturnedEntry = entries.some((e) => e?.status === 'Returned');
+        // A Damaged order that never passed through Returned is not a
+        // legacy-return candidate (damage-only flow, no return happened).
+        if (statusName === 'Damaged' && !hasReturnedEntry) continue;
+        let cls = this.classifyLegacyReturn({ statusName, timeline: o.timeline });
+        if (cls.kind !== 'human' && partialDispatchOrders.has(o.id)) {
+          cls = {
+            ...cls,
+            kind: 'human',
+            reason:
+              'a dispatch for this order is PARTIAL — the legacy return may ' +
+              'not have been full-order, so the returned quantities are ambiguous',
+          };
+        }
+        if (cls.kind !== 'human' && (!o.items || o.items.length === 0)) {
+          cls = {
+            ...cls,
+            kind: 'human',
+            reason: 'the order has no lines — returned quantities are unknowable',
+          };
+        }
+        const decisiveAt =
+          cls.kind === 'terminal' ? cls.returnedAt : cls.kind === 'pending' ? cls.pendingAt : null;
+        const evidence =
+          cls.kind === 'human'
+            ? `R8-H (report-only): order status=${statusName}, NO Return record. ${cls.reason}. Never auto-backfilled.`
+            : cls.kind === 'terminal'
+              ? `order status=Returned; timeline 'Returned' transition at ` +
+                `${cls.returnedAt?.toISOString()} (performedBy=${cls.actor ?? 'unknown'}); ` +
+                'NO Return record — legacy pre-Return-system return. Backfill ' +
+                'creates a RESTOCKED + stockReconciled Return (receivedAt = the ' +
+                'historical transition date) with per-return evidence keys ' +
+                '(return-<returnId>) and NO stock movement.'
+              : `order status=Return Pending; timeline 'Return Pending' transition at ` +
+                `${cls.pendingAt?.toISOString()} (performedBy=${cls.actor ?? 'unknown'}); ` +
+                'NO Return record — legacy pre-Return-system return. Backfill ' +
+                'creates a REQUESTED Return only; staff receive it through the ' +
+                'normal manual flow (the script never marks a return received).';
+        rows.push({
+          id: this.rowId('R8', null, o.id, '', null, 'managed'),
+          category: 'R8',
+          r8Kind: cls.kind,
+          legacyAt: decisiveAt?.toISOString(),
+          legacyActor: cls.actor,
+          orderId: o.id,
+          orderDisplayId: o.displayId,
+          returnId: null,
+          returnDisplayId: null,
+          productId: '',
+          productName: '(legacy return — no Return record)',
+          variantId: null,
+          layer: 'managed',
+          orderedQty: (o.items ?? []).reduce((s, li) => s + (li.quantity ?? 0), 0),
+          receivedGoodQty: 0,
+          damagedQty: 0,
+          alreadyRestoredManaged: 0,
+          alreadyRestoredPhysical: 0,
+          missingManagedQty: 0,
+          missingPhysicalQty: 0,
+          evidence,
+        });
+      }
+    }
+
     // ── R5: out-of-scope counts (no rows, no action) ────────────────────
     const [
       pendingReturns,
@@ -866,7 +1369,17 @@ export class ReconciliationFinderService {
       generatedAt: new Date().toISOString(),
       imEnabled,
       rows,
-      counts: { R1: count('R1'), R2: count('R2'), R3: count('R3'), R4: count('R4'), R5: r5 },
+      counts: {
+        R1: count('R1'),
+        R2: count('R2'),
+        R3: count('R3'),
+        R4: count('R4'),
+        R5: r5,
+        R6: count('R6'),
+        R7: count('R7'),
+        R8: rows.filter((r) => r.category === 'R8' && r.r8Kind !== 'human').length,
+        R8H: rows.filter((r) => r.category === 'R8' && r.r8Kind === 'human').length,
+      },
       checks,
     };
   }

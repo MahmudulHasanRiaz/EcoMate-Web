@@ -2,10 +2,18 @@
  * One-time stock-reconciliation tool (hardened 2026-10-30, directive §2.4).
  *
  * This REPLACES the old heal-on-demand script. It NEVER blanket-heals:
- *   - DRY-RUN is the default: prints the finder report (R1–R5 rows +
+ *   - DRY-RUN is the default: prints the finder report (R1–R7 rows +
  *     counts and the Q1–Q8 verification set) and writes nothing.
- *   - --apply writes, and ONLY the finder's still-R1/R2 rows, through the
- *     same guarded ReconciliationApplyService the admin page uses.
+ *   - --apply writes, and ONLY the finder's still-R1/R2/R6/R8 rows,
+ *     through the same guarded ReconciliationApplyService the admin
+ *     page uses. R6 (2026-11-11) heals managed quantities stranded on
+ *     INVENTORY_CONTROLLED products by an uncleaned mode switch; R8
+ *     (2026-11-11) backfills the missing Return record for legacy
+ *     pre-Return-system orders (terminal rows move NO stock — evidence
+ *     entries only; pending rows are created REQUESTED, never
+ *     received). R7 (suspected legacy mirror copies) and R8-H
+ *     (ambiguous legacy evidence) are REPORT-ONLY and are never passed
+ *     to Apply — the service refuses them explicitly as well.
  *   - --apply REQUIRES --client=<stack> (informational scope label,
  *     recorded on the ReconciliationRun audit record), --backup=<dump-id>
  *     naming the restore-tested backup taken immediately before, and an
@@ -20,9 +28,9 @@
  * Live-run preconditions (directive §6, OWNER's steps): restore-tested
  * backup taken immediately before, dry-run reviewed + signed off, flag
  * off on the target stack, ONE client per run (avelto first, then
- * fxdmostul). After --apply, re-run the dry-run: zero R1/R2 rows is the
- * required proof — if it is not zero, restore from backup, do NOT
- * re-apply.
+ * fxdmostul). After --apply, re-run the dry-run: zero R1/R2/R6/R8 rows
+ * is the required proof — if it is not zero, restore from backup, do
+ * NOT re-apply. (R7 and R8-H rows may remain — report-only by design.)
  *
  * Usage:
  *   cd apps/backend
@@ -43,7 +51,9 @@ function printReport(report: ReconReport): void {
   console.log(
     `[reconcile] counts R1=${report.counts.R1} R2=${report.counts.R2} ` +
       `R3=${report.counts.R3} R4=${report.counts.R4} ` +
-      `R5=${JSON.stringify(report.counts.R5)}`,
+      `R5=${JSON.stringify(report.counts.R5)} ` +
+      `R6=${report.counts.R6 ?? 0} R7=${report.counts.R7 ?? 0} ` +
+      `R8=${report.counts.R8 ?? 0} R8H=${report.counts.R8H ?? 0}`,
   );
   for (const r of report.rows) {
     console.log(
@@ -51,7 +61,16 @@ function printReport(report: ReconReport): void {
         `product=${r.productName} variant=${r.variantId ?? '-'} layer=${r.layer} ` +
         `ordered=${r.orderedQty} good=${r.receivedGoodQty} damaged=${r.damagedQty} ` +
         `restoredManaged=${r.alreadyRestoredManaged} restoredPhysical=${r.alreadyRestoredPhysical} ` +
-        `missingManaged=${r.missingManagedQty} missingPhysical=${r.missingPhysicalQty}`,
+        `missingManaged=${r.missingManagedQty} missingPhysical=${r.missingPhysicalQty}` +
+        (r.strandedManagedQty !== undefined
+          ? ` strandedManaged=${r.strandedManagedQty}`
+          : '') +
+        (r.physicalQty !== undefined
+          ? ` physicalQty=${r.physicalQty} warehouse=${r.warehouseId ?? '-'}`
+          : '') +
+        (r.r8Kind !== undefined
+          ? ` r8Kind=${r.r8Kind} legacyAt=${r.legacyAt ?? '-'} legacyActor=${r.legacyActor ?? '-'}`
+          : ''),
     );
     console.log(`      evidence: ${r.evidence}`);
   }
@@ -126,11 +145,18 @@ async function main() {
     );
     const report = await finder.buildReport();
     printReport(report);
+    // R7 and R8-H are deliberately NOT targets: report-only, human
+    // disposition. (R8 rows carry r8Kind — only terminal/pending rows
+    // are backfillable.)
     const targets = report.rows.filter(
-      (r) => r.category === 'R1' || r.category === 'R2',
+      (r) =>
+        r.category === 'R1' ||
+        r.category === 'R2' ||
+        r.category === 'R6' ||
+        (r.category === 'R8' && r.r8Kind !== 'human'),
     );
     if (targets.length === 0) {
-      console.log('[reconcile] Nothing to apply — zero R1/R2 rows.');
+      console.log('[reconcile] Nothing to apply — zero R1/R2/R6/R8 rows.');
       return;
     }
     const applyService = app.get(ReconciliationApplyService);
@@ -150,7 +176,9 @@ async function main() {
     }
     console.log(
       `[reconcile] idempotency ok=${result.idempotency.ok} ` +
-        `remainingR1R2=${result.idempotency.remainingR1R2}`,
+        `remainingR1R2=${result.idempotency.remainingR1R2} ` +
+        `remainingR6=${result.idempotency.remainingR6 ?? 0} ` +
+        `remainingR8=${result.idempotency.remainingR8 ?? 0}`,
     );
     if (!result.idempotency.ok) {
       console.error(

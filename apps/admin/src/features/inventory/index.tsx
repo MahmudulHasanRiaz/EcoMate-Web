@@ -19,6 +19,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { InventoryDetailDrawer } from './components/inventory-detail-drawer'
 import { AdjustStockModal } from './components/adjust-stock-modal'
 import { BulkAdjustDialog } from './components/bulk-adjust-dialog'
+import { ManagedStockAdjustmentModal } from '@/features/products/components/managed-stock-adjustment-modal'
+import { adjustDialogKindForViewMode } from './utils/adjust-dialog-routing'
+import { managedStockOverviewParams } from './utils/stock-overview-params'
 import { useInventoryManagement } from './hooks/use-inventory-management'
 import { dedupePhysicalVariants } from './utils/dedupe-physical-variants'
 import { Link, useSearch, getRouteApi } from '@tanstack/react-router'
@@ -119,17 +122,17 @@ export function Inventory() {
     setPage(1)
   }
 
+  // This query is the MANAGED view's list (stockData is only consumed by
+  // the Managed branch of stockRows below; the Physical view builds from
+  // the physical endpoint). The backend's mode filter is opt-in, so the
+  // request is scoped with view=managed (§8.4: Managed tab lists only
+  // MANAGED_STOCK products). Other stock-overview consumers (Overview KPI,
+  // detail lookup, Reports) stay unscoped on purpose.
   const { data: stockData, isLoading: isStockLoading, isError: isStockError, refetch: refetchStock } = useQuery<StockOverviewResponse>({
-    queryKey: ['inventory-stock-overview', search, page, stockSort],
+    queryKey: ['inventory-stock-overview', 'managed', search, page, stockSort],
     queryFn: () =>
       apiClient.get('/inventory/stock-overview', {
-        params: {
-          search: search || undefined,
-          page,
-          perPage,
-          sortBy: stockSort ? 'stock' : undefined,
-          sortOrder: stockSort ?? undefined,
-        },
+        params: managedStockOverviewParams({ search, page, perPage, stockSort }),
       }).then((r) => r.data),
     enabled: true,
   })
@@ -412,6 +415,14 @@ export function Inventory() {
   const handleQuickAdjust = (productId?: string, variantId?: string, variantName?: string) => {
     if (!productId) return
     const item = stockRows.find(p => p.productId === productId)
+    // Managed view only: combo-type products get NO managed Adjust — the
+    // managed modal cannot wire the backend comboId path (separate Combo
+    // entity), and combo stock is component-derived. Physical-view adjust
+    // for the same row stays available (physical records are product-keyed).
+    if (viewMode === 'MANAGED' && item?.raw?.type === 'combo') {
+      toast.error('Combo stock is derived from its component products — adjust a component instead')
+      return
+    }
     setAdjustProductId(productId)
     setAdjustVariantId(variantId)
     setAdjustVariantName(variantName)
@@ -644,7 +655,7 @@ export function Inventory() {
                         <TableCell className='text-sm text-muted-foreground'>{p.updated}</TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
-                            {p.raw?.type !== 'variable' && (
+                            {p.raw?.type !== 'variable' && !(viewMode === 'MANAGED' && p.raw?.type === 'combo') && (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -837,19 +848,38 @@ export function Inventory() {
         onAdjust={() => handleQuickAdjust(selectedProduct?.id)}
       />
 
-      <AdjustStockModal 
-        open={adjustOpen} 
-        onOpenChange={setAdjustOpen} 
-        productId={adjustProductId} 
-        variantId={adjustVariantId}
-        variantName={adjustVariantName}
-        productName={stockRows.find(p => p.productId === adjustProductId)?.name}
-        availabilityMode={adjustAvailabilityMode}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
-          queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
-        }}
-      />
+      {/* Adjust is routed BY TAB (audit finding C): the Managed tab opens the
+          managed dialog — records the managed quantity, variant picker, NO
+          warehouse, NO unit cost, and works with IM OFF (it never renders
+          "Inventory management is disabled"). The Physical tab opens the
+          physical dialog — warehouse required, unit cost required when
+          adding stock. */}
+      {adjustDialogKindForViewMode(viewMode) === 'managed' ? (
+        <ManagedStockAdjustmentModal
+          open={adjustOpen}
+          onOpenChange={setAdjustOpen}
+          initialProductId={adjustProductId}
+          initialVariantId={adjustVariantId}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
+            queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
+          }}
+        />
+      ) : (
+        <AdjustStockModal
+          open={adjustOpen}
+          onOpenChange={setAdjustOpen}
+          productId={adjustProductId}
+          variantId={adjustVariantId}
+          variantName={adjustVariantName}
+          productName={stockRows.find(p => p.productId === adjustProductId)?.name}
+          availabilityMode={adjustAvailabilityMode}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
+            queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
+          }}
+        />
+      )}
 
       <BulkAdjustDialog
         open={bulkOpen}

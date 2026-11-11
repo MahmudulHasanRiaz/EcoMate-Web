@@ -2726,6 +2726,246 @@ describe('OrdersService', () => {
     });
   });
 
+  describe('manual order items (WS-C)', () => {
+    const staffUser = {
+      userId: 'staff-1',
+      email: 'staff@shop.com',
+      role: 'admin',
+    };
+    const setupTx = () => {
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (cb: (tx: any) => Promise<any>) =>
+          cb({
+            ...prisma,
+            orderCounter: {
+              upsert: jest.fn().mockResolvedValue({ date: '250115', seq: 1 }),
+            },
+          }),
+      );
+      (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+        mockInitialStatus,
+      );
+      (prisma.order.create as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        items: [],
+      });
+    };
+    const manualDto = (itemOverrides: Record<string, any> = {}) => ({
+      items: [
+        {
+          isManual: true,
+          manualName: 'Gift wrapping',
+          quantity: 2,
+          price: 150,
+          ...itemOverrides,
+        },
+      ],
+      shippingAddress: { address: '123 Test St' },
+    });
+
+    it('staff create with a cost freezes costSnapshot=cost and costType actual', async () => {
+      setupTx();
+      const stock = module.get(StockService) as any;
+      (stock.reserve as jest.Mock).mockClear();
+      (stock.operate as jest.Mock).mockClear();
+
+      await service.create(manualDto({ cost: 90 }) as any, undefined, staffUser);
+
+      const data = (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+      const line = data.items.create[0];
+      expect(line.isManual).toBe(true);
+      expect(line.manualName).toBe('Gift wrapping');
+      expect(line.productId).toBeNull();
+      expect(line.variantId).toBeNull();
+      expect(line.comboId).toBeNull();
+      expect(Number(line.price)).toBe(150);
+      expect(Number(line.costSnapshot)).toBe(90);
+      expect(line.costType).toBe('actual');
+      // The manual line is a normal priced line in the subtotal (2 × 150).
+      expect(Number(data.subtotal)).toBe(300);
+      // No stock work is created for a manual line.
+      expect(stock.reserve).not.toHaveBeenCalled();
+      expect(stock.operate).not.toHaveBeenCalled();
+    });
+
+    it('staff create without a cost freezes costSnapshot=price and costType not_set', async () => {
+      setupTx();
+
+      await service.create(manualDto() as any, undefined, staffUser);
+
+      const data = (prisma.order.create as jest.Mock).mock.calls[0][0].data;
+      const line = data.items.create[0];
+      expect(line.isManual).toBe(true);
+      expect(Number(line.costSnapshot)).toBe(150);
+      expect(line.costType).toBe('not_set');
+      expect(Number(data.subtotal)).toBe(300);
+    });
+
+    it('rejects a manual line from a non-staff (guest/storefront) create', async () => {
+      setupTx();
+
+      await expect(
+        service.create(manualDto({ cost: 90 }) as any),
+      ).rejects.toThrow('Manual items can only be added by staff.');
+      expect(prisma.order.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [{ manualName: '   ' }, /name/i],
+      [{ quantity: 0 }, /quantity/i],
+      [{ quantity: 1.5 }, /quantity/i],
+      [{ price: -1 }, /price/i],
+      [{ cost: -5 }, /cost/i],
+      [{ productId: 'prod-1' }, /product/i],
+    ])('rejects an invalid manual line %o', async (overrides, pattern) => {
+      setupTx();
+
+      await expect(
+        service.create(manualDto(overrides) as any, undefined, staffUser),
+      ).rejects.toThrow(pattern as any);
+      expect(prisma.order.create).not.toHaveBeenCalled();
+    });
+
+    it('an order with ONLY manual lines passes verifyStockForOrder with no stock calls (confirm safety)', async () => {
+      const stock = module.get(StockService) as any;
+      (stock.getAvailableStock as jest.Mock).mockClear();
+      (stock.operate as jest.Mock).mockClear();
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        id: 'order-1',
+        displayId: 'ORD-1',
+        items: [
+          {
+            id: 'mi-1',
+            productId: null,
+            variantId: null,
+            comboId: null,
+            isManual: true,
+            manualName: 'Gift wrapping',
+            quantity: 2,
+            product: null,
+            variant: null,
+          },
+        ],
+      });
+      (prisma.orderStockCycle.findFirst as jest.Mock).mockResolvedValue({
+        id: 'cycle-1',
+        status: 'ACTIVE',
+      });
+
+      await expect(
+        service.verifyStockForOrder('order-1', prisma as any),
+      ).resolves.toBeUndefined();
+      expect(stock.getAvailableStock).not.toHaveBeenCalled();
+      expect(stock.operate).not.toHaveBeenCalled();
+    });
+
+    it('addItem writes a manual line with its frozen cost and no product lookup', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderItem.create as jest.Mock).mockResolvedValue({
+        id: 'new-manual',
+      });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.addItem('order-id-1', {
+        isManual: true,
+        manualName: 'Fragile handling',
+        quantity: 1,
+        price: 200,
+        cost: 120,
+      } as any);
+
+      const createCall = (prisma.orderItem.create as jest.Mock).mock
+        .calls[0][0];
+      expect(createCall.data.isManual).toBe(true);
+      expect(createCall.data.manualName).toBe('Fragile handling');
+      expect(createCall.data.productId).toBeNull();
+      expect(Number(createCall.data.costSnapshot)).toBe(120);
+      expect(createCall.data.costType).toBe('actual');
+      expect(prisma.product.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('addItem without a cost freezes costSnapshot=price / not_set', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+      (prisma.orderItem.create as jest.Mock).mockResolvedValue({
+        id: 'new-manual',
+      });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.addItem('order-id-1', {
+        isManual: true,
+        manualName: 'Misc service',
+        quantity: 3,
+        price: 50,
+      } as any);
+
+      const createCall = (prisma.orderItem.create as jest.Mock).mock
+        .calls[0][0];
+      expect(Number(createCall.data.costSnapshot)).toBe(50);
+      expect(createCall.data.costType).toBe('not_set');
+    });
+
+    it('addItem rejects a non-manual line with no productId', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+
+      await expect(
+        service.addItem('order-id-1', { quantity: 1, price: 10 } as any),
+      ).rejects.toThrow(/manual item/i);
+    });
+
+    it('updateOrder preserves the frozen cost of an untouched manual line', async () => {
+      const existingOrder = {
+        ...mockOrder,
+        shippingCharge: 100,
+        discount: 0,
+        items: [
+          {
+            id: 'mi-1',
+            productId: null,
+            variantId: null,
+            comboId: null,
+            isManual: true,
+            manualName: 'Gift wrapping',
+            quantity: 2,
+            price: 150,
+            costSnapshot: 90,
+            costType: 'actual',
+            customization: null,
+            product: null,
+          },
+        ],
+      };
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(existingOrder);
+      (prisma.orderItem.deleteMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
+      (prisma.orderItem.createMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
+      (prisma.order.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateOrder('order-id-1', {
+        items: [
+          {
+            isManual: true,
+            manualName: 'Gift wrapping',
+            quantity: 3,
+            price: 150,
+          },
+        ],
+      } as any);
+
+      const createManyCall = (prisma.orderItem.createMany as jest.Mock).mock
+        .calls[0][0];
+      const line = createManyCall.data[0];
+      expect(line.isManual).toBe(true);
+      expect(line.manualName).toBe('Gift wrapping');
+      expect(line.productId).toBeNull();
+      // No cost in the payload → the prior frozen cost survives the rewrite.
+      expect(Number(line.costSnapshot)).toBe(90);
+      expect(line.costType).toBe('actual');
+    });
+  });
+
   describe('updateStatus', () => {
     const updateStatusDto = {
       statusId: 'status-confirmed',

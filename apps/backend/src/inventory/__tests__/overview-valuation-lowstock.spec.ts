@@ -3,7 +3,6 @@ import { InventoryService } from '../inventory.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StockService } from '../../stock/stock.service';
 import { StockRouterService } from '../../stock/stock-router.service';
-import { InitialPhysicalStockService } from '../../stock/initial-physical-stock.service';
 import { CostingLotService } from '../../stock/costing-lot.service';
 import { CacheService } from '../../cache/cache.service';
 import { ManagedStockLedgerService } from '../managed-stock-ledger.service';
@@ -42,10 +41,6 @@ describe('InventoryService — overview / valuation / lowStock fixes', () => {
         { provide: CostingLotService, useValue: {} },
         { provide: ManagedStockLedgerService, useValue: {} },
         { provide: CacheService, useValue: {} },
-        {
-          provide: InitialPhysicalStockService,
-          useValue: { resolveWarehouse: jest.fn() },
-        },
       ],
     }).compile();
 
@@ -215,6 +210,87 @@ describe('InventoryService — overview / valuation / lowStock fixes', () => {
       expect(
         (prisma.product.findMany as jest.Mock).mock.calls[1][0].orderBy,
       ).toEqual({ name: 'desc' });
+    });
+  });
+
+  describe('stockOverview — scoped managed view (2026-11-11, directive §3)', () => {
+    const row = (id: string, mode: string) => ({
+      id,
+      name: id,
+      slug: id,
+      sku: id.toUpperCase(),
+      type: 'simple',
+      availabilityMode: mode,
+      managedStockQuantity: 5,
+      manageStock: true,
+      reservedStock: 0,
+      lowStockQty: null,
+      basePrice: 100,
+      salePrice: null,
+      images: null,
+      categoryId: null,
+      category: null,
+      variants: [],
+      _count: { orderItems: 0 },
+    });
+    const all = [
+      row('p-managed', 'MANAGED_STOCK'),
+      row('p-ic', 'INVENTORY_CONTROLLED'),
+      row('p-always-in', 'ALWAYS_IN_STOCK'),
+      row('p-always-out', 'ALWAYS_OUT_OF_STOCK'),
+    ];
+
+    const mockDbFilter = () => {
+      (prisma.product.findMany as jest.Mock).mockImplementation((args: any) =>
+        Promise.resolve(
+          args.where?.availabilityMode
+            ? all.filter((r) => r.availabilityMode === args.where.availabilityMode)
+            : all,
+        ),
+      );
+      (prisma.product.count as jest.Mock).mockImplementation((args: any) =>
+        Promise.resolve(
+          args.where?.availabilityMode
+            ? all.filter((r) => r.availabilityMode === args.where.availabilityMode).length
+            : all.length,
+        ),
+      );
+    };
+
+    it('view=managed returns ONLY MANAGED_STOCK products (IC / Always-In / Always-Out absent)', async () => {
+      mockDbFilter();
+      const res = await service.stockOverview({ view: 'managed' });
+      expect(res.data.map((p: any) => p.id)).toEqual(['p-managed']);
+      expect(res.meta.total).toBe(1);
+      const where = (prisma.product.findMany as jest.Mock).mock.calls[0][0].where;
+      expect(where.availabilityMode).toBe('MANAGED_STOCK');
+    });
+
+    it('an explicit availabilityMode param scopes the same way', async () => {
+      mockDbFilter();
+      const res = await service.stockOverview({ availabilityMode: 'MANAGED_STOCK' });
+      expect(res.data.map((p: any) => p.id)).toEqual(['p-managed']);
+    });
+
+    it('UNSCOPED calls stay mode-agnostic (detail-by-id, KPI total and reports keep seeing every product)', async () => {
+      mockDbFilter();
+      const res = await service.stockOverview({});
+      expect(res.data.map((p: any) => p.id)).toEqual([
+        'p-managed',
+        'p-ic',
+        'p-always-in',
+        'p-always-out',
+      ]);
+      expect(res.meta.total).toBe(4);
+    });
+
+    it('the stock-sorted path applies the managed scope in its raw SQL too', async () => {
+      (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ id: 'p-managed' }]);
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([all[0]]);
+      const res = await service.stockOverview({ view: 'managed', sortBy: 'stock' });
+      expect(res.data.map((p: any) => p.id)).toEqual(['p-managed']);
+      const sqlArg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0];
+      expect(JSON.stringify(sqlArg)).toContain('MANAGED_STOCK');
     });
   });
 });

@@ -7,7 +7,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 import { CostingLotService } from './costing-lot.service';
 import { StockRouterService } from './stock-router.service';
-import { InitialPhysicalStockService } from './initial-physical-stock.service';
 import { ManagedStockLedgerService } from '../inventory/managed-stock-ledger.service';
 
 /**
@@ -225,10 +224,6 @@ describe('Product cache invalidation on direct stock writes', () => {
               invalidateByPrefix: jest.fn().mockResolvedValue(undefined),
             },
           },
-          {
-            provide: InitialPhysicalStockService,
-            useValue: { resolveWarehouse: jest.fn() },
-          },
         ],
       }).compile();
 
@@ -243,7 +238,7 @@ describe('Product cache invalidation on direct stock writes', () => {
     });
   });
 
-  describe('PhysicalInventoryController.syncManagedStock mirror', () => {
+  describe('PhysicalInventoryController — physical adjust (no managed mirror since 2026-11-11)', () => {
     let controller: PhysicalInventoryController;
     let cache: CacheService;
 
@@ -296,7 +291,7 @@ describe('Product cache invalidation on direct stock writes', () => {
       cache = module.get<CacheService>(CacheService);
     });
 
-    it('invalidates the product cache after mirroring physical stock into managedStockQuantity', async () => {
+    it('invalidates the product cache after a physical adjustment (and writes no managed mirror)', async () => {
       await controller.adjust(
         {
           productId: 'p1',

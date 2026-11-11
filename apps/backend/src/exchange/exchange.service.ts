@@ -15,6 +15,7 @@ import { normalizeInvoiceForCompare } from '../courier-manager/courier-settle-gu
 import { dhakaDateParts } from '../common/utils/dhaka-time';
 import { Prisma } from '@prisma/client';
 import { CreateExchangeOrderDto } from './dto/create-exchange-order.dto';
+import { assertNoManualLines } from '../returns/return-guard';
 
 export interface ExchangeActor {
   userId: string;
@@ -294,7 +295,15 @@ export class ExchangeService {
       where: { id: originalOrderId },
       include: {
         status: true,
-        items: { select: { productId: true, variantId: true, quantity: true } },
+        items: {
+          select: {
+            productId: true,
+            variantId: true,
+            quantity: true,
+            isManual: true,
+            manualName: true,
+          },
+        },
       },
     });
     if (!original || original.trashedAt) {
@@ -326,6 +335,15 @@ export class ExchangeService {
           'Select at least one returning item for a partial exchange.',
         );
       }
+      // Workstream C (decision 6): manual lines are non-exchangeable —
+      // refused on the raw request before shape validation (a manual line
+      // has no productId to key on). The FULL path needs no check: the
+      // order snapshot it builds skips product-less lines by construction,
+      // and ReturnsService.create re-runs the gate for the EXCHANGE leg.
+      assertNoManualLines(
+        ((original as any).items ?? []) as any[],
+        dto.returningItems as any[],
+      );
       returningItems = this.returns.validateItemsInput(dto.returningItems);
       const inOriginal = new Set(
         ((original as any).items ?? [])

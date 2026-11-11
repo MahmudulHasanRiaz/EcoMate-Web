@@ -1,4 +1,20 @@
 /**
+ * ⛔ DO NOT RUN — ARCHIVED 2026-11-11 (stock-mode directive, mirror removal).
+ *
+ * This script seeds PhysicalInventory records FROM the managed counter —
+ * it is itself an auto-mirror, and the owner removed ALL auto-mirroring on
+ * 2026-11-11: a physical record must now come only from a real physical
+ * entry (physical adjust / purchase), never as a copy of the managed
+ * quantity. The Q9 premise below (managed-only products "can never be
+ * confirmed" = a gap to backfill) is superseded: under the current model
+ * that confirm gate is intended — staff enter real physical stock.
+ * InitialPhysicalStockService, which this script used, has been deleted.
+ * Kept ONLY as a historical record; moved out of prisma/scripts/ so it can
+ * never be picked up by tooling or run by accident. Legacy physical rows
+ * that look like mirror copies are surfaced REPORT-ONLY by the
+ * reconciliation finder (category R7) for human disposition.
+ *
+ * Original header (2026-10-23):
  * One-time backfill: PhysicalInventory records for legacy MANAGED_STOCK
  * products (owner decision 2026-10-23, Q9 — strict scoping).
  *

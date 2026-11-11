@@ -2,7 +2,7 @@ import { ImportService } from '../import.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MediaService } from '../../media/media.service';
 import { CacheService } from '../../cache/cache.service';
-import { InitialPhysicalStockService } from '../../stock/initial-physical-stock.service';
+import { StockService } from '../../stock/stock.service';
 import { ImportSummary } from '../types/woocommerce-csv.types';
 import { BadRequestException } from '@nestjs/common';
 
@@ -30,25 +30,41 @@ function makeService() {
     product: {
       findUnique: jest.fn().mockResolvedValue(null),
       findFirst: jest.fn().mockResolvedValue(null),
+      create: jest
+        .fn()
+        .mockResolvedValue({ id: 'prod-created', slug: 'created', sku: 'SKU' }),
       update: jest.fn().mockResolvedValue({}),
     },
     productVariant: {
       create: jest.fn().mockResolvedValue({ id: 'variant-created' }),
+      update: jest.fn().mockResolvedValue({}),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    physicalInventory: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    systemSetting: {
+      findUnique: jest.fn().mockResolvedValue({ value: 'true' }),
+    },
+    warehouse: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'wh-1' }),
     },
   };
   const media = {};
   const cache = {};
-  const initialPhysicalStock = {
-    resolveWarehouse: jest.fn().mockResolvedValue(null),
-    mirrorUnits: jest.fn().mockResolvedValue(undefined),
+  // StockService is the IC re-import level-set engine: operatePhysical is
+  // how a legitimate physical entry would be written. A MANAGED_STOCK
+  // import must never reach it.
+  const stock = {
+    operatePhysical: jest.fn().mockResolvedValue(undefined),
   };
   const service = new ImportService(
     prisma as unknown as PrismaService,
     media as unknown as MediaService,
     cache as unknown as CacheService,
-    initialPhysicalStock as unknown as InitialPhysicalStockService,
+    stock as unknown as StockService,
   );
-  return { service, prisma, initialPhysicalStock, svc: service as any };
+  return { service, prisma, stock, svc: service as any };
 }
 
 const row = (rowNumber: number, data: Record<string, unknown>) => ({
@@ -74,12 +90,13 @@ async function runGroup(
   svc: any,
   rows: ReturnType<typeof row>[],
   meta = GROUP_CALL_META(),
-  initialWarehouseId: string | null = null,
+  icWarehouseId: string | null = null,
+  mode: 'create' | 'update' = 'create',
 ) {
   await svc.processProductGroupCached(
     'VAR-1',
     rows,
-    'create',
+    mode,
     meta.summary,
     meta.errors,
     meta.categoryCacheByPath,
@@ -91,7 +108,7 @@ async function runGroup(
     meta.variantCache,
     meta.slugSet,
     meta.sortOrderObj,
-    initialWarehouseId,
+    icWarehouseId,
   );
   return meta;
 }
@@ -327,99 +344,301 @@ describe('ImportService.updateProductCached parent price handling', () => {
 });
 
 /**
- * B4: an imported MANAGED_STOCK product with stock but no PhysicalInventory
- * record is orderable but can never be confirmed. Creation must seed the
- * physical layer, exactly like the product form and draft publish do.
+ * Fifth-mirror removal (owner decision, directive §0.1 + §2 sweep rule):
+ * an imported MANAGED_STOCK product's CSV stock stays in the managed
+ * counter ONLY — no PhysicalInventory row is fabricated for it, exactly
+ * like product create behaves since the other mirrors were removed.
+ * The physical layer is written ONLY through StockService.operatePhysical
+ * (setPhysicalStockLevel), so asserting it is never called — and that the
+ * physical level is never even read — proves no physical row is created.
+ * These groups are deliberately handed a resolved IC warehouse ('wh-1'):
+ * even with a warehouse available, a managed import must not use it.
  */
-describe('ImportService initial physical stock on create (B4)', () => {
-  it('mirrors a simple product stock into the physical layer and links the warehouse', async () => {
-    const { svc, prisma, initialPhysicalStock } = makeService();
-    jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
-    prisma.product.findUnique.mockResolvedValue({ warehouseId: null });
-
-    await runGroup(
-      svc,
-      [row(1, { SKU: 'SIM-1', Type: 'simple', Stock: '5' })],
-      GROUP_CALL_META(),
-      'wh-1',
-    );
-
-    expect(initialPhysicalStock.mirrorUnits).toHaveBeenCalledWith(
-      expect.objectContaining({
-        productId: 'prod-1',
-        productWarehouseId: null,
-        warehouseId: 'wh-1',
-        units: [{ quantity: 5 }],
-      }),
-    );
-  });
-
-  it('mirrors each created variant instead of the parent counter', async () => {
-    const { svc, prisma, initialPhysicalStock } = makeService();
-    jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
-    prisma.productVariant.create.mockResolvedValue({ id: 'variant-a' });
-    prisma.product.findUnique.mockResolvedValue({ warehouseId: 'wh-1' });
+describe('ImportService MANAGED_STOCK import — no physical mirroring', () => {
+  it('simple product: managed qty lands as managed qty, NO physical row created', async () => {
+    const { svc, prisma, stock } = makeService();
+    prisma.product.create.mockResolvedValue({
+      id: 'prod-1',
+      slug: 'simple',
+      sku: 'SIM-1',
+    });
 
     await runGroup(
       svc,
       [
-        row(1, { SKU: 'VAR-1', Type: 'variable' }),
-        row(2, { SKU: 'VAR-1-RED', Type: 'variation', Stock: '3' }),
+        row(1, {
+          SKU: 'SIM-1',
+          Type: 'simple',
+          Name: 'Simple',
+          Stock: '5',
+          'Regular price': '100',
+        }),
       ],
       GROUP_CALL_META(),
       'wh-1',
     );
 
-    expect(initialPhysicalStock.mirrorUnits).toHaveBeenCalledWith(
+    // The managed quantity write itself is kept.
+    expect(prisma.product.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ managedStockQuantity: 5 }),
+    });
+    // No physical entry of any kind.
+    expect(stock.operatePhysical).not.toHaveBeenCalled();
+    expect(prisma.physicalInventory.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('variant product: variant stock stays managed-only, NO physical row created', async () => {
+    const { svc, prisma, stock } = makeService();
+    jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
+    prisma.productVariant.create.mockResolvedValue({ id: 'variant-a' });
+    // Non-zero stored price keeps the parent-price fallback out of the way.
+    prisma.product.findUnique.mockResolvedValue({ basePrice: 500 });
+
+    await runGroup(
+      svc,
+      [
+        row(1, { SKU: 'VAR-1', Type: 'variable' }),
+        row(2, {
+          SKU: 'VAR-1-RED',
+          Type: 'variation',
+          Stock: '3',
+          'Regular price': '300',
+        }),
+      ],
+      GROUP_CALL_META(),
+      'wh-1',
+    );
+
+    expect(prisma.productVariant.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ managedStockQuantity: 3 }),
+    });
+    expect(stock.operatePhysical).not.toHaveBeenCalled();
+    expect(prisma.physicalInventory.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('re-import of an existing MANAGED_STOCK product writes no physical row either', async () => {
+    const { svc, prisma, stock } = makeService();
+    jest
+      .spyOn(svc, 'updateProductCached')
+      .mockResolvedValue('MANAGED_STOCK');
+    const meta = GROUP_CALL_META();
+    meta.productCache.set('SIM-1', 'prod-1');
+
+    await runGroup(
+      svc,
+      [row(1, { SKU: 'SIM-1', Type: 'simple', Stock: '9' })],
+      meta,
+      'wh-1',
+      'update',
+    );
+
+    expect(svc.updateProductCached).toHaveBeenCalled();
+    expect(stock.operatePhysical).not.toHaveBeenCalled();
+    expect(prisma.physicalInventory.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The INVENTORY_CONTROLLED path is NOT a mirror and stays fully working:
+ * for an IC product the CSV Stock cell IS physical stock, so a re-import
+ * level-sets the physical layer via StockService.operatePhysical.
+ */
+describe('ImportService INVENTORY_CONTROLLED re-import — physical level still set', () => {
+  function icMeta() {
+    const meta = GROUP_CALL_META();
+    meta.productCache.set('IC-1', 'prod-ic');
+    return meta;
+  }
+
+  it('simple IC product: physical level is set to the CSV quantity (delta applied)', async () => {
+    const { svc, prisma, stock } = makeService();
+    jest
+      .spyOn(svc, 'updateProductCached')
+      .mockResolvedValue('INVENTORY_CONTROLLED');
+    prisma.physicalInventory.findFirst.mockResolvedValue({ quantity: 2 });
+
+    await runGroup(
+      svc,
+      [row(1, { SKU: 'IC-1', Type: 'simple', Stock: '7' })],
+      icMeta(),
+      'wh-1',
+      'update',
+    );
+
+    expect(stock.operatePhysical).toHaveBeenCalledWith(
+      'add',
       expect.objectContaining({
-        productId: 'prod-1',
-        productWarehouseId: 'wh-1',
-        units: [{ variantId: 'variant-a', quantity: 3 }],
+        productId: 'prod-ic',
+        warehouseId: 'wh-1',
+        quantity: 5, // level 7 − existing 2
+        reference: 'Stock level set by CSV re-import',
+        ledgerType: 'ADJUSTMENT',
       }),
     );
   });
 
-  it('leaves the physical layer alone when no warehouse was resolved', async () => {
-    const { svc, initialPhysicalStock } = makeService();
-    jest.spyOn(svc, 'createProductCached').mockResolvedValue('prod-1');
+  it('existing variant of an IC product: physical level is set per variant', async () => {
+    const { svc, prisma, stock } = makeService();
+    jest
+      .spyOn(svc, 'updateProductCached')
+      .mockResolvedValue('INVENTORY_CONTROLLED');
+    prisma.physicalInventory.findFirst.mockResolvedValue({ quantity: 1 });
+    const meta = icMeta();
+    meta.variantCache.set('IC-1-RED', 'var-1');
 
     await runGroup(
       svc,
-      [row(1, { SKU: 'SIM-1', Type: 'simple', Stock: '5' })],
-      GROUP_CALL_META(),
-      null,
+      [
+        row(1, {
+          SKU: 'IC-1',
+          Type: 'variable',
+          'Regular price': '999',
+        }),
+        row(2, {
+          SKU: 'IC-1-RED',
+          Type: 'variation',
+          Stock: '4',
+          'Regular price': '300',
+        }),
+      ],
+      meta,
+      'wh-1',
+      'update',
     );
 
-    expect(initialPhysicalStock.mirrorUnits).not.toHaveBeenCalled();
+    expect(stock.operatePhysical).toHaveBeenCalledWith(
+      'add',
+      expect.objectContaining({
+        productId: 'prod-ic',
+        variantId: 'var-1',
+        warehouseId: 'wh-1',
+        quantity: 3, // level 4 − existing 1
+      }),
+    );
   });
 
-  it('resolves the warehouse only when the CSV carries managed units', async () => {
-    const { svc, initialPhysicalStock } = makeService();
-    initialPhysicalStock.resolveWarehouse.mockResolvedValue('wh-1');
+  it('new variant of an IC product: physical level seeded via the level-set path, managed counter stays 0', async () => {
+    const { svc, prisma, stock } = makeService();
+    jest
+      .spyOn(svc, 'updateProductCached')
+      .mockResolvedValue('INVENTORY_CONTROLLED');
+    prisma.productVariant.create.mockResolvedValue({ id: 'var-new' });
+    prisma.physicalInventory.findFirst.mockResolvedValue(null);
 
-    await expect(
-      svc.resolveImportWarehouse([{ data: { Stock: '4' } }]),
-    ).resolves.toBe('wh-1');
-    expect(initialPhysicalStock.resolveWarehouse).toHaveBeenCalledWith(
-      'MANAGED_STOCK',
-      1,
+    await runGroup(
+      svc,
+      [
+        row(1, {
+          SKU: 'IC-1',
+          Type: 'variable',
+          'Regular price': '999',
+        }),
+        row(2, {
+          SKU: 'IC-1-RED',
+          Type: 'variation',
+          Stock: '6',
+          'Regular price': '300',
+        }),
+      ],
+      icMeta(),
+      'wh-1',
+      'update',
     );
 
-    initialPhysicalStock.resolveWarehouse.mockClear();
+    expect(prisma.productVariant.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ managedStockQuantity: 0 }),
+    });
+    expect(stock.operatePhysical).toHaveBeenCalledWith(
+      'add',
+      expect.objectContaining({
+        productId: 'prod-ic',
+        variantId: 'var-new',
+        warehouseId: 'wh-1',
+        quantity: 6,
+      }),
+    );
+  });
+});
+
+/**
+ * Warehouse resolution is now IC-only: it exists solely so the legitimate
+ * IC level-set has somewhere to land. Managed (and brand-new) products
+ * never trigger it, so their imports cannot fail on a missing warehouse.
+ */
+describe('ImportService.resolveImportWarehouse (IC-only)', () => {
+  const groupsOf = (sku: string, data: Record<string, unknown>) => ({
+    [sku]: [row(1, { SKU: sku, ...data })] as any,
+  });
+
+  it('returns null for MANAGED_STOCK groups without touching warehouse/settings', async () => {
+    const { svc, prisma } = makeService();
+
     await expect(
-      svc.resolveImportWarehouse([{ data: { Stock: '0' } }, { data: {} }]),
+      svc.resolveImportWarehouse(
+        groupsOf('SIM-1', { Stock: '4' }),
+        new Map([['SIM-1', 'MANAGED_STOCK']]),
+      ),
     ).resolves.toBeNull();
-    expect(initialPhysicalStock.resolveWarehouse).not.toHaveBeenCalled();
+    expect(prisma.systemSetting.findUnique).not.toHaveBeenCalled();
+    expect(prisma.warehouse.findFirst).not.toHaveBeenCalled();
   });
 
-  it('fails loudly — before any row is written — when no active warehouse exists', async () => {
-    const { svc, initialPhysicalStock } = makeService();
-    initialPhysicalStock.resolveWarehouse.mockRejectedValue(
-      new BadRequestException('no active warehouse exists'),
-    );
+  it('returns null for brand-new products (no stored mode) with stock', async () => {
+    const { svc, prisma } = makeService();
 
     await expect(
-      svc.resolveImportWarehouse([{ data: { Stock: '4' } }]),
+      svc.resolveImportWarehouse(
+        groupsOf('NEW-1', { Stock: '4' }),
+        new Map<string, string>(),
+      ),
+    ).resolves.toBeNull();
+    expect(prisma.warehouse.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('resolves the main active warehouse for an IC group when IM is on', async () => {
+    const { svc, prisma } = makeService();
+
+    await expect(
+      svc.resolveImportWarehouse(
+        groupsOf('IC-1', { Stock: '4' }),
+        new Map([['IC-1', 'INVENTORY_CONTROLLED']]),
+      ),
+    ).resolves.toBe('wh-1');
+    expect(prisma.warehouse.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { isActive: true, type: 'main' },
+      }),
+    );
+  });
+
+  it('returns null for an IC group when Inventory Management is off', async () => {
+    const { svc, prisma } = makeService();
+    prisma.systemSetting.findUnique.mockResolvedValue({ value: 'false' });
+
+    await expect(
+      svc.resolveImportWarehouse(
+        groupsOf('IC-1', { Stock: '4' }),
+        new Map([['IC-1', 'INVENTORY_CONTROLLED']]),
+      ),
+    ).resolves.toBeNull();
+    expect(prisma.warehouse.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('fails loudly for an IC group when IM is on but no active warehouse exists', async () => {
+    const { svc, prisma } = makeService();
+    prisma.warehouse.findFirst.mockResolvedValue(null);
+
+    await expect(
+      svc.resolveImportWarehouse(
+        groupsOf('IC-1', { Stock: '4' }),
+        new Map([['IC-1', 'INVENTORY_CONTROLLED']]),
+      ),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      svc.resolveImportWarehouse(
+        groupsOf('IC-1', { Stock: '4' }),
+        new Map([['IC-1', 'INVENTORY_CONTROLLED']]),
+      ),
     ).rejects.toThrow(/no active warehouse/i);
   });
 });

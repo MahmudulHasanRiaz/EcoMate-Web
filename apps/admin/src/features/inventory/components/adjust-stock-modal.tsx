@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Package } from 'lucide-react'
 import { useInventoryManagement } from '../hooks/use-inventory-management'
+import { physicalAdjustTitle } from '../utils/adjust-dialog-routing'
 
 interface AdjustStockModalProps {
   open: boolean
@@ -199,7 +200,7 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
     }}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Adjust Stock: {productName || 'Stock'} {variantName ? `(${variantName})` : ''}</DialogTitle>
+          <DialogTitle>{physicalAdjustTitle(productName)} {variantName ? `(${variantName})` : ''}</DialogTitle>
           {variantLabel && (
             <div className="mt-1.5 rounded-md bg-muted/50 border px-3 py-2 text-xs text-muted-foreground">
               {variantLabel}

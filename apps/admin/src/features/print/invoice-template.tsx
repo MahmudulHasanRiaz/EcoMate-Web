@@ -94,7 +94,7 @@ export function InvoiceTemplate({ order }: { order: any }) {
             <tr key={i} className="border-b">
               <td className="py-2 px-2 text-muted-foreground">{i + 1}</td>
               <td className="py-2">
-                {item.product?.name || 'Product'}
+                {item.product?.name || item.manualName || 'Product'}
                 {/* Customization detail lives ONLY on the invoice (owner
                     Q16) — the packing sticker gets a badge, couriers get
                     nothing. Text answers print in full here. */}

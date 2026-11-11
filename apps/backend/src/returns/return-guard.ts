@@ -96,6 +96,60 @@ export function assertNoCustomizedLines(
 }
 
 /**
+ * Owner 2026-11-11 (Workstream C, decision 6): MANUAL order lines are
+ * NON-returnable and NON-exchangeable — the same gate pattern as customized
+ * lines (Q17 above). A manual line has no product, so it can never be
+ * legitimately keyed into a return/exchange request; this guard refuses a
+ * request that tries anyway — either by flagging a requested line as
+ * manual, or by naming one of the order's manual lines. FULL-return
+ * snapshots never include manual lines in the first place
+ * (orderItemsSnapshotForClient skips product-less lines), so a full return
+ * of the order's real products simply leaves the manual line untouched.
+ * Courier-source returns are exempt, exactly like the customized gate:
+ * callers skip this check for them.
+ */
+export function assertNoManualLines(
+  originalItems: Array<{
+    productId?: string | null;
+    variantId?: string | null;
+    isManual?: boolean | null;
+    manualName?: string | null;
+    product?: { name?: string | null } | null;
+  }>,
+  requestedItems: Array<{
+    productId?: string | null;
+    variantId?: string | null;
+    isManual?: boolean | null;
+    manualName?: string | null;
+  }>,
+): void {
+  for (const req of requestedItems) {
+    if ((req as any)?.isManual) {
+      throw new BadRequestException(
+        'Manual items cannot be returned or exchanged.',
+      );
+    }
+  }
+  const manualNames = new Set(
+    (originalItems ?? [])
+      .filter((oi) => oi.isManual && oi.manualName)
+      .map((oi) => (oi.manualName as string).trim().toLowerCase()),
+  );
+  if (manualNames.size === 0) return;
+  for (const req of requestedItems) {
+    const reqName = (req as any)?.manualName;
+    if (
+      typeof reqName === 'string' &&
+      manualNames.has(reqName.trim().toLowerCase())
+    ) {
+      throw new BadRequestException(
+        `"${reqName}" is a manual item and cannot be returned or exchanged.`,
+      );
+    }
+  }
+}
+
+/**
  * Shape-check shared by ReturnsService.create, the staff-partial path and the
  * guarded stock core: productId required, quantity a positive integer, no
  * duplicate lines.

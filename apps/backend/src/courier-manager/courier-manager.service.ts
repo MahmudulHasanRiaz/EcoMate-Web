@@ -632,7 +632,7 @@ export class CourierManagerService {
 
     const itemDescription =
       order.items
-        ?.map((item: any) => item.product?.name || 'Product')
+        ?.map((item: any) => item.product?.name || item.manualName || 'Product')
         .join(', ') || undefined;
 
     // Fix 5a: courier-safe name (Mx. prefix / truncate); stored order kept.
@@ -957,7 +957,7 @@ export class CourierManagerService {
 
     const itemDescription =
       order.items
-        ?.map((item: any) => item.product?.name || 'Product')
+        ?.map((item: any) => item.product?.name || item.manualName || 'Product')
         .join(', ') || undefined;
 
     // Fix 5a: courier-safe name (Mx. prefix / truncate); stored order kept.
@@ -1654,7 +1654,7 @@ export class CourierManagerService {
 
     const itemDescription =
       order.items
-        ?.map((item: any) => item.product?.name || 'Product')
+        ?.map((item: any) => item.product?.name || item.manualName || 'Product')
         .join(', ') || 'Product';
 
     const payload: Record<string, unknown> = {
@@ -1700,7 +1700,7 @@ export class CourierManagerService {
       value: String(total),
       is_closed_box: false,
       parcel_details_json: order.items?.map((item: any) => ({
-        name: item.product?.name || 'Product',
+        name: item.product?.name || item.manualName || 'Product',
         category: 'Apparel',
         value: Number(item.price || 0),
       })) || [{ name: itemDescription, category: 'Apparel', value: total }],
@@ -2018,7 +2018,7 @@ export class CourierManagerService {
     }
     const itemDescription =
       order.items
-        ?.map((item: any) => item.product?.name || 'Product')
+        ?.map((item: any) => item.product?.name || item.manualName || 'Product')
         .join(', ') || undefined;
     if (itemDescription) {
       payload.product_description = sanitizeCourierText(itemDescription, 254);
@@ -2674,7 +2674,7 @@ export class CourierManagerService {
             : null);
         if (bulkSecondary) entry.alternative_phone = bulkSecondary;
         const bulkDescription = order.items
-          ?.map((item: any) => item.product?.name || 'Product')
+          ?.map((item: any) => item.product?.name || item.manualName || 'Product')
           .join(', ');
         if (bulkDescription) {
           entry.item_description = sanitizeCourierText(

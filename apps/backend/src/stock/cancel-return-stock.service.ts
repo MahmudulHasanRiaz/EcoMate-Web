@@ -351,7 +351,9 @@ export class CancelReturnStockService {
     };
 
     for (const item of order.items) {
-      if (!item.productId && !item.comboId) continue;
+      // Manual lines (Workstream C) are explicitly SKIPPED: nothing was
+      // ever reserved or deducted for them, so there is nothing to restore.
+      if ((item as any).isManual || (!item.productId && !item.comboId)) continue;
 
       // ── Combo Item ────────────────────────────────────────────────────────────
       if (item.comboId) {
@@ -507,7 +509,8 @@ export class CancelReturnStockService {
       `${productId}::${variantId ?? ''}`;
     const allClaims: Claim[] = [];
     for (const line of (order as any).items ?? []) {
-      if (!line.productId && !line.comboId) continue;
+      // Manual lines (Workstream C) hold no stock claim — skipped explicitly.
+      if ((line as any).isManual || (!line.productId && !line.comboId)) continue;
       if (line.comboId) {
         const snaps = await tx.orderItemComboComponent.findMany({
           where: { orderItemId: line.id },
@@ -1509,7 +1512,9 @@ export class CancelReturnStockService {
     const failures: string[] = [];
 
     for (const item of rtn.items) {
-      if (!item.productId && !item.comboId) continue;
+      // Manual lines (Workstream C) can never be RTN items — skipped
+      // explicitly like every other product-less line.
+      if ((item as any).isManual || (!item.productId && !item.comboId)) continue;
 
       // Claim evidence from the ORIGINAL line the RTN item was split from.
       // A fully-returned line was DELETED by the split (its deducted claim

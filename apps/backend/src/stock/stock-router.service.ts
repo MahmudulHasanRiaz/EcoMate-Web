@@ -7,11 +7,11 @@ export interface StockEngineDecision {
   ms: StockAction;
   pi: StockAction;
   /**
-   * Retained for decision-shape compatibility. resolve() now evaluates the
-   * product's syncManagedStock flag itself (callers pass it in), so this is
-   * always false; callers that still gate on
-   * `!decision.msConditionalOnSync || product.syncManagedStock` behave
-   * exactly as before.
+   * Retained for decision-shape compatibility; always false. Since the
+   * 2026-11-11 mirror removal, no decision is conditional on the
+   * product's syncManagedStock flag — callers that still gate on
+   * `!decision.msConditionalOnSync || product.syncManagedStock` simply
+   * apply whatever non-skip leg the router returned.
    */
   msConditionalOnSync: boolean;
 }
@@ -50,24 +50,18 @@ export class StockRouterService {
     }
 
     // IM ON + INVENTORY_CONTROLLED
-    // Physical inventory is the governing layer. When the product opts into
-    // syncManagedStock (a merchant-settable flag on the product DTO), the
-    // managed counters MIRROR the physical legs so surfaces that read the
-    // managed quantity stay in step with physical stock:
-    //   reserve → managed hold placed alongside the physical allocation
-    //   allocate → no managed leg (the hold was already placed at reserve)
-    //   release/deduct/add → same managed action as the physical leg
-    //   scrap → managed-only (physical scrap is not routed for IC products)
-    // Without the flag the managed side stays untouched, exactly as before.
+    // Physical inventory is the ONLY governing layer (owner decision
+    // 2026-11-11: auto-mirroring removed entirely). The managed counters
+    // are NEVER moved for an IC product — regardless of the product's
+    // syncManagedStock flag, which is now ignored by this router. The
+    // flag parameter is retained only so existing callers keep compiling.
     if (mode === 'INVENTORY_CONTROLLED') {
-      const sync = syncManagedStock === true;
-      if (opType === 'reserve') return { ms: sync ? 'reserve' : 'skip', pi: 'allocate', msConditionalOnSync: false };
-      if (opType === 'release') return { ms: sync ? 'release' : 'skip', pi: 'release', msConditionalOnSync: false };
-      if (opType === 'deduct') return { ms: sync ? 'deduct' : 'skip', pi: 'fulfill', msConditionalOnSync: false };
-      if (opType === 'add') return { ms: sync ? 'add' : 'skip', pi: 'add', msConditionalOnSync: false };
+      if (opType === 'reserve') return { ms: 'skip', pi: 'allocate', msConditionalOnSync: false };
+      if (opType === 'release') return { ms: 'skip', pi: 'release', msConditionalOnSync: false };
+      if (opType === 'deduct') return { ms: 'skip', pi: 'fulfill', msConditionalOnSync: false };
+      if (opType === 'add') return { ms: 'skip', pi: 'add', msConditionalOnSync: false };
       if (opType === 'allocate') return { ms: 'skip', pi: 'allocate', msConditionalOnSync: false };
       if (opType === 'check') return { ms: 'skip', pi: 'check', msConditionalOnSync: false };
-      if (opType === 'scrap' && sync) return MS_ONLY;
       return SKIP;
     }
 

@@ -556,3 +556,80 @@ describe('computePnl — lenses and recognition strip', () => {
     expect(r.recognisedOrders).toBe(2);
   });
 });
+
+describe('computePnl — manual order lines (WS-C)', () => {
+  it('manual line WITH a staff cost: COGS = cost × qty, profit reflects it', () => {
+    const r = computePnl(
+      input([
+        baseOrder({
+          subtotal: 300,
+          total: 300,
+          items: [
+            item(150, 2, {
+              productId: null,
+              isManual: true,
+              manualName: 'Gift wrapping',
+              costSnapshot: 90,
+              costType: 'actual',
+            }),
+          ],
+        }),
+      ]),
+    );
+    expect(r.grossSales.amount).toBe(300);
+    expect(r.cogs.amount).toBe(180);
+    expect(r.grossProfit.amount).toBe(120);
+    expect(r.costNotSet).toEqual({ units: 0, amount: 0, lines: 0 });
+  });
+
+  it('manual line WITHOUT a cost: COGS = full price, profit contribution 0, costNotSet bucket populated', () => {
+    const r = computePnl(
+      input([
+        baseOrder({
+          subtotal: 300,
+          total: 300,
+          items: [
+            item(150, 2, {
+              productId: null,
+              isManual: true,
+              manualName: 'Gift wrapping',
+              // Server froze costSnapshot = price for a not_set line.
+              costSnapshot: 150,
+              costType: 'not_set',
+            }),
+          ],
+        }),
+      ]),
+    );
+    expect(r.grossSales.amount).toBe(300);
+    expect(r.cogs.amount).toBe(300);
+    expect(r.grossProfit.amount).toBe(0);
+    expect(r.costNotSet).toEqual({ units: 2, amount: 300, lines: 1 });
+    // A not_set line is NOT "unavailable" — its COGS figure exists.
+    expect(r.cogs.state).not.toBe('unavailable');
+  });
+
+  it('mixed order: product line profit is untouched by a not_set manual line', () => {
+    const r = computePnl(
+      input([
+        baseOrder({
+          subtotal: 1150,
+          total: 1150,
+          items: [
+            item(500, 2), // product: COGS 60 × 2 = 120
+            item(150, 1, {
+              productId: null,
+              isManual: true,
+              manualName: 'Misc',
+              costSnapshot: 150,
+              costType: 'not_set',
+            }),
+          ],
+        }),
+      ]),
+    );
+    expect(r.cogs.amount).toBe(120 + 150);
+    expect(r.grossProfit.amount).toBe(1150 - 270);
+    expect(r.costNotSet).toEqual({ units: 1, amount: 150, lines: 1 });
+  });
+});

@@ -391,7 +391,9 @@ export class StockReconciliationService implements OnApplicationBootstrap {
     const componentIds: string[] = [];
 
     for (const item of items) {
-      if (!item.productId && !item.comboId) continue;
+      // Manual lines (Workstream C) are explicitly SKIPPED by the finder:
+      // product-less lines can never be a missed reserve/deduct case.
+      if ((item as any).isManual || (!item.productId && !item.comboId)) continue;
 
       if (item.comboId) {
         for (const snap of item.comboComponents) {

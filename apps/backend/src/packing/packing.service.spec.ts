@@ -293,6 +293,8 @@ describe('PackingService', () => {
             productId: null,
             variantId: null,
             productName: 'Product A',
+            isManual: false,
+            manualName: null,
             variantName: 'Red / M',
             sku: 'SKU-001',
             quantity: 2,
@@ -349,6 +351,8 @@ describe('PackingService', () => {
         productId: 'prod-1',
         variantId: null,
         productName: 'Simple Product',
+        isManual: false,
+        manualName: null,
         variantName: '',
         sku: '',
         quantity: 1,
@@ -359,6 +363,41 @@ describe('PackingService', () => {
         images: ['/simple-1.jpg', '/simple-2.jpg'],
         variants: [],
       });
+    });
+
+    it('should show the manual name for a manual order line (WS-C — never "Unknown")', async () => {
+      const mockOrder = {
+        id: 'order-4',
+        displayId: 'ORD-004',
+        guestName: null,
+        guestPhone: null,
+        createdAt: new Date('2025-01-15'),
+        customer: null,
+        items: [
+          {
+            id: 'item-4',
+            productId: null,
+            variantId: null,
+            quantity: 2,
+            variant: null,
+            product: null,
+            isManual: true,
+            manualName: 'Gift wrapping',
+          },
+        ],
+        packingLock: null,
+        status: { id: 'status-confirmed', name: 'Confirmed', color: 'blue' },
+      };
+      (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+        confirmedStatus,
+      );
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([mockOrder]);
+
+      const result = await service.getQueue();
+
+      expect(result.orders[0].items[0].productName).toBe('Gift wrapping');
+      expect(result.orders[0].items[0].isManual).toBe(true);
+      expect(result.orders[0].items[0].manualName).toBe('Gift wrapping');
     });
 
     it('should use guest name when no customer', async () => {

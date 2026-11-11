@@ -181,10 +181,13 @@ export class StockService {
    * a skipped leg must never produce a fabricated ledger entry.
    *
    * A product's managed leg applies only when the managed engine governs it:
-   * MANAGED_STOCK (or legacy null mode), or INVENTORY_CONTROLLED with
-   * syncManagedStock=true (the router's mirror case). For any other product
-   * the managed leg is a complete no-op — no state change — because its
-   * stock lives in the physical layer (or is not tracked at all).
+   * MANAGED_STOCK (or legacy null mode). INVENTORY_CONTROLLED products
+   * NEVER move the managed counters — not even with syncManagedStock=true
+   * (owner decision 2026-11-11: auto-mirroring removed entirely; this
+   * direct-operate guard is the second line of defence behind the
+   * router, which now returns ms='skip' for every IC operation). For any
+   * other product the managed leg is a complete no-op — no state change —
+   * because its stock lives in the physical layer (or is not tracked).
    *
    * `guardAgainstReserved` (scrap): a managedStockQuantity decrement may
    * only consume UNRESERVED on-hand — reserved units belong to open orders
@@ -257,9 +260,7 @@ export class StockService {
       syncManagedStock: boolean;
     }) =>
       p.availabilityMode === 'MANAGED_STOCK' ||
-      p.availabilityMode === null ||
-      (p.availabilityMode === 'INVENTORY_CONTROLLED' &&
-        p.syncManagedStock === true);
+      p.availabilityMode === null;
 
     // Available units for the move being attempted. A reservation can only
     // claim UNRESERVED on-hand; a release can only give back what is held;

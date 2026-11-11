@@ -104,7 +104,10 @@ export class OrderStockDeductService {
     };
 
     for (const oi of fullOrderItems) {
-      if (!oi.productId && !oi.comboId) continue;
+      // Manual lines (Workstream C) are explicitly SKIPPED: product-less,
+      // no reservation exists, and their cost must never be overwritten by
+      // the FIFO actual-cost write in deductStandaloneItem.
+      if ((oi as any).isManual || (!oi.productId && !oi.comboId)) continue;
 
       if (oi.comboId) {
         absorb(await this.deductComboItem(tx, oi, activeCycle?.id, imEnabled, reference, strict, performedBy, skipManagedUnitIds));

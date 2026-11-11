@@ -4,8 +4,8 @@ import { StockService } from '../stock.service';
 /**
  * Managed-engine guards (inventory audit fix round, WS1 items 1, 3, 5, 6, 7):
  *  · reserve can never hold more than unreserved on-hand (product + variant);
- *  · INVENTORY_CONTROLLED products' managed legs are a complete no-op unless
- *    syncManagedStock mirrors them;
+ *  · INVENTORY_CONTROLLED products' managed legs are a complete no-op —
+ *    even with syncManagedStock=true (2026-11-11 mirror removal);
  *  · duplicate targets are aggregated before availability checks;
  *  · negative quantities normalize like the physical path;
  *  · scrap cannot consume reserved units;
@@ -122,7 +122,7 @@ describe('StockService — managed guards', () => {
       expect(tx.managedStockLedger.create).not.toHaveBeenCalled();
     });
 
-    it('INVENTORY_CONTROLLED with syncManagedStock: the managed leg mirrors (moves + ledgers)', async () => {
+    it('INVENTORY_CONTROLLED with syncManagedStock=true: managed leg STILL a complete no-op (mirror removed 2026-11-11)', async () => {
       const { service, tx } = makeService();
       const row = productRow({
         availabilityMode: 'INVENTORY_CONTROLLED',
@@ -133,11 +133,9 @@ describe('StockService — managed guards', () => {
 
       await service.reserve(baseParams({ tx }));
 
-      expect(tx.product.update).toHaveBeenCalledWith({
-        where: { id: 'p1' },
-        data: { reservedStock: { increment: 3 } },
-      });
-      expect(tx.managedStockLedger.create).toHaveBeenCalledTimes(1);
+      expect(tx.product.update).not.toHaveBeenCalled();
+      expect(tx.managedStockLedger.create).not.toHaveBeenCalled();
+      expect(tx.inventoryLog.create).not.toHaveBeenCalled();
     });
 
     it('INVENTORY_CONTROLLED deduct writes no fabricated ledger rows', async () => {
