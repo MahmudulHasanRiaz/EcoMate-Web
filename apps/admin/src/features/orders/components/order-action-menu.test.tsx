@@ -218,26 +218,32 @@ describe('OrderActionMenu (Task 4 Fix 8)', () => {
         status: { id: `st-${status}`, name: status },
       })) as any
       await userEvent.click(getByRole('button', { name: 'Order actions' }))
-      const item = getByText('Create Exchange Order', { exact: true })
-      try {
+      // Wait POSITIVELY for the menu to be painted ('Create return' is always
+      // present for SALE orders). The previous shape first asserted the
+      // exchange item was ABSENT via expect.element(...).not.toBeInTheDocument()
+      // — a negative poll that can never succeed while the item is rendered
+      // disabled, so it burned its full assertion timeout (~10s+) on every
+      // run and left the real checks to race the 15s test timeout (CI
+      // 2026-11-11: all five variants measured 15–19s; which three crossed
+      // the line varied per run). Query the painted DOM synchronously
+      // instead: hidden OR disabled-with-reason, decided in milliseconds.
+      await expect.element(getByText('Create return', { exact: true })).toBeInTheDocument()
+      const el = Array.from(document.querySelectorAll('[role="menuitem"]')).find((n) =>
+        n.textContent?.includes('Create Exchange Order'),
+      ) as HTMLElement | undefined
+      if (!el) {
         // Hidden gating is acceptable.
-        await expect.element(item).not.toBeInTheDocument()
-      } catch {
-        // Visible gating must be disabled with a surfaced reason.
-        const el = Array.from(document.querySelectorAll('[role="menuitem"]')).find((n) =>
-          n.textContent?.includes('Create Exchange Order'),
-        ) as HTMLElement | undefined
-        expect(el).toBeDefined()
-        const disabledAttr =
-          el!.getAttribute('aria-disabled') === 'true' ||
-          el!.getAttribute('data-disabled') === 'true' ||
-          el!.hasAttribute('disabled')
-        expect(disabledAttr).toBe(true)
-        const host: HTMLElement = (el!.closest('[title]') as HTMLElement | null) ?? el!
-        const reason =
-          host.getAttribute('title') ?? document.body.textContent ?? ''
-        expect(reason).toMatch(/shipping|delivered|partial|return pending|eligible|status/i)
+        return
       }
+      // Visible gating must be disabled with a surfaced reason.
+      const disabledAttr =
+        el.getAttribute('aria-disabled') === 'true' ||
+        el.getAttribute('data-disabled') === 'true' ||
+        el.hasAttribute('disabled')
+      expect(disabledAttr).toBe(true)
+      const host: HTMLElement = (el.closest('[title]') as HTMLElement | null) ?? el
+      const reason = host.getAttribute('title') ?? document.body.textContent ?? ''
+      expect(reason).toMatch(/shipping|delivered|partial|return pending|eligible|status/i)
     },
   )
 
