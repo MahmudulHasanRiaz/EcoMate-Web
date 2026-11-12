@@ -1,4 +1,8 @@
-import { ReconciliationFinderService } from './reconciliation-finder.service';
+import {
+  ReconciliationFinderService,
+  computeManagedModeResidue,
+} from './reconciliation-finder.service';
+import { Q8_SETTLEMENT_NOTE_PREFIX } from './q8-settle.service';
 
 /**
  * Finder tests (2026-10-30 directive §3/§5): record-based classification —
@@ -429,6 +433,133 @@ describe('ReconciliationFinderService', () => {
     });
     const report = await service.buildReport();
     expect(report.counts.R6).toBe(0);
+  });
+
+  it('R6: Q8-settle entries after the mode-change entry do NOT flag (qty already 0)', async () => {
+    // The staging Gadget case (2026-11-12): the settle released 2 live
+    // holds, cleared 2 already-deducted flags and swept the residual —
+    // 5 RELEASE/ADJUSTMENT entries after the mode change, managed qty
+    // already 0. Nothing is stranded; the settle's own entries must not
+    // re-create the R6 flag (and must not invite an R6-Apply).
+    const { service } = makeService({
+      q4Products: [
+        { id: 'p-gadget', name: 'TEST-AUDIT Gadget', type: 'simple', managedStockQuantity: 0, variants: [] },
+      ],
+      managedLedger: [
+        {
+          productId: 'p-gadget',
+          variantId: null,
+          note: 'Mode changed from MANAGED_STOCK to INVENTORY_CONTROLLED — snapshot: 2 units',
+          performedAt: new Date('2026-11-01T10:00:00.000Z'),
+        },
+        {
+          productId: 'p-gadget',
+          variantId: null,
+          note: `${Q8_SETTLEMENT_NOTE_PREFIX}released 1 reserved unit(s) for order ORD-261024-0003 (managed layer retired for INVENTORY_CONTROLLED; the hold is inert)`,
+          performedAt: new Date('2026-11-12T10:00:00.000Z'),
+        },
+        {
+          productId: 'p-gadget',
+          variantId: null,
+          note: `${Q8_SETTLEMENT_NOTE_PREFIX}released 1 reserved unit(s) for order ORD-261022-0008 (managed layer retired for INVENTORY_CONTROLLED; the hold is inert)`,
+          performedAt: new Date('2026-11-12T10:00:01.000Z'),
+        },
+        {
+          productId: 'p-gadget',
+          variantId: null,
+          note: `${Q8_SETTLEMENT_NOTE_PREFIX}cleared already-deducted reservation flag for order ORD-261024-0002 (stock was deducted at delivery; no counter move)`,
+          performedAt: new Date('2026-11-12T10:00:02.000Z'),
+        },
+        {
+          productId: 'p-gadget',
+          variantId: null,
+          note: `${Q8_SETTLEMENT_NOTE_PREFIX}cleared already-deducted reservation flag for order ORD-261023-0003 (stock was deducted at delivery; no counter move)`,
+          performedAt: new Date('2026-11-12T10:00:03.000Z'),
+        },
+        {
+          productId: 'p-gadget',
+          variantId: null,
+          note: `${Q8_SETTLEMENT_NOTE_PREFIX}cleared 1 orphaned reserved unit(s) with no backing reservation line (managed layer retired)`,
+          performedAt: new Date('2026-11-12T10:00:04.000Z'),
+        },
+      ],
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R6).toBe(0);
+    expect(report.rows.filter((r) => r.category === 'R6')).toHaveLength(0);
+  });
+
+  it('R6: a genuine managed entry after the mode change STILL flags, even with settle entries around it', async () => {
+    const { service } = makeService({
+      q4Products: [
+        { id: 'p13', name: 'Still Moving', type: 'simple', managedStockQuantity: 0, variants: [] },
+      ],
+      managedLedger: [
+        {
+          productId: 'p13',
+          variantId: null,
+          note: 'Mode changed from MANAGED_STOCK to INVENTORY_CONTROLLED — snapshot: 4 units',
+          performedAt: new Date('2026-09-01T10:00:00.000Z'),
+        },
+        {
+          productId: 'p13',
+          variantId: null,
+          note: `${Q8_SETTLEMENT_NOTE_PREFIX}released 1 reserved unit(s) for order ORD-261024-0003 (managed layer retired for INVENTORY_CONTROLLED; the hold is inert)`,
+          performedAt: new Date('2026-09-02T10:00:00.000Z'),
+        },
+        {
+          productId: 'p13',
+          variantId: null,
+          note: 'Reserved for ORD-261112-0001',
+          performedAt: new Date('2026-09-03T10:00:00.000Z'),
+        },
+      ],
+    });
+    const report = await service.buildReport();
+    expect(report.counts.R6).toBe(1);
+    const row = report.rows.find((r) => r.category === 'R6')!;
+    expect(row.strandedManagedQty).toBe(0);
+    expect(row.evidence).toContain('ledger residue');
+    expect(row.evidence).toContain('1 managed entry');
+  });
+
+  it('computeManagedModeResidue: settle-only after the mode change is no residue; a genuine entry before the settle entries still counts', () => {
+    const modeChange = {
+      note: 'Mode changed from MANAGED_STOCK to INVENTORY_CONTROLLED — snapshot: 4 units',
+      performedAt: new Date('2026-09-01T10:00:00.000Z'),
+    };
+    const settleOnly = computeManagedModeResidue([
+      modeChange,
+      {
+        note: `${Q8_SETTLEMENT_NOTE_PREFIX}released 1 reserved unit(s) for order ORD-1`,
+        performedAt: new Date('2026-09-02T10:00:00.000Z'),
+      },
+      {
+        note: `${Q8_SETTLEMENT_NOTE_PREFIX}cleared already-deducted reservation flag for order ORD-2`,
+        performedAt: new Date('2026-09-02T10:00:01.000Z'),
+      },
+    ]);
+    expect(settleOnly).toEqual({
+      residue: false,
+      lastModeChangeAt: new Date('2026-09-01T10:00:00.000Z'),
+      laterEntries: 0,
+    });
+    // Genuine movement BEFORE the settle entries must not be masked by
+    // them — the filter is per-entry, not "ignore everything after the
+    // first settle entry".
+    const genuineThenSettle = computeManagedModeResidue([
+      modeChange,
+      {
+        note: 'Reserved for ORD-261112-0001',
+        performedAt: new Date('2026-09-02T10:00:00.000Z'),
+      },
+      {
+        note: `${Q8_SETTLEMENT_NOTE_PREFIX}released 1 reserved unit(s) for order ORD-1`,
+        performedAt: new Date('2026-09-03T10:00:00.000Z'),
+      },
+    ]);
+    expect(genuineThenSettle.residue).toBe(true);
+    expect(genuineThenSettle.laterEntries).toBe(1);
   });
 
   it('R7: physical row with NO costing lot and NO physical-ledger origin is report-only flagged; a lot-backed row is not', async () => {
