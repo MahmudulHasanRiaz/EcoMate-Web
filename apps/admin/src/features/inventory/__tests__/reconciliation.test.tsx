@@ -11,7 +11,7 @@ import { Reconciliation } from '../reconciliation'
  * checks hide their detail until expanded, and the Q8 settle card is
  * superadmin-only with preview/settle against the q8-settle contract.
  * One-click flow (2026-11-12): neutral verdict banner before any report,
- * details closed by default, one "স্টক যাচাই ও ঠিক করুন" button → preview
+ * details closed by default, one "Check & fix stock" button → preview
  * → exactly one confirm → POST /inventory/reconcile/fix-all → result
  * screen with auto-created backup id and a fresh verdict banner.
  */
@@ -252,7 +252,7 @@ describe('Reconciliation page', () => {
     authState.permissions = ['run_stock_reconciliation']
     renderPage()
     // The old UI lives behind details (default closed).
-    await userEvent.click(page.getByRole('button', { name: /বিস্তারিত দেখুন/i }))
+    await userEvent.click(page.getByRole('button', { name: /Show details/i }))
     await expect.element(page.getByText(/Danger: Apply writes real stock/i)).toBeInTheDocument()
 
     // Run the dry-run report.
@@ -299,7 +299,7 @@ describe('Reconciliation page', () => {
   it('hides check details until the row is expanded, keeping the 400-char collapse', async () => {
     authState.permissions = ['run_stock_reconciliation']
     renderPage()
-    await userEvent.click(page.getByRole('button', { name: /বিস্তারিত দেখুন/i }))
+    await userEvent.click(page.getByRole('button', { name: /Show details/i }))
     await userEvent.click(page.getByRole('button', { name: /run report/i }))
     await expect.element(page.getByText('RTN-1')).toBeInTheDocument()
 
@@ -321,7 +321,7 @@ describe('Reconciliation page', () => {
     authState.permissions = ['run_stock_reconciliation']
     authState.role = 'admin'
     renderPage()
-    await userEvent.click(page.getByRole('button', { name: /বিস্তারিত দেখুন/i }))
+    await userEvent.click(page.getByRole('button', { name: /Show details/i }))
     await expect
       .element(page.getByText(/Settle orphaned Q8 units/i))
       .not.toBeInTheDocument()
@@ -331,7 +331,7 @@ describe('Reconciliation page', () => {
     authState.permissions = ['run_stock_reconciliation']
     authState.role = 'superadmin'
     renderPage()
-    await userEvent.click(page.getByRole('button', { name: /বিস্তারিত দেখুন/i }))
+    await userEvent.click(page.getByRole('button', { name: /Show details/i }))
     await expect.element(page.getByText(/Settle orphaned Q8 units/i)).toBeInTheDocument()
 
     // Preview is a dry run — nothing is written.
@@ -365,20 +365,20 @@ describe('Reconciliation page', () => {
   it('details are closed by default and the banner is neutral before any check', async () => {
     authState.permissions = ['run_stock_reconciliation']
     renderPage()
-    await expect.element(page.getByText(/এখনো যাচাই করা হয়নি/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/Not checked yet/i)).toBeInTheDocument()
     await expect
-      .element(page.getByRole('button', { name: /স্টক যাচাই ও ঠিক করুন/i }))
+      .element(page.getByRole('button', { name: /Check & fix stock/i }))
       .toBeInTheDocument()
     // Old UI hidden until details are opened.
     await expect
       .element(page.getByRole('button', { name: /run report/i }))
       .not.toBeInTheDocument()
-    await userEvent.click(page.getByRole('button', { name: /বিস্তারিত দেখুন/i }))
+    await userEvent.click(page.getByRole('button', { name: /Show details/i }))
     await expect
       .element(page.getByRole('button', { name: /run report/i }))
       .toBeInTheDocument()
     await expect
-      .element(page.getByRole('button', { name: /বিস্তারিত লুকান/i }))
+      .element(page.getByRole('button', { name: /Hide details/i }))
       .toBeInTheDocument()
   })
 
@@ -387,21 +387,21 @@ describe('Reconciliation page', () => {
     authState.role = 'admin'
     renderPage()
 
-    await userEvent.click(page.getByRole('button', { name: /স্টক যাচাই ও ঠিক করুন/i }))
+    await userEvent.click(page.getByRole('button', { name: /Check & fix stock/i }))
 
-    // Preview: plain Bengali lines, Bengali digits, no R/Q codes.
-    await expect.element(page.getByText(/১টা মিস হওয়া restock যোগ হবে/i)).toBeInTheDocument()
+    // Preview: plain English lines, no R/Q codes.
+    await expect.element(page.getByText(/1 missed restock\(s\) will be added/i)).toBeInTheDocument()
     await expect
-      .element(page.getByText(/১টা আটকে থাকা managed stock ছেড়ে দেওয়া হবে/i))
+      .element(page.getByText(/1 stranded managed stock unit\(s\) will be released/i))
       .toBeInTheDocument()
     await expect
-      .element(page.getByText(/১টা পুরনো অর্ডারের Return রেকর্ড তৈরি হবে/i))
+      .element(page.getByText(/A Return record will be created for 1 old order\(s\)/i))
       .toBeInTheDocument()
-    await expect.element(page.getByText(/২টা জিনিস নিজে দেখতে হবে/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/2 item\(s\) need a manual check/i)).toBeInTheDocument()
     // Non-superadmin: no Q8 settle line, and the q8-settle endpoint is
     // never called in the default flow.
     await expect
-      .element(page.getByText(/আটকে থাকা reservation/i))
+      .element(page.getByText(/Stuck reservation/i))
       .not.toBeInTheDocument()
     expect(mockPost).not.toHaveBeenCalledWith(
       '/inventory/reconciliation/q8-settle',
@@ -410,9 +410,9 @@ describe('Reconciliation page', () => {
     )
 
     // Exactly one explicit confirm: disabled until the checkbox is ticked.
-    const fixBtn = page.getByRole('button', { name: /^ঠিক করুন$/i })
+    const fixBtn = page.getByRole('button', { name: /^Fix$/i })
     await expect.element(fixBtn).toBeDisabled()
-    await userEvent.click(page.getByText(/আমি বুঝেছি/i))
+    await userEvent.click(page.getByText(/I understand/i))
     await expect.element(fixBtn).not.toBeDisabled()
 
     await userEvent.click(fixBtn)
@@ -423,22 +423,22 @@ describe('Reconciliation page', () => {
     )
 
     // Result screen: applied/skipped, why settle was skipped, auto backup.
-    await expect.element(page.getByText(/ঠিক করা হয়েছে/i)).toBeInTheDocument()
-    await expect.element(page.getByText(/৩টা সারি ঠিক হয়েছে/i)).toBeInTheDocument()
-    await expect.element(page.getByText(/১টা বাদ গেছে/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/^Fixed$/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/3 row\(s\) fixed/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/1 skipped/i)).toBeInTheDocument()
     await expect.element(page.getByText('s1')).toBeInTheDocument()
     await expect.element(page.getByText(/no longer qualifies/i)).toBeInTheDocument()
     await expect
-      .element(page.getByText(/Q8 settle হয়নি: Only superadmins can settle orphaned units\./i))
+      .element(page.getByText(/Q8 settle did not run: Only superadmins can settle orphaned units\./i))
       .toBeInTheDocument()
     await expect.element(page.getByText('backup-auto-123')).toBeInTheDocument()
     await expect
-      .element(page.getByRole('button', { name: /কপি করুন/i }))
+      .element(page.getByRole('button', { name: /Copy/i }))
       .toBeInTheDocument()
-    await expect.element(page.getByText(/আবার যাচাই: ঠিক আছে/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/Re-check: all good/i)).toBeInTheDocument()
     // Auto re-run dry-run refreshes the verdict banner (REPORT still has
-    // 3 applicable rows + the failing Q1 check = ৪ problems).
-    await expect.element(page.getByText(/৪টা সমস্যা পাওয়া গেছে/i)).toBeInTheDocument()
+    // 3 applicable rows + the failing Q1 check = 4 problems).
+    await expect.element(page.getByText(/4 problems found/i)).toBeInTheDocument()
     expect(mockPost.mock.calls.filter((c) => c[0] === '/inventory/reconcile').length).toBe(2)
   })
 
@@ -447,9 +447,9 @@ describe('Reconciliation page', () => {
     authState.role = 'superadmin'
     renderPage()
 
-    await userEvent.click(page.getByRole('button', { name: /স্টক যাচাই ও ঠিক করুন/i }))
+    await userEvent.click(page.getByRole('button', { name: /Check & fix stock/i }))
     await expect
-      .element(page.getByText(/২টা আটকে থাকা reservation ছেড়ে দেওয়া হবে/i))
+      .element(page.getByText(/2 stuck reservation\(s\) will be released/i))
       .toBeInTheDocument()
     expect(mockPost).toHaveBeenCalledWith(
       '/inventory/reconciliation/q8-settle',
@@ -457,10 +457,10 @@ describe('Reconciliation page', () => {
       expect.anything(),
     )
 
-    await userEvent.click(page.getByText(/আমি বুঝেছি/i))
-    await userEvent.click(page.getByRole('button', { name: /^ঠিক করুন$/i }))
+    await userEvent.click(page.getByText(/I understand/i))
+    await userEvent.click(page.getByRole('button', { name: /^Fix$/i }))
     await expect
-      .element(page.getByText(/২ ইউনিট ছেড়ে দেওয়া হয়েছে, ১টা flag পরিষ্কার হয়েছে/i))
+      .element(page.getByText(/2 unit\(s\) released, 1 flag\(s\) cleared/i))
       .toBeInTheDocument()
   })
 
@@ -480,11 +480,11 @@ describe('Reconciliation page', () => {
     })
     renderPage()
 
-    await userEvent.click(page.getByRole('button', { name: /স্টক যাচাই ও ঠিক করুন/i }))
-    await expect.element(page.getByText(/ঠিক করার মতো কিছু নেই/i)).toBeInTheDocument()
-    await expect.element(page.getByText(/সব ঠিক আছে/i)).toBeInTheDocument()
+    await userEvent.click(page.getByRole('button', { name: /Check & fix stock/i }))
+    await expect.element(page.getByText(/Nothing to fix/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/All good/i)).toBeInTheDocument()
     await expect
-      .element(page.getByRole('button', { name: /^ঠিক করুন$/i }))
+      .element(page.getByRole('button', { name: /^Fix$/i }))
       .toBeDisabled()
   })
 
@@ -493,13 +493,13 @@ describe('Reconciliation page', () => {
     flowState.fixAllShouldFail = true
     renderPage()
 
-    await userEvent.click(page.getByRole('button', { name: /স্টক যাচাই ও ঠিক করুন/i }))
-    await expect.element(page.getByText(/১টা মিস হওয়া restock যোগ হবে/i)).toBeInTheDocument()
-    await userEvent.click(page.getByText(/আমি বুঝেছি/i))
-    await userEvent.click(page.getByRole('button', { name: /^ঠিক করুন$/i }))
+    await userEvent.click(page.getByRole('button', { name: /Check & fix stock/i }))
+    await expect.element(page.getByText(/1 missed restock\(s\) will be added/i)).toBeInTheDocument()
+    await userEvent.click(page.getByText(/I understand/i))
+    await userEvent.click(page.getByRole('button', { name: /^Fix$/i }))
 
     await expect.element(page.getByText(/Backup did not finish\./i)).toBeInTheDocument()
-    await expect.element(page.getByText(/কিছু লেখা হয়নি/i)).toBeInTheDocument()
-    await expect.element(page.getByText(/ঠিক করা হয়েছে/i)).not.toBeInTheDocument()
+    await expect.element(page.getByText(/Nothing was written/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/Fixed/i)).not.toBeInTheDocument()
   })
 })

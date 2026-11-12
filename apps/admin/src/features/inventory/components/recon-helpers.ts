@@ -6,10 +6,6 @@ import type { Q8SettleResult, ReconReport, ReconRow } from '../reconciliation'
  * apps/admin/src/features/inventory/__tests__/recon-one-click.test.tsx.
  */
 
-/** Bengali digits: 0→০ … 9→৯. */
-export const toBnDigits = (n: number): string =>
-  String(n).replace(/\d/g, (d) => '০১২৩৪৫৬৭৮৯'[Number(d)])
-
 /** Rows the backend will apply: R1/R2/R6 plus evidence-backed R8. */
 export const isApplicableReconRow = (r: ReconRow): boolean =>
   r.category === 'R1' ||
@@ -50,8 +46,8 @@ export function computeReconVerdict(report: ReconReport | null): ReconVerdict {
 export interface ReconPreviewLine {
   key: 'R1' | 'R2' | 'R6' | 'R8' | 'Q8'
   count: number
-  /** Plain Bengali line, Bengali digits, no R/Q codes visible to the user
-      except as a stable key for tests — the text itself has no codes. */
+  /** Plain English line, no R/Q codes visible to the user except as a
+      stable key for tests — the text itself has no codes. */
   text: string
 }
 
@@ -83,27 +79,27 @@ export function buildReconPreview(
 
   const fixLines: ReconPreviewLine[] = []
   if (r1 > 0) {
-    fixLines.push({ key: 'R1', count: r1, text: `${toBnDigits(r1)}টা মিস হওয়া restock যোগ হবে` })
+    fixLines.push({ key: 'R1', count: r1, text: `${r1} missed restock(s) will be added` })
   }
   if (r2 > 0) {
     fixLines.push({
       key: 'R2',
       count: r2,
-      text: `${toBnDigits(r2)}টা ফেরত মালের physical stock ঠিক হবে`,
+      text: `${r2} returned item(s)' physical stock will be fixed`,
     })
   }
   if (r6 > 0) {
     fixLines.push({
       key: 'R6',
       count: r6,
-      text: `${toBnDigits(r6)}টা আটকে থাকা managed stock ছেড়ে দেওয়া হবে`,
+      text: `${r6} stranded managed stock unit(s) will be released`,
     })
   }
   if (r8 > 0) {
     fixLines.push({
       key: 'R8',
       count: r8,
-      text: `${toBnDigits(r8)}টা পুরনো অর্ডারের Return রেকর্ড তৈরি হবে`,
+      text: `A Return record will be created for ${r8} old order(s)`,
     })
   }
   if (isSuperAdmin && q8Preview) {
@@ -112,7 +108,7 @@ export function buildReconPreview(
       fixLines.push({
         key: 'Q8',
         count: released,
-        text: `${toBnDigits(released)}টা আটকে থাকা reservation ছেড়ে দেওয়া হবে`,
+        text: `${released} stuck reservation(s) will be released`,
       })
     }
   }

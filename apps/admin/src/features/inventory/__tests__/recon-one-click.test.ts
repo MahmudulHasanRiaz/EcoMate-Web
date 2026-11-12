@@ -3,13 +3,12 @@ import {
   buildReconPreview,
   computeReconVerdict,
   isApplicableReconRow,
-  toBnDigits,
 } from '../components/recon-helpers'
 import type { Q8SettleResult, ReconReport, ReconRow } from '../reconciliation'
 
 /**
  * Pure-helper tests for the Reconciliation one-click-fix flow
- * (2026-11-12): verdict banner logic, Bengali-digit preview lines, and
+ * (2026-11-12): verdict banner logic, plain-English preview lines, and
  * the applicable-row rule. No rendering, no API.
  */
 
@@ -47,14 +46,6 @@ const Q8_PREVIEW: Q8SettleResult = {
   remainingFails: 0,
   detail: 'settled 2 orphaned units',
 }
-
-describe('toBnDigits', () => {
-  it('converts every digit to Bengali', () => {
-    expect(toBnDigits(0)).toBe('০')
-    expect(toBnDigits(12)).toBe('১২')
-    expect(toBnDigits(2026)).toBe('২০২৬')
-  })
-})
 
 describe('isApplicableReconRow', () => {
   it('applies R1/R2/R6 and evidence-backed R8, never R8-H/R3/R4/R7', () => {
@@ -123,14 +114,14 @@ describe('buildReconPreview', () => {
     counts: { R1: 2, R2: 1, R3: 3, R4: 1, R5: {}, R6: 1, R7: 2, R8: 1, R8H: 1 },
   })
 
-  it('lists one plain-Bengali line per fixable category with Bengali digits', () => {
+  it('lists one plain-English line per fixable category', () => {
     const p = buildReconPreview(mixed, null, false)
     expect(p.fixable).toBe(true)
     expect(p.fixLines.map((l) => l.text)).toEqual([
-      '২টা মিস হওয়া restock যোগ হবে',
-      '১টা ফেরত মালের physical stock ঠিক হবে',
-      '১টা আটকে থাকা managed stock ছেড়ে দেওয়া হবে',
-      '১টা পুরনো অর্ডারের Return রেকর্ড তৈরি হবে',
+      '2 missed restock(s) will be added',
+      "1 returned item(s)' physical stock will be fixed",
+      '1 stranded managed stock unit(s) will be released',
+      'A Return record will be created for 1 old order(s)',
     ])
     // R8-H is not a fix line — only the evidence-backed R8 row counts.
     expect(p.fixLines.filter((l) => l.key === 'R8').map((l) => l.count)).toEqual([1])
@@ -144,7 +135,7 @@ describe('buildReconPreview', () => {
   it('adds the Q8 line from the settle preview for superadmins only', () => {
     const admin = buildReconPreview(mixed, Q8_PREVIEW, true)
     expect(admin.fixLines.map((l) => l.text)).toContain(
-      '২টা আটকে থাকা reservation ছেড়ে দেওয়া হবে',
+      '2 stuck reservation(s) will be released',
     )
     const nonAdmin = buildReconPreview(mixed, Q8_PREVIEW, false)
     expect(nonAdmin.fixLines.some((l) => l.key === 'Q8')).toBe(false)

@@ -59,14 +59,14 @@ export { isApplicableReconRow } from './components/recon-helpers'
  * compact Apply card, and a superadmin-only card that settles orphaned
  * Q8 units via POST /inventory/reconciliation/q8-settle.
  *
- * One-click flow (2026-11-12): the default view is plain Bengali — a
- * verdict banner + one "স্টক যাচাই ও ঠিক করুন" button. Clicking it runs
+ * One-click flow (2026-11-12): the default view is plain English — a
+ * verdict banner + one "Check & fix stock" button. Clicking it runs
  * the dry-run, then a preview screen (what WILL be fixed, what will NOT),
  * then exactly ONE explicit confirm executes POST
  * /inventory/reconcile/fix-all { confirmed: true } — the backend creates
  * the backup itself, derives the applicable rows from a fresh report
  * (the default flow never sends rowIds), and settles Q8 for superadmins.
- * The full existing UI lives behind "বিস্তারিত দেখুন" (default closed),
+ * The full existing UI lives behind "Show details" (default closed),
  * unchanged, so no capability is lost.
  */
 
@@ -336,7 +336,7 @@ export function Reconciliation() {
       setFixAllResult(data)
       setFixAllError(null)
       setFlowStep('done')
-      toast.success('ঠিক করা হয়েছে — নতুন যাচাই চলছে।')
+      toast.success('Fixed — running a new check.')
       // Fresh verdict: clear the stale report, then re-run the dry-run.
       setReport(null)
       reportMut.mutate()
@@ -439,7 +439,7 @@ export function Reconciliation() {
                 ) : (
                   <Wrench className='mr-2 h-4 w-4' />
                 )}
-                {flowStep === 'checking' ? 'যাচাই চলছে…' : 'স্টক যাচাই ও ঠিক করুন'}
+                {flowStep === 'checking' ? 'Checking…' : 'Check & fix stock'}
               </Button>
             </div>
 
@@ -479,10 +479,10 @@ export function Reconciliation() {
                 ) : (
                   <ChevronDown className='mr-2 h-4 w-4' />
                 )}
-                {showDetails ? 'বিস্তারিত লুকান' : 'বিস্তারিত দেখুন'}
+                {showDetails ? 'Hide details' : 'Show details'}
               </Button>
               <span className='text-sm text-muted-foreground'>
-                সব তথ্য, সারি ও পুরনো Apply এখানে আছে।
+                All info, rows and the old Apply live here.
               </span>
             </div>
 
