@@ -102,12 +102,18 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
   // server round-trip.
   const insufficientItems = useMemo(
     () =>
-      items
-        .filter((item) => {
-          const onHand = itemOnHand.get(item.id)
-          return item.quantity < 0 && onHand !== null && Math.abs(item.quantity) > onHand
-        })
-        .map((item) => ({ item, onHand: itemOnHand.get(item.id) as number })),
+      items.flatMap((item) => {
+        // `!= null` narrows out BOTH null (unknown) and undefined (key
+        // absent) — `!== null` alone left undefined in the type, which
+        // broke the comparison below (TS18048). Unknown never blocks: a
+        // null/undefined on-hand simply skips the item here and the
+        // server stays the backstop.
+        const onHand = itemOnHand.get(item.id)
+        if (item.quantity < 0 && onHand != null && Math.abs(item.quantity) > onHand) {
+          return [{ item, onHand }]
+        }
+        return []
+      }),
     [items, itemOnHand],
   )
 
@@ -488,7 +494,12 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
                     {items.map((item) => {
                       const showBinCost = item.quantity > 0
                       const onHand = itemOnHand.get(item.id)
-                      const insufficient = item.quantity < 0 && onHand !== null && Math.abs(item.quantity) > onHand
+                      // `!= null` narrows out BOTH null (unknown) and
+                      // undefined (key absent) — `!== null` alone left
+                      // undefined in the type (TS18048). Runtime behavior
+                      // unchanged: undefined never flagged insufficient
+                      // anyway (`x > undefined` is false).
+                      const insufficient = item.quantity < 0 && onHand != null && Math.abs(item.quantity) > onHand
                       return (
                         <TableRow key={item.id} className="hover:bg-muted/5">
                           <TableCell className="align-middle">
