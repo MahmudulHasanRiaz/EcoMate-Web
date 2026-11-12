@@ -17,7 +17,14 @@ describe('InventoryController', () => {
       stockOverview: jest.fn(),
       getLedger: jest.fn(),
     };
-    const controller = new InventoryController(service as any, {} as any);
+    const controller = new InventoryController(
+      service as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
 
     beforeEach(() => jest.clearAllMocks());
 

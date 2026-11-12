@@ -5,7 +5,9 @@ import { InventoryService } from './inventory.service';
 import { ManagedStockLedgerService } from './managed-stock-ledger.service';
 import { ReconciliationFinderService } from '../reconciliation/reconciliation-finder.service';
 import { ReconciliationApplyService } from '../reconciliation/reconciliation-apply.service';
+import { ReconciliationFixAllService } from '../reconciliation/reconciliation-fix-all.service';
 import { Q8SettleService } from '../reconciliation/q8-settle.service';
+import { BackupModule } from '../backup/backup.module';
 import { StockModule } from '../stock/stock.module';
 
 @Module({
@@ -15,6 +17,7 @@ import { StockModule } from '../stock/stock.module';
     ManagedStockLedgerService,
     ReconciliationFinderService,
     ReconciliationApplyService,
+    ReconciliationFixAllService,
     Q8SettleService,
   ],
   exports: [
@@ -22,8 +25,9 @@ import { StockModule } from '../stock/stock.module';
     ManagedStockLedgerService,
     ReconciliationFinderService,
     ReconciliationApplyService,
+    ReconciliationFixAllService,
     Q8SettleService,
   ],
-  imports: [StockModule],
+  imports: [StockModule, BackupModule],
 })
 export class InventoryModule {}

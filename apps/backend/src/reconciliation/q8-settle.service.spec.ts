@@ -501,6 +501,7 @@ describe('InventoryController q8-settle endpoint', () => {
       {} as any,
       {} as any,
       q8Settle,
+      {} as any,
     );
     const out = await controller.q8Settle(
       { dryRun: true, performedBy: 'attacker@evil.example' } as any,

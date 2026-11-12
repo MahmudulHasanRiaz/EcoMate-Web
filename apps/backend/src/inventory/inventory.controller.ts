@@ -10,8 +10,10 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { InventoryEnabledGuard } from '../stock/inventory-enabled.guard';
 import { ReconciliationFinderService } from '../reconciliation/reconciliation-finder.service';
 import { ReconciliationApplyService } from '../reconciliation/reconciliation-apply.service';
+import { ReconciliationFixAllService } from '../reconciliation/reconciliation-fix-all.service';
 import { Q8SettleService } from '../reconciliation/q8-settle.service';
 import { ReconcileApplyDto } from './dto/reconcile-apply.dto';
+import { ReconcileFixAllDto } from './dto/reconcile-fix-all.dto';
 import {
   AdjustInventoryDto,
   BulkAdjustInventoryDto,
@@ -33,6 +35,7 @@ export class InventoryController {
     private readonly reconApply: ReconciliationApplyService,
     private readonly prisma: PrismaService,
     private readonly q8SettleService: Q8SettleService,
+    private readonly reconFixAll: ReconciliationFixAllService,
   ) {}
 
   /** Parse a client perPage into 1..MAX_PER_PAGE (fallback on garbage input). */
@@ -325,6 +328,35 @@ export class InventoryController {
       backupId: body.backupId,
       confirmed: body.confirmed,
       rowIds: body.rowIds ?? [],
+    });
+  }
+
+  /**
+   * One-click reconciliation fix (2026-11-12, recon simplification
+   * round): auto-backup → guarded apply of the evidence-backed rows
+   * (R1/R2/R6/R8) → Q8 settle (superadmin only) → fresh post-fix
+   * report. The acting user is recorded from the auth token, never from
+   * the body; the service enforces confirmed === true, the RUNNING
+   * pre-check, and the completed-backup gate in depth. No backupId is
+   * typed — the service takes its own db_only backup and returns the
+   * real completed BackupJob id.
+   */
+  @Roles('superadmin', 'admin', 'employee')
+  @Permissions('run_stock_reconciliation')
+  @Post('reconcile/fix-all')
+  async reconcileFixAll(
+    @Body() body: ReconcileFixAllDto,
+    @CurrentUser() user: { email: string; role?: string },
+  ) {
+    if (body.confirmed !== true) {
+      throw new BadRequestException(
+        'Fix-all requires confirmed=true — preview the report and confirm first.',
+      );
+    }
+    return this.reconFixAll.fixAll({
+      performedBy: user?.email ?? 'unknown',
+      isSuperAdmin: user?.role === 'superadmin',
+      confirmed: body.confirmed,
     });
   }
 
