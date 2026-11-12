@@ -21,13 +21,25 @@ function makeController() {
     apply: jest.fn(async () => ({ runId: 'run-1', applied: [], skipped: [] })),
   };
   const prisma: any = {};
+  const q8Settle: any = { settle: jest.fn(async () => ({})) };
+  const fixAll: any = {
+    fixAll: jest.fn(async () => ({
+      backupId: 'bk-1',
+      apply: { runId: 'run-1', applied: [], skipped: [], idempotency: {} },
+      settle: { ran: false, reason: 'x' },
+      postReport: { counts: {}, checks: [] },
+      generatedAt: new Date().toISOString(),
+    })),
+  };
   const controller = new InventoryController(
     inventoryService,
     finder,
     apply,
     prisma,
+    q8Settle,
+    fixAll,
   );
-  return { controller, finder, apply };
+  return { controller, finder, apply, q8Settle, fixAll };
 }
 
 describe('InventoryController reconciliation endpoints', () => {
@@ -106,6 +118,69 @@ describe('InventoryController reconciliation endpoints', () => {
       // service can enforce it in depth (it used to stop at the controller).
       confirmed: true,
       rowIds: ['R1|x'],
+    });
+  });
+
+  // One-click fix-all (2026-11-12, recon simplification round): same
+  // guard as apply, refuses without confirmed=true, records the actor
+  // from the token, and passes isSuperAdmin through from user.role
+  // (the Q8 settle runs only for superadmins, inside the service).
+
+  it('fix-all carries the same @Permissions/@Roles as apply', () => {
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        InventoryController.prototype.reconcileFixAll,
+      ),
+    ).toEqual(['run_stock_reconciliation']);
+    expect(
+      Reflect.getMetadata(ROLES_KEY, InventoryController.prototype.reconcileFixAll),
+    ).toEqual(['superadmin', 'admin', 'employee']);
+  });
+
+  it('fix-all refuses without confirmed=true', async () => {
+    const { controller, fixAll } = makeController();
+    await expect(
+      controller.reconcileFixAll(
+        { confirmed: false } as any,
+        { email: 'boss@example.com', role: 'superadmin' } as any,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(fixAll.fixAll).not.toHaveBeenCalled();
+  });
+
+  it('fix-all records the actor from the token and passes isSuperAdmin=true for superadmin', async () => {
+    const { controller, fixAll } = makeController();
+    await controller.reconcileFixAll(
+      { confirmed: true, performedBy: 'attacker@evil.example' } as any,
+      { email: 'boss@example.com', role: 'superadmin' } as any,
+    );
+    expect(fixAll.fixAll).toHaveBeenCalledWith({
+      performedBy: 'boss@example.com',
+      isSuperAdmin: true,
+      confirmed: true,
+    });
+  });
+
+  it('fix-all passes isSuperAdmin=false for admin/employee (settle skipped inside the service)', async () => {
+    const { controller, fixAll } = makeController();
+    await controller.reconcileFixAll(
+      { confirmed: true } as any,
+      { email: 'staff@example.com', role: 'admin' } as any,
+    );
+    expect(fixAll.fixAll).toHaveBeenCalledWith({
+      performedBy: 'staff@example.com',
+      isSuperAdmin: false,
+      confirmed: true,
+    });
+    await controller.reconcileFixAll(
+      { confirmed: true } as any,
+      { email: 'emp@example.com', role: 'employee' } as any,
+    );
+    expect(fixAll.fixAll).toHaveBeenLastCalledWith({
+      performedBy: 'emp@example.com',
+      isSuperAdmin: false,
+      confirmed: true,
     });
   });
 });

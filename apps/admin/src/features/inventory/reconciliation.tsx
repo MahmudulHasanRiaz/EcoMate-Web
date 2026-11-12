@@ -33,6 +33,14 @@ import {
   XCircle,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth-store'
+import { ReconVerdictBanner } from './components/recon-verdict-banner'
+import {
+  ReconFixAllResultCard,
+  ReconPreviewCard,
+} from './components/recon-one-click-flow'
+import { buildReconPreview, isApplicableReconRow } from './components/recon-helpers'
+
+export { isApplicableReconRow } from './components/recon-helpers'
 
 /**
  * Inventory → Reconciliation (2026-10-30 directive §2.8).
@@ -50,6 +58,16 @@ import { useAuthStore } from '@/stores/auth-store'
  * checks as an expand-on-click table (no wall of text by default), a
  * compact Apply card, and a superadmin-only card that settles orphaned
  * Q8 units via POST /inventory/reconciliation/q8-settle.
+ *
+ * One-click flow (2026-11-12): the default view is plain Bengali — a
+ * verdict banner + one "স্টক যাচাই ও ঠিক করুন" button. Clicking it runs
+ * the dry-run, then a preview screen (what WILL be fixed, what will NOT),
+ * then exactly ONE explicit confirm executes POST
+ * /inventory/reconcile/fix-all { confirmed: true } — the backend creates
+ * the backup itself, derives the applicable rows from a fresh report
+ * (the default flow never sends rowIds), and settles Q8 for superadmins.
+ * The full existing UI lives behind "বিস্তারিত দেখুন" (default closed),
+ * unchanged, so no capability is lost.
  */
 
 export interface ReconRow {
@@ -113,12 +131,37 @@ export interface Q8SettleResult {
   detail: string
 }
 
-/** Rows the backend will apply: R1/R2/R6 plus evidence-backed R8. */
-export const isApplicableReconRow = (r: ReconRow): boolean =>
-  r.category === 'R1' ||
-  r.category === 'R2' ||
-  r.category === 'R6' ||
-  (r.category === 'R8' && r.r8Kind !== 'human')
+/**
+ * One-click fix-all result (POST /inventory/reconcile/fix-all).
+ * The backend creates the backup itself, derives applicable rows from a
+ * fresh report, and settles Q8 for superadmins in the same call.
+ */
+export interface ReconFixAllResult {
+  backupId: string
+  apply: {
+    runId: string
+    applied: string[]
+    skipped: { id: string; reason: string }[]
+    idempotency: {
+      ok: boolean
+      remainingR1R2: number
+      remainingR6: number
+      remainingR8: number
+    }
+  }
+  settle:
+    | {
+        ran: true
+        releasedUnits: number
+        flagsCleared: number
+        ledgerEntries: string[]
+        remainingFails: number
+        detail: string
+      }
+    | { ran: false; reason: string }
+  postReport: { counts: ReconReport['counts']; checks: ReconCheck[] }
+  generatedAt: string
+}
 
 /**
  * Human labels for the R5 out-of-scope counts — the backend sends raw keys
@@ -179,6 +222,25 @@ export function Reconciliation() {
   const [expandedCheck, setExpandedCheck] = useState<string | null>(null)
   const [settleConfirmed, setSettleConfirmed] = useState(false)
   const [settleResult, setSettleResult] = useState<Q8SettleResult | null>(null)
+
+  // One-click flow state (2026-11-12): idle → checking (dry-run, + Q8
+  // preview for superadmins) → preview → executing → done (result or
+  // fail-closed error). Details stay open/closed independently.
+  type FlowStep = 'idle' | 'checking' | 'preview' | 'executing' | 'done'
+  const [flowStep, setFlowStep] = useState<FlowStep>('idle')
+  const [showDetails, setShowDetails] = useState(false)
+  const [fixConfirmed, setFixConfirmed] = useState(false)
+  const [q8Preview, setQ8Preview] = useState<Q8SettleResult | null>(null)
+  const [fixAllResult, setFixAllResult] = useState<ReconFixAllResult | null>(null)
+  const [fixAllError, setFixAllError] = useState<string | null>(null)
+
+  const resetFlow = () => {
+    setFlowStep('idle')
+    setFixConfirmed(false)
+    setQ8Preview(null)
+    setFixAllResult(null)
+    setFixAllError(null)
+  }
 
   const reportMut = useMutation({
     mutationFn: () =>
@@ -245,6 +307,81 @@ export function Reconciliation() {
       toast.error(err?.response?.data?.message || 'Q8 settle failed.'),
   })
 
+  /** Q8 dry-run preview for the one-click flow — separate from settleMut
+      so the details card's preview/result is untouched. Superadmin only;
+      never called for other roles. */
+  const q8PreviewMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post('/inventory/reconciliation/q8-settle', { dryRun: true }, { timeout: 120_000 })
+        .then((r) => r.data as Q8SettleResult),
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.message || 'Q8 preview failed.'),
+  })
+
+  /** One-click fix-all: the backend creates the backup, derives the
+      applicable rows from a fresh report (no rowIds are ever sent), and
+      settles Q8 for superadmins. On success the dry-run is re-run
+      automatically so the verdict banner reflects the fresh state. */
+  const fixAllMut = useMutation({
+    mutationFn: () =>
+      apiClient
+        .post(
+          '/inventory/reconcile/fix-all',
+          { confirmed: true },
+          { timeout: 300_000 },
+        )
+        .then((r) => r.data as ReconFixAllResult),
+    onSuccess: (data) => {
+      setFixAllResult(data)
+      setFixAllError(null)
+      setFlowStep('done')
+      toast.success('ঠিক করা হয়েছে — নতুন যাচাই চলছে।')
+      // Fresh verdict: clear the stale report, then re-run the dry-run.
+      setReport(null)
+      reportMut.mutate()
+    },
+    onError: (err: any) => {
+      const message =
+        err?.response?.data?.message || 'Reconciliation fix-all failed.'
+      setFixAllError(message)
+      setFixAllResult(null)
+      setFlowStep('done')
+      toast.error(message)
+    },
+  })
+
+  /** One-click button: dry-run first (writes nothing), then — for
+      superadmins only — the Q8 settle preview, then the preview screen.
+      Any failure stops the flow before the preview; nothing is written. */
+  const handleOneClickCheck = async () => {
+    resetFlow()
+    setFlowStep('checking')
+    try {
+      await reportMut.mutateAsync()
+    } catch {
+      setFlowStep('idle')
+      return
+    }
+    if (isSuperAdmin) {
+      try {
+        setQ8Preview(await q8PreviewMut.mutateAsync())
+      } catch {
+        setFlowStep('idle')
+        return
+      }
+    }
+    setFlowStep('preview')
+  }
+
+  const preview = useMemo(
+    () => (report ? buildReconPreview(report, q8Preview, isSuperAdmin) : null),
+    [report, q8Preview, isSuperAdmin],
+  )
+
+  const oneClickBusy =
+    flowStep === 'checking' || flowStep === 'executing' || reportMut.isPending
+
   const applicableCount = useMemo(
     () => report?.rows.filter(isApplicableReconRow).length ?? 0,
     [report],
@@ -290,8 +427,75 @@ export function Reconciliation() {
           </div>
         ) : (
           <div className='space-y-4'>
+            <ReconVerdictBanner report={report} />
+
             <div className='flex flex-wrap items-center gap-3'>
-              <Button onClick={() => reportMut.mutate()} disabled={reportMut.isPending}>
+              <Button
+                onClick={handleOneClickCheck}
+                disabled={oneClickBusy || flowStep === 'preview'}
+              >
+                {flowStep === 'checking' ? (
+                  <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                ) : (
+                  <Wrench className='mr-2 h-4 w-4' />
+                )}
+                {flowStep === 'checking' ? 'যাচাই চলছে…' : 'স্টক যাচাই ও ঠিক করুন'}
+              </Button>
+            </div>
+
+            {(flowStep === 'preview' || flowStep === 'executing') && preview && (
+              <ReconPreviewCard
+                preview={preview}
+                confirmed={fixConfirmed}
+                onConfirmedChange={setFixConfirmed}
+                isPending={fixAllMut.isPending}
+                onConfirm={() => {
+                  setFlowStep('executing')
+                  fixAllMut.mutate()
+                }}
+              />
+            )}
+
+            {flowStep === 'done' && (
+              <ReconFixAllResultCard
+                result={fixAllResult}
+                error={fixAllError}
+                isRefreshingReport={reportMut.isPending}
+                onRestart={() => {
+                  resetFlow()
+                  reportMut.mutate()
+                }}
+              />
+            )}
+
+            <div className='flex flex-wrap items-center gap-3'>
+              <Button
+                variant='outline'
+                onClick={() => setShowDetails((v) => !v)}
+                aria-expanded={showDetails}
+              >
+                {showDetails ? (
+                  <ChevronUp className='mr-2 h-4 w-4' />
+                ) : (
+                  <ChevronDown className='mr-2 h-4 w-4' />
+                )}
+                {showDetails ? 'বিস্তারিত লুকান' : 'বিস্তারিত দেখুন'}
+              </Button>
+              <span className='text-sm text-muted-foreground'>
+                সব তথ্য, সারি ও পুরনো Apply এখানে আছে।
+              </span>
+            </div>
+
+            {showDetails && (
+              <>
+            <div className='flex flex-wrap items-center gap-3'>
+              <Button
+                onClick={() => {
+                  resetFlow()
+                  reportMut.mutate()
+                }}
+                disabled={reportMut.isPending}
+              >
                 {reportMut.isPending ? (
                   <Loader2 className='mr-2 h-4 w-4 animate-spin' />
                 ) : (
@@ -652,6 +856,8 @@ export function Reconciliation() {
                   )}
                 </CardContent>
               </Card>
+            )}
+              </>
             )}
           </div>
         )}

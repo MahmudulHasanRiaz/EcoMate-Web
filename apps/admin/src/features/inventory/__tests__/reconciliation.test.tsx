@@ -10,6 +10,10 @@ import { Reconciliation } from '../reconciliation'
  * stays disabled until preview + backupId + confirmation are all present,
  * checks hide their detail until expanded, and the Q8 settle card is
  * superadmin-only with preview/settle against the q8-settle contract.
+ * One-click flow (2026-11-12): neutral verdict banner before any report,
+ * details closed by default, one "স্টক যাচাই ও ঠিক করুন" button → preview
+ * → exactly one confirm → POST /inventory/reconcile/fix-all → result
+ * screen with auto-created backup id and a fresh verdict banner.
  */
 
 vi.mock('@/components/layout/header', () => ({
@@ -24,6 +28,12 @@ vi.mock('@/components/profile-dropdown', () => ({ ProfileDropdown: () => null })
 vi.mock('@/components/page-info', () => ({
   PageInfo: ({ text }: { text: string }) => <span aria-label='About this page'>{text}</span>,
 }))
+vi.mock('@tanstack/react-router', () => ({
+  // The result screen links to /mon/backup; navigation is a no-op here.
+  Link: ({ children, to }: { children?: React.ReactNode; to?: string }) => (
+    <a href={to}>{children}</a>
+  ),
+}))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 
 const mockPost = vi.hoisted(() => vi.fn())
@@ -32,6 +42,7 @@ vi.mock('@/lib/api-client', () => ({
 }))
 
 const authState = vi.hoisted(() => ({ permissions: [] as string[], role: '' as string }))
+const flowState = vi.hoisted(() => ({ fixAllShouldFail: false }))
 vi.mock('@/stores/auth-store', () => ({
   useAuthStore: (selector: (s: any) => unknown) =>
     selector({ auth: { user: { permissions: authState.permissions, role: authState.role } } }),
@@ -138,6 +149,33 @@ const REPORT = {
   ],
 }
 
+const FIX_ALL_RESULT = {
+  backupId: 'backup-auto-123',
+  apply: {
+    runId: 'run-fix-1',
+    applied: ['R1|r1|p1|v1|managed', 'R6|p6||managed', 'R8|o8||||managed'],
+    skipped: [{ id: 's1', reason: 'no longer qualifies' }],
+    idempotency: { ok: true, remainingR1R2: 0, remainingR6: 0, remainingR8: 0 },
+  },
+  postReport: {
+    counts: {
+      R1: 0,
+      R2: 0,
+      R3: 0,
+      R4: 1,
+      R5: { returnPending: 2 },
+      R6: 0,
+      R7: 0,
+      R8: 0,
+      R8H: 1,
+    },
+    checks: [
+      { key: 'Q1', label: 'Managed adds missing', value: 0, pass: true, detail: 'clean' },
+    ],
+  },
+  generatedAt: '2026-11-12T10:00:00.000Z',
+}
+
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -152,8 +190,31 @@ describe('Reconciliation page', () => {
     vi.clearAllMocks()
     authState.permissions = []
     authState.role = ''
+    flowState.fixAllShouldFail = false
     mockPost.mockImplementation((url: string, body?: any) => {
       if (url === '/inventory/reconcile') return Promise.resolve({ data: REPORT })
+      if (url === '/inventory/reconcile/fix-all') {
+        if (flowState.fixAllShouldFail)
+          return Promise.reject({
+            response: { data: { message: 'Backup did not finish.' } },
+          })
+        return Promise.resolve({
+          data: {
+            ...FIX_ALL_RESULT,
+            settle:
+              authState.role === 'superadmin'
+                ? {
+                    ran: true,
+                    releasedUnits: 2,
+                    flagsCleared: 1,
+                    ledgerEntries: ['LED-1'],
+                    remainingFails: 0,
+                    detail: 'settled 2 orphaned units',
+                  }
+                : { ran: false, reason: 'Only superadmins can settle orphaned units.' },
+          },
+        })
+      }
       if (url === '/inventory/reconcile/apply')
         return Promise.resolve({
           data: {
@@ -190,6 +251,8 @@ describe('Reconciliation page', () => {
   it('shows the danger line and keeps Apply disabled until preview + backup + confirm', async () => {
     authState.permissions = ['run_stock_reconciliation']
     renderPage()
+    // The old UI lives behind details (default closed).
+    await userEvent.click(page.getByRole('button', { name: /বিস্তারিত দেখুন/i }))
     await expect.element(page.getByText(/Danger: Apply writes real stock/i)).toBeInTheDocument()
 
     // Run the dry-run report.
@@ -236,6 +299,7 @@ describe('Reconciliation page', () => {
   it('hides check details until the row is expanded, keeping the 400-char collapse', async () => {
     authState.permissions = ['run_stock_reconciliation']
     renderPage()
+    await userEvent.click(page.getByRole('button', { name: /বিস্তারিত দেখুন/i }))
     await userEvent.click(page.getByRole('button', { name: /run report/i }))
     await expect.element(page.getByText('RTN-1')).toBeInTheDocument()
 
@@ -257,6 +321,7 @@ describe('Reconciliation page', () => {
     authState.permissions = ['run_stock_reconciliation']
     authState.role = 'admin'
     renderPage()
+    await userEvent.click(page.getByRole('button', { name: /বিস্তারিত দেখুন/i }))
     await expect
       .element(page.getByText(/Settle orphaned Q8 units/i))
       .not.toBeInTheDocument()
@@ -266,6 +331,7 @@ describe('Reconciliation page', () => {
     authState.permissions = ['run_stock_reconciliation']
     authState.role = 'superadmin'
     renderPage()
+    await userEvent.click(page.getByRole('button', { name: /বিস্তারিত দেখুন/i }))
     await expect.element(page.getByText(/Settle orphaned Q8 units/i)).toBeInTheDocument()
 
     // Preview is a dry run — nothing is written.
@@ -294,5 +360,146 @@ describe('Reconciliation page', () => {
       { dryRun: false },
       expect.anything(),
     )
+  })
+
+  it('details are closed by default and the banner is neutral before any check', async () => {
+    authState.permissions = ['run_stock_reconciliation']
+    renderPage()
+    await expect.element(page.getByText(/এখনো যাচাই করা হয়নি/i)).toBeInTheDocument()
+    await expect
+      .element(page.getByRole('button', { name: /স্টক যাচাই ও ঠিক করুন/i }))
+      .toBeInTheDocument()
+    // Old UI hidden until details are opened.
+    await expect
+      .element(page.getByRole('button', { name: /run report/i }))
+      .not.toBeInTheDocument()
+    await userEvent.click(page.getByRole('button', { name: /বিস্তারিত দেখুন/i }))
+    await expect
+      .element(page.getByRole('button', { name: /run report/i }))
+      .toBeInTheDocument()
+    await expect
+      .element(page.getByRole('button', { name: /বিস্তারিত লুকান/i }))
+      .toBeInTheDocument()
+  })
+
+  it('one-click flow previews, confirms once and shows the fix-all result', async () => {
+    authState.permissions = ['run_stock_reconciliation']
+    authState.role = 'admin'
+    renderPage()
+
+    await userEvent.click(page.getByRole('button', { name: /স্টক যাচাই ও ঠিক করুন/i }))
+
+    // Preview: plain Bengali lines, Bengali digits, no R/Q codes.
+    await expect.element(page.getByText(/১টা মিস হওয়া restock যোগ হবে/i)).toBeInTheDocument()
+    await expect
+      .element(page.getByText(/১টা আটকে থাকা managed stock ছেড়ে দেওয়া হবে/i))
+      .toBeInTheDocument()
+    await expect
+      .element(page.getByText(/১টা পুরনো অর্ডারের Return রেকর্ড তৈরি হবে/i))
+      .toBeInTheDocument()
+    await expect.element(page.getByText(/২টা জিনিস নিজে দেখতে হবে/i)).toBeInTheDocument()
+    // Non-superadmin: no Q8 settle line, and the q8-settle endpoint is
+    // never called in the default flow.
+    await expect
+      .element(page.getByText(/আটকে থাকা reservation/i))
+      .not.toBeInTheDocument()
+    expect(mockPost).not.toHaveBeenCalledWith(
+      '/inventory/reconciliation/q8-settle',
+      expect.anything(),
+      expect.anything(),
+    )
+
+    // Exactly one explicit confirm: disabled until the checkbox is ticked.
+    const fixBtn = page.getByRole('button', { name: /^ঠিক করুন$/i })
+    await expect.element(fixBtn).toBeDisabled()
+    await userEvent.click(page.getByText(/আমি বুঝেছি/i))
+    await expect.element(fixBtn).not.toBeDisabled()
+
+    await userEvent.click(fixBtn)
+    expect(mockPost).toHaveBeenCalledWith(
+      '/inventory/reconcile/fix-all',
+      { confirmed: true },
+      expect.anything(),
+    )
+
+    // Result screen: applied/skipped, why settle was skipped, auto backup.
+    await expect.element(page.getByText(/ঠিক করা হয়েছে/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/৩টা সারি ঠিক হয়েছে/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/১টা বাদ গেছে/i)).toBeInTheDocument()
+    await expect.element(page.getByText('s1')).toBeInTheDocument()
+    await expect.element(page.getByText(/no longer qualifies/i)).toBeInTheDocument()
+    await expect
+      .element(page.getByText(/Q8 settle হয়নি: Only superadmins can settle orphaned units\./i))
+      .toBeInTheDocument()
+    await expect.element(page.getByText('backup-auto-123')).toBeInTheDocument()
+    await expect
+      .element(page.getByRole('button', { name: /কপি করুন/i }))
+      .toBeInTheDocument()
+    await expect.element(page.getByText(/আবার যাচাই: ঠিক আছে/i)).toBeInTheDocument()
+    // Auto re-run dry-run refreshes the verdict banner (REPORT still has
+    // 3 applicable rows + the failing Q1 check = ৪ problems).
+    await expect.element(page.getByText(/৪টা সমস্যা পাওয়া গেছে/i)).toBeInTheDocument()
+    expect(mockPost.mock.calls.filter((c) => c[0] === '/inventory/reconcile').length).toBe(2)
+  })
+
+  it('one-click flow for superadmin includes the Q8 preview line and settle outcome', async () => {
+    authState.permissions = ['run_stock_reconciliation']
+    authState.role = 'superadmin'
+    renderPage()
+
+    await userEvent.click(page.getByRole('button', { name: /স্টক যাচাই ও ঠিক করুন/i }))
+    await expect
+      .element(page.getByText(/২টা আটকে থাকা reservation ছেড়ে দেওয়া হবে/i))
+      .toBeInTheDocument()
+    expect(mockPost).toHaveBeenCalledWith(
+      '/inventory/reconciliation/q8-settle',
+      { dryRun: true },
+      expect.anything(),
+    )
+
+    await userEvent.click(page.getByText(/আমি বুঝেছি/i))
+    await userEvent.click(page.getByRole('button', { name: /^ঠিক করুন$/i }))
+    await expect
+      .element(page.getByText(/২ ইউনিট ছেড়ে দেওয়া হয়েছে, ১টা flag পরিষ্কার হয়েছে/i))
+      .toBeInTheDocument()
+  })
+
+  it('preview says plainly there is nothing to fix and Confirm stays disabled', async () => {
+    authState.permissions = ['run_stock_reconciliation']
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/inventory/reconcile')
+        return Promise.resolve({
+          data: {
+            ...REPORT,
+            rows: [],
+            counts: { R1: 0, R2: 0, R3: 0, R4: 0, R5: {}, R6: 0, R7: 0, R8: 0, R8H: 0 },
+            checks: [{ key: 'Q1', label: 'x', value: 0, pass: true, detail: 'ok' }],
+          },
+        })
+      return Promise.reject(new Error('unknown url ' + url))
+    })
+    renderPage()
+
+    await userEvent.click(page.getByRole('button', { name: /স্টক যাচাই ও ঠিক করুন/i }))
+    await expect.element(page.getByText(/ঠিক করার মতো কিছু নেই/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/সব ঠিক আছে/i)).toBeInTheDocument()
+    await expect
+      .element(page.getByRole('button', { name: /^ঠিক করুন$/i }))
+      .toBeDisabled()
+  })
+
+  it('fix-all error shows the backend message verbatim and states nothing was written', async () => {
+    authState.permissions = ['run_stock_reconciliation']
+    flowState.fixAllShouldFail = true
+    renderPage()
+
+    await userEvent.click(page.getByRole('button', { name: /স্টক যাচাই ও ঠিক করুন/i }))
+    await expect.element(page.getByText(/১টা মিস হওয়া restock যোগ হবে/i)).toBeInTheDocument()
+    await userEvent.click(page.getByText(/আমি বুঝেছি/i))
+    await userEvent.click(page.getByRole('button', { name: /^ঠিক করুন$/i }))
+
+    await expect.element(page.getByText(/Backup did not finish\./i)).toBeInTheDocument()
+    await expect.element(page.getByText(/কিছু লেখা হয়নি/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/ঠিক করা হয়েছে/i)).not.toBeInTheDocument()
   })
 })
