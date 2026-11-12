@@ -8,6 +8,32 @@
  * must never wipe a staff-typed custom rate.
  */
 
+export type ShippingZoneGroup = {
+  isActive?: boolean;
+  districts?: unknown;
+  type?: string;
+  amount?: number | string | null;
+};
+
+/**
+ * Coerce a `GET /shipping/zones` body to the zone-group array the page needs.
+ *
+ * The endpoint returns a bare array today, but the old query did
+ * `(r.data as any[]) || []` — a truthy envelope object passed straight
+ * through, and `resolveCityCharge` then threw on the non-array. Accept a bare
+ * array, a `{zones: [...]}` envelope, or a `{data: [...]}` envelope; anything
+ * else is an empty list, never a crash.
+ */
+export function normalizeShippingZones(body: unknown): ShippingZoneGroup[] {
+  if (Array.isArray(body)) return body as ShippingZoneGroup[];
+  if (body && typeof body === 'object') {
+    const b = body as Record<string, unknown>;
+    if (Array.isArray(b.zones)) return b.zones as ShippingZoneGroup[];
+    if (Array.isArray(b.data)) return b.data as ShippingZoneGroup[];
+  }
+  return [];
+}
+
 export function resolveCityCharge(
   cityName: string,
   sysSettings: Record<string, unknown> | undefined | null,
@@ -23,7 +49,10 @@ export function resolveCityCharge(
   const settingsCharge = Number((sysSettings as any)?.['delivery_charge']);
   if (settingsCharge) defaultCharge = settingsCharge;
 
-  const zones = shippingZones || [];
+  // Defense in depth: a non-array value (e.g. an envelope object passed in
+  // by an un-normalised caller) must fall back to the default charge, never
+  // throw `zones.find is not a function` on the order-create page.
+  const zones = Array.isArray(shippingZones) ? shippingZones : [];
   const raw = (sysSettings as any)?.['district_charges'];
   let districtMap: Record<string, number> = {};
   try {

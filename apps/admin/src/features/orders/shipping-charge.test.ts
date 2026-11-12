@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveCityCharge, shouldAutoFillCharge } from './shipping-charge'
+import { resolveCityCharge, shouldAutoFillCharge, normalizeShippingZones } from './shipping-charge'
 
 const SETTINGS = { delivery_charge: '60', district_charges: JSON.stringify({ Sylhet: 100 }) }
 const ZONES = [
@@ -8,9 +8,48 @@ const ZONES = [
   { isActive: false, districts: ['Ghost'], type: 'custom_amount', amount: 10 },
 ]
 
+describe('normalizeShippingZones (order-create 500)', () => {
+  // The exact crash shape: the old query did `(r.data as any[]) || []`, so an
+  // envelope object passed through as `shippingZones` and `resolveCityCharge`
+  // threw `zones.find is not a function` / `for...of` on a non-iterable.
+  // `GET /shipping/zones` returns a bare array today, but the boundary must
+  // accept either shape so a future envelope can never white-screen the page.
+  it('passes a bare array through', () => {
+    expect(normalizeShippingZones(ZONES)).toEqual(ZONES)
+  })
+
+  it('unwraps a {zones: [...]} envelope', () => {
+    expect(normalizeShippingZones({ zones: ZONES })).toEqual(ZONES)
+  })
+
+  it('unwraps a {data: [...]} envelope', () => {
+    expect(normalizeShippingZones({ data: ZONES })).toEqual(ZONES)
+  })
+
+  it('returns [] for an object with no array in it', () => {
+    expect(normalizeShippingZones({ zones: 'nope' })).toEqual([])
+    expect(normalizeShippingZones({})).toEqual([])
+  })
+
+  it('returns [] for null/undefined/non-object bodies', () => {
+    expect(normalizeShippingZones(null)).toEqual([])
+    expect(normalizeShippingZones(undefined)).toEqual([])
+    expect(normalizeShippingZones('Dhaka')).toEqual([])
+    expect(normalizeShippingZones(42)).toEqual([])
+  })
+})
+
 describe('resolveCityCharge', () => {
   it('uses the matching custom_amount zone (case-insensitive)', () => {
     expect(resolveCityCharge('dhaka', SETTINGS, ZONES)).toBe(120)
+  })
+
+  it('survives a non-array shippingZones value instead of throwing', () => {
+    // The envelope object fed straight in (old query shape): must fall back
+    // to the default/max charge, never throw. (With no zone list the max is
+    // the district map's 100, not the zone's 120.)
+    expect(resolveCityCharge('Barisal', SETTINGS, { zones: ZONES } as any)).toBe(100)
+    expect(resolveCityCharge('Barisal', { delivery_charge: '60' }, {} as any)).toBe(60)
   })
 
   it('maps free_delivery zones to 0', () => {

@@ -14,10 +14,11 @@ import {
   validateCollectedRows,
   type CollectedPaymentRow,
 } from './components/create-payments-section'
-import { resolveCityCharge, shouldAutoFillCharge } from './shipping-charge'
+import { resolveCityCharge, shouldAutoFillCharge, normalizeShippingZones } from './shipping-charge'
 import {
   ACQUISITION_OPTIONS,
   CHANNEL_OPTIONS,
+  normalizeSourcePlatforms,
   type AcquisitionType,
   type ChannelV2,
   type SourcePlatformView,
@@ -149,9 +150,12 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   // The zone-group route lives under /shipping (`GET /shipping/zones`).
   // The old `/shipping-zones` path 404'd, so the city → charge suggestion
   // silently fell back to the flat default and ignored configured zones.
+  // The body is normalised (bare array or `{zones|data: [...]}` envelope):
+  // the old `(r.data as any[]) || []` passed a truthy envelope object
+  // straight through and crashed the page.
   const { data: shippingZones } = useQuery({
     queryKey: ['shipping-zones'],
-    queryFn: () => apiClient.get('/shipping/zones').then(r => (r.data as any[]) || []),
+    queryFn: () => apiClient.get('/shipping/zones').then(r => normalizeShippingZones(r.data)),
     staleTime: 5 * 60_000,
   })
 
@@ -162,21 +166,23 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   // courier API — must be coerced to strings or a picked city/zone would
   // never display as selected.
   const cityOptions = useMemo(() => {
-    return (cities || []).map((c: any) => ({
+    // Defense in depth: a non-array value must render an empty list, never
+    // throw `(oe || []).map is not a function` and white-screen the page.
+    return (Array.isArray(cities) ? cities : []).map((c: any) => ({
       id: String(c.id),
       label: c.name,
     }))
   }, [cities])
 
   const zoneOptions = useMemo(() => {
-    return (zones || []).map((z: any) => ({
+    return (Array.isArray(zones) ? zones : []).map((z: any) => ({
       id: String(z.id),
       label: z.name,
     }))
   }, [zones])
 
   const shipZoneOptions = useMemo(() => {
-    return (shipZones || []).map((z: any) => ({
+    return (Array.isArray(shipZones) ? shipZones : []).map((z: any) => ({
       id: String(z.id),
       label: z.name,
     }))
@@ -217,17 +223,20 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
     queryFn: () =>
       apiClient
         .get<SourcePlatformView[]>('/sales-channel/sources', { params: { capability: 'MESSAGING' } })
-        .then(r => r.data),
+        .then(r => normalizeSourcePlatforms(r.data)),
     staleTime: 5 * 60_000,
   })
   const { data: allSources } = useQuery({
     queryKey: ['sales-channel', 'sources'],
     queryFn: () =>
-      apiClient.get<SourcePlatformView[]>('/sales-channel/sources').then(r => r.data),
+      apiClient.get<SourcePlatformView[]>('/sales-channel/sources').then(r => normalizeSourcePlatforms(r.data)),
     staleTime: 5 * 60_000,
   })
 
-  const sourceOptions = channel === 'MESSAGING' ? (messagingSources ?? []) : (allSources ?? [])
+  // Defense in depth: a non-array value must render an empty list, never
+  // throw on `sourceOptions.map(...)` and white-screen the page.
+  const rawSources = channel === 'MESSAGING' ? messagingSources : allSources
+  const sourceOptions = Array.isArray(rawSources) ? rawSources : []
 
   const [paymentMethod, setPaymentMethod] = useState('')
   const [paymentAccountId, setPaymentAccountId] = useState('')
@@ -414,7 +423,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   setCartItems(
     isExchange
       ? []
-      : (o.items || []).map((i: any) =>
+      : (Array.isArray(o.items) ? o.items : []).map((i: any) =>
           i.isManual
             ? cartItemFromManualOrderItem(i)
             : {
