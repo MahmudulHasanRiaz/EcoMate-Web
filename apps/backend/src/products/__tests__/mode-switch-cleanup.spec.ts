@@ -34,6 +34,19 @@ describe('ProductsService — mode-switch managed cleanup (2026-11-11)', () => {
         count: jest.fn().mockResolvedValue(variants.length || 1),
       },
       managedStockLedger: { create: jest.fn().mockResolvedValue({}) },
+      // Reservation settlement (2026-11-12, Q8 root cause): the mode-switch
+      // cleanup now reads flagged OrderItem / OrderItemComboComponent rows
+      // via findMany and clears them via updateMany. Defaults are empty
+      // lists, so the settlement writes nothing extra and the existing
+      // 1-ledger-row assertions below hold.
+      orderItem: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      orderItemComboComponent: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       productTag: {
         findMany: jest.fn().mockResolvedValue([]),
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
