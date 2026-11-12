@@ -1398,6 +1398,13 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                       searchPlaceholder='Search zones...'
                       disabled={isExchange || !customerCityId}
                     />
+                    {/* Disabled with no reason in place reads as broken — the
+                        zone list comes from the picked city. */}
+                    {!isExchange && !customerCityId && (
+                      <p className='text-[11px] text-muted-foreground mt-1'>
+                        Pick a city first to choose a zone.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -1452,6 +1459,11 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                           searchPlaceholder='Search zones...'
                           disabled={!shipCityId}
                         />
+                        {!shipCityId && (
+                          <p className='text-[11px] text-muted-foreground mt-1'>
+                            Pick a shipping city first to choose a zone.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2008,7 +2020,13 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                       className='h-9.5 text-sm'
                     />
                     <p className='text-[11px] text-muted-foreground mt-1'>
-                      {shippingChargeManuallyEdited ? 'Custom rate applied' : 'Auto-calculated from city'}
+                      {/* With no city picked nothing auto-calculates — saying
+                          so would promise a charge that never arrives. */}
+                      {shippingChargeManuallyEdited
+                        ? 'Custom rate applied'
+                        : activeCityId
+                          ? 'Auto-calculated from city'
+                          : 'Pick a city to auto-calculate, or enter a charge'}
                     </p>
                   </div>
                   <div>

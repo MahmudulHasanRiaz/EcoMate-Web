@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { useWarehousePhysicalStock, physicalOnHandForItem } from '@/features/inventory/hooks/use-warehouse-physical-stock'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { invalidateInventoryStockQueries } from '@/features/inventory/utils/invalidate-inventory'
 import { DESTRUCTIVE_CONFIRM_MESSAGE, isDestructiveAdjustmentError } from '@/lib/destructive-adjustment'
@@ -73,6 +74,42 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
     queryFn: () => apiClient.get(`/warehouses/${selectedWarehouse}/bin-locations`).then(r => r.data || []),
     enabled: !!selectedWarehouse,
   })
+
+  // Per-item on-hand figures for the selected warehouse, for the
+  // client-side insufficient-stock pre-validation below. Same endpoint /
+  // query key as the Physical Stock table, so its cached rows are reused.
+  // data is undefined while loading or when the query fails — on-hand is
+  // then unknown (null per item), never 0, so the check never blocks on a
+  // missing number and the server stays the backstop.
+  const { data: warehouseStock, isLoading: isStockLoading } = useWarehousePhysicalStock(selectedWarehouse, open)
+
+  // On-hand per dialog item (null = unknown). A successful query with no
+  // matching row means genuinely no stock in this warehouse: 0.
+  const itemOnHand = useMemo(() => {
+    const map = new Map<string, number | null>()
+    for (const item of items) {
+      map.set(item.id, physicalOnHandForItem(warehouseStock, item))
+    }
+    return map
+  }, [items, warehouseStock])
+
+  // OWNER DECISION 2026-11-12 (locked, same as the managed-adjust modal):
+  // physical stock NEVER goes below zero and the server block stays —
+  // confirmation does NOT authorise a below-zero deduction. This client
+  // check mirrors that hard block on the ON-HAND figure (the server's
+  // below-zero check is on-hand only, not on-hand minus reserved), so a
+  // deduction larger than available stock is refused inline with no
+  // server round-trip.
+  const insufficientItems = useMemo(
+    () =>
+      items
+        .filter((item) => {
+          const onHand = itemOnHand.get(item.id)
+          return item.quantity < 0 && onHand !== null && Math.abs(item.quantity) > onHand
+        })
+        .map((item) => ({ item, onHand: itemOnHand.get(item.id) as number })),
+    [items, itemOnHand],
+  )
 
   const bulkAdjustMut = useMutation({
     mutationFn: (data: {
@@ -266,6 +303,17 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
       }
     }
 
+    // Hard client gate mirroring the server's below-zero block (see the
+    // owner-decision comment at `insufficientItems`): no round-trip for a
+    // request the server must reject, confirmed or not. Unknown on-hand
+    // (figures still loading / query failed) is not blocked here — the
+    // server decides.
+    if (insufficientItems.length > 0) {
+      const first = insufficientItems[0]
+      toast.error(`Insufficient stock — only ${first.onHand} available for ${first.item.name}. Physical stock can never go below zero.`)
+      return
+    }
+
     // Map fields for backend DTO
     const payload = {
       warehouseId: selectedWarehouse,
@@ -327,7 +375,23 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
               stock at a location — it never allows stock to go below zero
               (the server's below-zero write guard rejects that outright,
               confirmed or not). */}
-          {items.some((i) => i.quantity < 0) && (
+          {/* Insufficient-stock pre-validation (mirrors the managed-adjust
+              modal): a deduction larger than on-hand shows this alert
+              INSTEAD of the destructive-confirmation checkbox — confirmation
+              never authorises a below-zero deduction, so there is nothing
+              to confirm. While the on-hand figures are still loading the
+              check has not run yet: no false block, the server stays the
+              backstop. */}
+          {insufficientItems.length > 0 ? (
+            <div role='alert' className='rounded-xl border border-destructive/40 bg-destructive/5 p-3.5 text-sm text-destructive leading-snug space-y-1'>
+              {insufficientItems.map(({ item, onHand }) => (
+                <p key={item.id}>
+                  <strong>Insufficient stock</strong> — {item.name}: only {onHand} available.
+                </p>
+              ))}
+              <p>Physical stock can never go below zero, so this deduction is rejected with or without confirmation.</p>
+            </div>
+          ) : items.some((i) => i.quantity < 0) && (
             <label className="flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/5 p-3.5 cursor-pointer">
               <Checkbox
                 checked={confirmDestructive}
@@ -343,6 +407,12 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
                 with or without confirmation.
               </span>
             </label>
+          )}
+          {isStockLoading && selectedWarehouse && items.some((i) => i.quantity < 0) && insufficientItems.length === 0 && (
+            <div className='flex items-center gap-2 rounded-xl border p-3.5 text-sm text-muted-foreground'>
+              <Loader2 className='h-4 w-4 animate-spin shrink-0' />
+              Checking available stock…
+            </div>
           )}
 
           {/* Product Search Input */}
@@ -417,6 +487,8 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
                   <TableBody>
                     {items.map((item) => {
                       const showBinCost = item.quantity > 0
+                      const onHand = itemOnHand.get(item.id)
+                      const insufficient = item.quantity < 0 && onHand !== null && Math.abs(item.quantity) > onHand
                       return (
                         <TableRow key={item.id} className="hover:bg-muted/5">
                           <TableCell className="align-middle">
@@ -466,6 +538,11 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
                               onChange={(e) => updateItem(item.id, { quantity: parseInt(e.target.value) || 0 })}
                               className="h-8 text-center text-sm w-20 mx-auto"
                             />
+                            {insufficient && (
+                              <p className="mt-1 text-[11px] leading-tight text-destructive">
+                                Insufficient stock — only {onHand} available.
+                              </p>
+                            )}
                           </TableCell>
 
                           <TableCell className="align-middle text-right">
@@ -514,7 +591,7 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
 
         <DialogFooter className='border-t pt-3 flex items-center justify-between sm:justify-end gap-2'>
           <Button variant='outline' onClick={() => { reset(); onOpenChange(false) }}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={bulkAdjustMut.isPending || items.length === 0}>
+          <Button onClick={handleSubmit} disabled={bulkAdjustMut.isPending || items.length === 0 || insufficientItems.length > 0}>
             {bulkAdjustMut.isPending && <Loader2 className='animate-spin h-4 w-4 mr-1' />}
             Apply Adjustments
           </Button>

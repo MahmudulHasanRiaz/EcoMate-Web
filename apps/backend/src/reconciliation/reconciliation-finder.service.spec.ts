@@ -600,6 +600,126 @@ describe('ReconciliationFinderService', () => {
     expect(q8.detail).toContain('p:prod-1| [MANAGED]: on-hand 8 (ledger 10), reserved 0 (ledger 0)');
   });
 
+  it('Q8: detail names the failing product with name + SKU alongside the key', async () => {
+    const { service } = makeService({
+      products: [{ id: 'prod-1', name: 'Test Hoodie', sku: 'HOOD-1' }],
+      verification: {
+        checked: 17,
+        pass: 16,
+        fail: 1,
+        products: [
+          {
+            key: 'p:prod-1|',
+            scope: 'WAREHOUSE',
+            onHandExpected: 0,
+            onHandActual: 0,
+            reservedExpected: 2,
+            reservedActual: 2,
+            availableExpected: -2,
+            availableActual: -2,
+            pass: false,
+            notes: ['negative available (on-hand 0 < reserved 2)'],
+          },
+        ],
+        negativeAvailable: [],
+      },
+    });
+    const report = await service.buildReport();
+    const q8 = report.checks.find((c) => c.key === 'Q8')!;
+    expect(q8.value).toBe(1);
+    expect(q8.pass).toBe(false);
+    // Key stays visible; name + SKU render alongside it.
+    expect(q8.detail).toContain(
+      'p:prod-1| [WAREHOUSE]: on-hand 0 (ledger 0), reserved 2 (ledger 2)',
+    );
+    expect(q8.detail).toContain('"Test Hoodie" (SKU HOOD-1)');
+    expect(q8.detail).toContain('negative available (on-hand 0 < reserved 2)');
+  });
+
+  it('Q8: variant unit resolves the variant SKU (not the product SKU)', async () => {
+    const { service } = makeService({
+      products: [{ id: 'prod-1', name: 'Variable Hoodie', sku: 'HOOD-1' }],
+      q3Variants: [{ id: 'v1', sku: 'HOOD-1-L' }],
+      verification: {
+        checked: 10,
+        pass: 9,
+        fail: 1,
+        products: [
+          {
+            key: 'p:prod-1|v1',
+            scope: 'MANAGED',
+            onHandExpected: 5,
+            onHandActual: 3,
+            reservedExpected: 0,
+            reservedActual: 0,
+            availableExpected: 5,
+            availableActual: 3,
+            pass: false,
+            notes: ['on-hand 3 / reserved 0 vs snap 5 / 0'],
+          },
+        ],
+        negativeAvailable: [],
+      },
+    });
+    const report = await service.buildReport();
+    const q8 = report.checks.find((c) => c.key === 'Q8')!;
+    expect(q8.detail).toContain('p:prod-1|v1 [MANAGED]');
+    expect(q8.detail).toContain('"Variable Hoodie" (SKU HOOD-1-L)');
+    expect(q8.detail).not.toContain('(SKU HOOD-1)');
+  });
+
+  it('Q8: failing unit whose product is gone degrades to key-only (no crash)', async () => {
+    const { service } = makeService({
+      products: [],
+      verification: {
+        checked: 5,
+        pass: 4,
+        fail: 1,
+        products: [
+          {
+            key: 'p:prod-gone|',
+            scope: 'MANAGED',
+            onHandExpected: 1,
+            onHandActual: 0,
+            reservedExpected: 0,
+            reservedActual: 0,
+            availableExpected: 1,
+            availableActual: 0,
+            pass: false,
+            notes: ['on-hand 0 / reserved 0 vs snap 1 / 0'],
+          },
+        ],
+        negativeAvailable: [],
+      },
+    });
+    const report = await service.buildReport();
+    const q8 = report.checks.find((c) => c.key === 'Q8')!;
+    expect(q8.value).toBe(1);
+    expect(q8.detail).toContain(
+      'p:prod-gone| [MANAGED]: on-hand 0 (ledger 1), reserved 0 (ledger 0)',
+    );
+  });
+
+  it('Q3: INVENTORY_CONTROLLED products with negative managed available are flagged', async () => {
+    const { service, prisma } = makeService({
+      q3Products: [{ managedStockQuantity: 0, reservedStock: 2 }],
+      q3Variants: [],
+      q3Physical: [],
+    });
+    const report = await service.buildReport();
+    const q3 = report.checks.find((c) => c.key === 'Q3')!;
+    expect(q3.value).toBe(1);
+    expect(q3.pass).toBe(false);
+    expect(q3.detail).toContain('All products');
+    // The Q3 product query must not filter by availabilityMode — the Gadget
+    // case (IC product, managed 0 / reserved 2) was invisible to Q3 before.
+    const q3Call = (prisma.product.findMany as jest.Mock).mock.calls.find(
+      (call) => call[0]?.select?.managedStockQuantity && !call[0]?.select?.variants,
+    );
+    expect(q3Call).toBeDefined();
+    expect(q3Call[0].where).toBeUndefined();
+  });
+
   it('IM off: physical layer is never expected (managed-only scope)', async () => {
     const { service } = makeService({
       imEnabled: false,

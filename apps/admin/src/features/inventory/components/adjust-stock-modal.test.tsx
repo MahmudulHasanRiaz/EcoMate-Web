@@ -13,7 +13,7 @@ vi.mock('@/lib/api-client', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 
 const CODE_ERR = { response: { data: { code: 'DESTRUCTIVE_ADJUSTMENT', message: 'server guard' } } }
-const CONFIRM_TEXT = 'This removes the last remaining unit(s) at this location — stock will reach zero. Confirm?'
+const CONFIRM_TEXT = 'This removes most or all of the remaining available stock at this location. Confirm?'
 
 function renderModal() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })

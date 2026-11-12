@@ -8,6 +8,16 @@ interface Props {
   isLoading: boolean
 }
 
+/** Largest unit that keeps a non-zero value — "0.00 GB" for a 0.4 MB total
+    reads as "no backup data at all". */
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
 export function BackupStats({ backups, isLoading }: Props) {
   if (isLoading || !backups) {
     return (
@@ -27,10 +37,12 @@ export function BackupStats({ backups, isLoading }: Props) {
 
   const stats = [
     { icon: Database, label: 'Total Backups', value: String(total), accent: 'kpi-accent-info' },
-    { icon: HardDrive, label: 'Total Size', value: `${(totalSize / 1024 / 1024 / 1024).toFixed(2)} GB`, accent: 'kpi-accent-violet' },
+    // A sub-MB total used to read "0.00 GB" — staff read that as "no backup
+    // data at all". Show the largest unit that keeps a non-zero value.
+    { icon: HardDrive, label: 'Total Size', value: formatBytes(totalSize), accent: 'kpi-accent-violet' },
     { icon: Clock, label: 'Last Backup', value: lastBackup
       ? new Date(lastBackup.createdAt).toLocaleDateString() : 'Never', accent: 'kpi-accent-success' },
-    { icon: Shield, label: 'Locked', value: String(locked), accent: 'kpi-accent-warning' },
+    { icon: Shield, label: 'Locked Backups', value: String(locked), accent: 'kpi-accent-warning' },
   ]
 
   return (

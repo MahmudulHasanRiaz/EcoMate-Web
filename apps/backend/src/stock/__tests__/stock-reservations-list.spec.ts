@@ -160,4 +160,82 @@ describe('StockService — listReservations', () => {
     // Reserved since = the EARLIEST outstanding reservation.
     expect(phys.reservedSince).toEqual(reservationCreatedAt);
   });
+
+  /**
+   * Already-deducted managed lines are history, not active holds
+   * (2026-11-12, Q8 follow-up): the deduct path decremented
+   * `reservedStock` at delivery and deliberately left
+   * `managedStockReserved` set, so the old query surfaced Delivered
+   * orders as live reservations — over-counting the dashboard header and
+   * offering a Release that would decrement `reservedStock` a second
+   * time. The dashboard is an active-holds view, so deducted lines are
+   * excluded at the query, for order items and combo components alike.
+   * (The mocked findMany cannot enforce a `where`, so these tests assert
+   * the query itself carries the exclusion.)
+   */
+  it('managed order items exclude already-deducted lines from the query', async () => {
+    const prisma: any = {
+      physicalInventory: { findMany: jest.fn().mockResolvedValue([]) },
+      physicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
+      comboComponentPhysicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
+      order: { findMany: jest.fn().mockResolvedValue([]) },
+      orderItem: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'oi-live',
+            orderId: 'o-1',
+            productId: 'p1',
+            variantId: null,
+            quantity: 1,
+            managedStockDeducted: false,
+            createdAt: itemCreatedAt,
+            product: { id: 'p1', name: 'Widget', sku: 'W-1', images: [] },
+            variant: null,
+            order: { id: 'o-1', displayId: 'ORD-260102-0001', updatedAt: orderUpdatedAt },
+          },
+        ]),
+      },
+      orderItemComboComponent: { findMany: jest.fn().mockResolvedValue([]) },
+      product: { findMany: jest.fn().mockResolvedValue([]) },
+      productVariant: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+
+    const rows = await makeService(prisma).listReservations('managed');
+
+    expect(prisma.orderItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          managedStockReserved: true,
+          managedStockDeducted: false,
+        }),
+      }),
+    );
+    // Only the live hold is surfaced.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('oi-live');
+  });
+
+  it('managed combo components exclude already-deducted lines from the query', async () => {
+    const prisma: any = {
+      physicalInventory: { findMany: jest.fn().mockResolvedValue([]) },
+      physicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
+      comboComponentPhysicalReservation: { findMany: jest.fn().mockResolvedValue([]) },
+      order: { findMany: jest.fn().mockResolvedValue([]) },
+      orderItem: { findMany: jest.fn().mockResolvedValue([]) },
+      orderItemComboComponent: { findMany: jest.fn().mockResolvedValue([]) },
+      product: { findMany: jest.fn().mockResolvedValue([]) },
+      productVariant: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+
+    await makeService(prisma).listReservations('managed');
+
+    expect(prisma.orderItemComboComponent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          managedStockReserved: true,
+          managedStockDeducted: false,
+        }),
+      }),
+    );
+  });
 });

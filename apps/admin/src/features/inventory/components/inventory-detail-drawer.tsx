@@ -167,7 +167,7 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
                 )}
                 <TabsTrigger value="ledger" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-xs">Ledger & Audit</TabsTrigger>
                 {imEnabled && (
-                  <TabsTrigger value="pending" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-xs">Pending (Res / Alloc)</TabsTrigger>
+                  <TabsTrigger value="pending" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-xs">Pending Reservations</TabsTrigger>
                 )}
               </TabsList>
               
