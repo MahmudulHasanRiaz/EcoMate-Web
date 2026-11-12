@@ -565,6 +565,121 @@ describe('ReturnsService — unified Return entity (Task 6)', () => {
       expect(txMock.return.create).toHaveBeenCalled();
       expect(ret.displayId).toMatch(/^RTN-/);
     });
+
+    // Exchange-return redirect (live FixedPlus 2026-11-12): a Pathao
+    // exchange-return event resolves to the EXCHANGE order (panel exchange
+    // booked under the original's invoice), but the Return(EXCHANGE) leg
+    // lives under the SOURCE order. The signal must link onto that leg —
+    // never create a duplicate COURIER return under the exchange order
+    // (its items are the NEW goods, so receiving it would restock the
+    // wrong product). Owner decision 2026-11-12: a courier event NEVER
+    // creates an exchange return — with no leg, staff creates it manually.
+    const exchangeOrder = {
+      id: 'order-ex',
+      displayId: 'Ex-261111-0003',
+      kind: 'EXCHANGE',
+      exchangeOfOrderId: 'order-1',
+      trashedAt: null,
+      status: { id: 'st-shipping', name: 'Shipping' },
+    };
+    const exchangeSignal = {
+      orderId: 'order-ex',
+      courier: 'pathao',
+      courierReturnId: 'RE101126QUQJ9W',
+      courierStatus: 'order.return-id-created',
+      type: 'EXCHANGE' as const,
+      reason: 'Exchanged with 0 Tk for Exchange With Full Price',
+    };
+    function mockExchangeOrders() {
+      (prisma.order.findUnique as jest.Mock).mockImplementation(({ where }: any) =>
+        Promise.resolve(where?.id === 'order-ex' ? exchangeOrder : order),
+      );
+    }
+
+    it('exchange return signal links the existing Return(EXCHANGE) leg under the SOURCE order — no duplicate, leg items + reason untouched', async () => {
+      mockExchangeOrders();
+      const leg = {
+        id: 'ret-leg',
+        orderId: 'order-1',
+        displayId: 'RTN-261111-0001',
+        type: 'EXCHANGE',
+        status: 'REQUESTED',
+        source: 'EXCHANGE',
+        items: [{ productId: 'prod-L', variantId: 'var-L', quantity: 1 }],
+        reason: 'Exchange Ex-261111-0003 return leg',
+        courier: null,
+        courierReturnId: null,
+        courierStatus: null,
+      };
+      prisma.return.findFirst.mockResolvedValue(leg);
+      const ret = await service.upsertCourierReturn(exchangeSignal);
+      // The dedupe runs against the SOURCE order — the leg is found there.
+      expect(prisma.return.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ orderId: 'order-1' }) }),
+      );
+      expect(txMock.return.create).not.toHaveBeenCalled();
+      const updateArg = txMock.return.update.mock.calls[0][0];
+      expect(updateArg).toMatchObject({ where: { id: 'ret-leg' } });
+      // Courier facts link on (set-once)…
+      expect(updateArg.data.courierReturnId).toBe('RE101126QUQJ9W');
+      expect(updateArg.data.courierStatus).toBe('order.return-id-created');
+      expect(updateArg.data.courier).toBe('pathao');
+      // …but the leg's items and its staff-authored reason are untouched.
+      expect(updateArg.data.items).toBeUndefined();
+      expect(updateArg.data.reason).toBeUndefined();
+      expect(ret).toBeTruthy();
+    });
+
+    it('exchange return signal with NO leg under the source order creates NOTHING — staff creates it manually', async () => {
+      mockExchangeOrders();
+      prisma.return.findFirst.mockResolvedValue(null);
+      const warn = jest.spyOn((service as any).logger, 'warn');
+      const ret = await service.upsertCourierReturn(exchangeSignal);
+      expect(ret).toBeNull();
+      expect(txMock.return.create).not.toHaveBeenCalled();
+      expect(prisma.return.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ orderId: 'order-1' }) }),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringMatching(/never creates an exchange return/),
+      );
+    });
+
+    it('orphan exchange (no source order) fails closed — no Return, no lookup', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue({
+        ...exchangeOrder,
+        exchangeOfOrderId: null,
+      });
+      const warn = jest.spyOn((service as any).logger, 'warn');
+      const ret = await service.upsertCourierReturn({
+        ...exchangeSignal,
+        courierReturnId: undefined,
+      });
+      expect(ret).toBeNull();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.return.findFirst).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/orphan/));
+    });
+
+    it('reason is fill-when-empty: a reason-less leg adopts the courier reason, a staff reason is never overwritten', async () => {
+      prisma.return.findFirst.mockResolvedValue({
+        id: 'ret-1',
+        orderId: 'order-1',
+        courier: null,
+        courierReturnId: null,
+        reason: null,
+        status: 'REQUESTED',
+      });
+      await service.upsertCourierReturn({
+        orderId: 'order-1',
+        courier: 'steadfast',
+        courierReturnId: 'RR-10',
+        courierStatus: 'return_request',
+        reason: 'customer asked',
+      });
+      const updateArg = txMock.return.update.mock.calls[0][0];
+      expect(updateArg.data.reason).toBe('customer asked');
+    });
   });
 
   describe('findOpenStaffReturnWithItems (T6 partial restore-or-hold lookup)', () => {

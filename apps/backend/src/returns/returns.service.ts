@@ -922,9 +922,26 @@ export class ReturnsService {
    * LINK-FIRST (idempotency): the newest active (not CLOSED) Return for the
    * ORDER — whatever its source (STAFF / COURIER / EXCHANGE) — absorbs the
    * courier facts (courierStatus, set-once courierReturnId, courier name when
-   * empty, reason). A later return-indicating event therefore never creates a
-   * second row, and a courier signal for a staff/exchange Return links to it
-   * instead of duplicating it (Rule 27a "later events only link").
+   * empty, reason fill-when-empty only). A later return-indicating event
+   * therefore never creates a second row, and a courier signal for a
+   * staff/exchange Return links to it instead of duplicating it (Rule 27a
+   * "later events only link").
+   *
+   * EXCHANGE redirect: a courier return signal naming an EXCHANGE order is
+   * redirected to its SOURCE order BEFORE the dedupe (live FixedPlus
+   * 2026-11-12: a Pathao exchange-return event resolves to the exchange
+   * order, but the Return(EXCHANGE) leg lives under the source order — the
+   * old orderId-only dedupe missed it and created a duplicate COURIER
+   * return under the exchange order, whose items are the NEW goods). The
+   * exchange chain is followed to its root SALE order (a second exchange
+   * of an already-exchanged item chains exchangeOfOrderId); an orphan /
+   * broken chain / cycle / too-deep chain fails closed (warn + null, no
+   * Return). Owner decision 2026-11-12: a courier event NEVER creates an
+   * exchange return — with no leg under the source order nothing is
+   * created; staff creates the Return manually with the actual items
+   * (an exchange return's items are always the ORIGINAL order's items
+   * and the courier never reports the split). A Return is therefore
+   * never created or linked under an EXCHANGE order id.
    *
    * CREATE only when nothing active exists AND `createIfMissing !== false`.
    * PARTIAL signals NEVER create (Rule 27b — the courier never reports the
@@ -950,14 +967,19 @@ export class ReturnsService {
     if (!order || (order as any).trashedAt) {
       throw new NotFoundException(`Order not found: ${input.orderId}`);
     }
+    const resolved = await this.resolveCourierReturnOrder(order, input);
+    if (!resolved) return null;
+    const effectiveOrderId = resolved.orderId;
+    const isExchangeSignal = resolved.isExchange;
     const type = input.type ?? 'FULL';
-    const createIfMissing = type !== 'PARTIAL' && input.createIfMissing !== false;
+    const createIfMissing =
+      !isExchangeSignal && type !== 'PARTIAL' && input.createIfMissing !== false;
 
     return this.prisma.$transaction(async (tx) => {
-      await this.lockOrderReturnSignal(tx, input.orderId);
+      await this.lockOrderReturnSignal(tx, effectiveOrderId);
 
       const existing = await tx.return.findFirst({
-        where: { orderId: input.orderId, status: { not: 'CLOSED' as any } },
+        where: { orderId: effectiveOrderId, status: { not: 'CLOSED' as any } },
         orderBy: { createdAt: 'desc' },
       });
       if (existing) {
@@ -973,7 +995,11 @@ export class ReturnsService {
         if (!(existing as any).courier && input.courier) {
           data.courier = input.courier;
         }
-        if (input.reason !== undefined && input.reason !== null && input.reason !== (existing as any).reason) {
+        // Reason is fill-when-empty, never an overwrite: a staff/exchange
+        // leg's reason ("Exchange Ex-… return leg") is human-authored and
+        // must survive courier signals; a reason-less (courier-created) row
+        // still records the courier's raw reason.
+        if (input.reason && !(existing as any).reason) {
           data.reason = input.reason;
         }
         if (Object.keys(data).length === 0) return existing;
@@ -981,7 +1007,15 @@ export class ReturnsService {
       }
 
       if (!createIfMissing) {
-        if (type === 'PARTIAL') {
+        if (isExchangeSignal) {
+          this.logger.warn(
+            `Courier return signal for exchange order ${input.orderId} ` +
+              `(${(order as any).displayId ?? 'n/a'}, ${input.courier}:${input.courierStatus ?? input.courierReturnId ?? 'n/a'}) — ` +
+              `NO Return(EXCHANGE) leg under source order ${effectiveOrderId}; NO Return auto-created ` +
+              `(owner decision 2026-11-12: a courier event never creates an exchange return). ` +
+              `HOLD the parcel + staff alert; staff creates the Return manually with the actual items.`,
+          );
+        } else if (type === 'PARTIAL') {
           this.logger.warn(
             `Courier PARTIAL return signal for order ${input.orderId} ` +
               `(${input.courier}:${input.courierStatus ?? input.courierReturnId ?? 'n/a'}) — ` +
@@ -995,7 +1029,7 @@ export class ReturnsService {
       const displayId = await this.generateDisplayIdInTx(tx);
       const created = await tx.return.create({
         data: {
-          orderId: input.orderId,
+          orderId: effectiveOrderId,
           displayId,
           type: type as any,
           status: 'REQUESTED' as any,
@@ -1013,6 +1047,44 @@ export class ReturnsService {
       );
       return created;
     });
+  }
+
+  /**
+   * Exchange-aware order resolution for courier return signals (see
+   * upsertCourierReturn). Returns the order id a Return may be created or
+   * linked under — the root SALE order for an exchange signal — plus
+   * whether the signal was for an exchange. Null when no safe order
+   * exists: orphan exchange, broken chain, cycle, hop cap, or a missing /
+   * trashed source order. All null cases fail closed with a warn; the
+   * caller holds + alerts staff and staff creates the Return manually.
+   */
+  private async resolveCourierReturnOrder(
+    order: any,
+    input: UpsertCourierReturnInput,
+  ): Promise<{ orderId: string; isExchange: boolean } | null> {
+    if ((order as any).kind !== 'EXCHANGE') {
+      return { orderId: (order as any).id, isExchange: false };
+    }
+    const seen = new Set<string>([(order as any).id]);
+    let current = order;
+    for (let hops = 0; hops < 5; hops += 1) {
+      const sourceId = (current as any).exchangeOfOrderId as string | null | undefined;
+      if (!sourceId || seen.has(sourceId)) break;
+      seen.add(sourceId);
+      const source = await this.prisma.order.findUnique({ where: { id: sourceId } });
+      if (!source || (source as any).trashedAt) break;
+      if ((source as any).kind !== 'EXCHANGE') {
+        return { orderId: (source as any).id, isExchange: true };
+      }
+      current = source;
+    }
+    this.logger.warn(
+      `Courier return signal for exchange order ${input.orderId} ` +
+        `(${(order as any).displayId ?? 'n/a'}, ${input.courier}:${input.courierStatus ?? input.courierReturnId ?? 'n/a'}) — ` +
+        `no usable source order (orphan / broken chain / cycle / too deep). NO Return created. ` +
+        `HOLD the parcel + staff alert; staff creates the Return manually with the actual items.`,
+    );
+    return null;
   }
 
   /**
