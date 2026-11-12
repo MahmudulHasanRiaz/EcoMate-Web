@@ -338,15 +338,32 @@ describe('ProductDetailClient — ViewContent strict semantics', () => {
   });
 
   it('back/forward remount of the SAME product in the same bucket → collapse (identical event_id)', async () => {
-    const first = renderDetail(simpleProduct);
-    await waitFor(() => expect(viewContentCalls()).toHaveLength(1));
-    const firstId = viewContentCalls()[0][3].eventID as string;
-    // back/forward navigation is a FULL remount — a fresh component instance
-    first.unmount();
-    renderDetail(simpleProduct);
-    await waitFor(() => expect(viewContentCalls()).toHaveLength(2));
-    const secondId = viewContentCalls()[1][3].eventID as string;
-    expect(secondId).toBe(firstId);
+    // The event_id embeds a 5-second wall-clock bucket
+    // (Math.floor(Date.now() / 5000) in lib/tracking.ts): two renders in real
+    // time that straddle a bucket boundary get different ids and this test
+    // fails (Build #899: …773 vs …774) even though the product code is
+    // correct — the bucket roll is intended behaviour. Freeze Date.now() for
+    // THIS test only so both renders land in the same bucket.
+    //
+    // Deliberately NOT vi.useFakeTimers(): @testing-library's waitFor needs
+    // real timer ticks to run its checks, so frozen timers hang this test
+    // (and leak into the later tests in this file when the timed-out test
+    // never reaches its cleanup). Spying Date.now leaves all timers real.
+    const frozenNow = Date.now();
+    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(frozenNow);
+    try {
+      const first = renderDetail(simpleProduct);
+      await waitFor(() => expect(viewContentCalls()).toHaveLength(1));
+      const firstId = viewContentCalls()[0][3].eventID as string;
+      // back/forward navigation is a FULL remount — a fresh component instance
+      first.unmount();
+      renderDetail(simpleProduct);
+      await waitFor(() => expect(viewContentCalls()).toHaveLength(2));
+      const secondId = viewContentCalls()[1][3].eventID as string;
+      expect(secondId).toBe(firstId);
+    } finally {
+      dateNowSpy.mockRestore();
+    }
   });
 });
 describe('ProductDetailClient — zero/negative stock is out of stock', () => {
