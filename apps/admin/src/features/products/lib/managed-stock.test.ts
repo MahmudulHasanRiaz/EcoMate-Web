@@ -4,6 +4,7 @@ import {
   filterManagedStockProducts,
   isManagedAdjustableProduct,
   isManagedStockProduct,
+  liveManagedReservationSummary,
   savedManagedQuantities,
   shouldShowModeSwitchClearNote,
 } from './managed-stock'
@@ -120,6 +121,25 @@ describe('savedManagedQuantities (mode-switch note data)', () => {
     ])
     expect(savedManagedQuantities(null)).toEqual([])
     expect(savedManagedQuantities(undefined)).toEqual([])
+  })
+})
+
+describe('liveManagedReservationSummary (mode-switch note live count)', () => {
+  it('sums managed holds only — physical rows never count toward the managed switch', () => {
+    expect(
+      liveManagedReservationSummary([
+        { id: 'r1', isManaged: true, reservedQuantity: 3 },
+        { id: 'r2', isManaged: true, reservedQuantity: 2 },
+        { id: 'r3', isManaged: false, reservedQuantity: 9 },
+        { id: 'r4', reservedQuantity: 7 },
+      ]),
+    ).toEqual({ units: 5, holds: 2 })
+  })
+
+  it('non-array payloads (loading / error) count as zero, never crash', () => {
+    expect(liveManagedReservationSummary(undefined)).toEqual({ units: 0, holds: 0 })
+    expect(liveManagedReservationSummary(null)).toEqual({ units: 0, holds: 0 })
+    expect(liveManagedReservationSummary([])).toEqual({ units: 0, holds: 0 })
   })
 })
 

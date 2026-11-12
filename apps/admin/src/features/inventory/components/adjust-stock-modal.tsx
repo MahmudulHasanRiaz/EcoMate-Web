@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Package } from 'lucide-react'
 import { useInventoryManagement } from '../hooks/use-inventory-management'
+import { useWarehousePhysicalStock, physicalOnHandForItem } from '../hooks/use-warehouse-physical-stock'
 import { physicalAdjustTitle } from '../utils/adjust-dialog-routing'
 
 interface AdjustStockModalProps {
@@ -125,6 +126,22 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
     }
   }, [shelfId])
 
+  // Physical on-hand for the client-side insufficient-stock pre-validation
+  // (OWNER DECISION 2026-11-12: physical stock NEVER goes below zero and
+  // the server block stays — confirmation does NOT authorise a below-zero
+  // deduction). Same endpoint / query key as the Physical Stock table, so
+  // cached rows are reused. Enabled only with a warehouse picked, IM on,
+  // dialog open; data is undefined while loading or when the query fails —
+  // on-hand is then unknown (null), never 0, so the check never blocks on
+  // a missing number and the server stays the backstop.
+  const { data: warehouseStock, isLoading: isStockLoading } = useWarehousePhysicalStock(warehouseId, !!imEnabled && open)
+  const qtyNum = parseInt(quantity)
+  const onHand = productId ? physicalOnHandForItem(warehouseStock, { productId, variantId, binLocationId }) : null
+  // `!= null` narrows out BOTH null (unknown) and undefined — unknown
+  // never blocks. The figure is on-hand (quantity), NOT quantity minus
+  // reserved — the server's below-zero guard is on quantity alone.
+  const insufficientStock = qtyNum < 0 && onHand != null && Math.abs(qtyNum) > onHand
+
   const adjustMut = useMutation({
     mutationFn: (data: { productId?: string; variantId?: string; warehouseId: string; quantity: number; reason: string; unitCost?: number; binLocationId?: string }) =>
       apiClient.post('/inventory/physical/adjust', data),
@@ -158,6 +175,16 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
     const qty = parseInt(quantity)
     if (isNaN(qty) || qty === 0) {
       toast.error('Please enter a valid non-zero quantity')
+      return
+    }
+    // Hard client gate mirroring the server's below-zero block (see the
+    // owner-decision comment at `insufficientStock`): a deduction larger
+    // than on-hand never reaches the server and never opens the
+    // destructive-confirm dialog — confirmation only covers a large
+    // deduction WITHIN the available stock. Unknown on-hand (null) is
+    // not blocked here — the server decides.
+    if (insufficientStock) {
+      toast.error(`Insufficient stock — only ${onHand} available. Physical stock can never go below zero.`)
       return
     }
     const cost = qty > 0 ? parseFloat(unitCost) : undefined
@@ -321,6 +348,25 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
                 </div>
               )}
 
+              {/* Insufficient-stock pre-validation: a deduction larger than
+                  on-hand shows this alert INSTEAD of reaching the server —
+                  confirmation never authorises a below-zero deduction, so
+                  there is nothing to confirm. While the on-hand figures
+                  are still loading the check has not run yet: no false
+                  block, the server stays the backstop. */}
+              {insufficientStock && (
+                <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive leading-snug space-y-1">
+                  <p>Insufficient stock — only {onHand} available.</p>
+                  <p>Physical stock can never go below zero, so this deduction is rejected with or without confirmation.</p>
+                </div>
+              )}
+              {warehouseId && qtyNum < 0 && isStockLoading && onHand == null && !insufficientStock && (
+                <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                  Checking available stock…
+                </div>
+              )}
+
               {parseInt(quantity) > 0 && (
                 <div className="grid gap-2">
                   <Label htmlFor="unitCost">Unit Cost / Purchase Price (৳) <span className="text-destructive">*</span></Label>
@@ -364,6 +410,7 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
                 onClick={handleSave}
                 disabled={
                   adjustMut.isPending ||
+                  insufficientStock ||
                   (availabilityMode != null &&
                     availabilityMode !== 'MANAGED_STOCK' &&
                     availabilityMode !== 'INVENTORY_CONTROLLED')

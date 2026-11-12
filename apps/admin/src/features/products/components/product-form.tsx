@@ -17,7 +17,7 @@ const imgUrl = appUrl
 import { apiClient } from '@/lib/api-client'
 import { useInventoryManagement } from '@/features/inventory/hooks/use-inventory-management'
 import { defaultAvailabilityMode } from '@/features/products/lib/availability-defaults'
-import { savedManagedQuantities, shouldShowModeSwitchClearNote } from '@/features/products/lib/managed-stock'
+import { liveManagedReservationSummary, savedManagedQuantities, shouldShowModeSwitchClearNote } from '@/features/products/lib/managed-stock'
 import { resolveProductSlug, slugifyLatin, slugHasChars } from '@/features/products/lib/product-slug'
 import { isSupportedVideoUrl, cleanDetailRows, cleanDescriptionSections, type DetailRow } from '@/features/products/lib/pdp-fields'
 import { attributesApi } from '@/features/attributes/api'
@@ -1243,6 +1243,22 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
     currentMode: availabilityMode,
   })
   const modeSwitchQuantities = showModeSwitchNote ? savedManagedQuantities(savedProductForModeNote) : []
+  // Live managed holds for the mode-switch note (owner decision 4): the
+  // same GET /inventory/physical/reservations?productId=… the Stock page's
+  // "Pending Reservations" tab already uses — no new endpoint. Fetched
+  // only while the note is shown, so the form makes no extra request in
+  // normal editing. Managed holds only: the switch zeroes MANAGED stock
+  // and releases those holds on save; physical holds are untouched.
+  const modeSwitchProductId = showModeSwitchNote ? savedProductForModeNote?.id : undefined
+  const { data: modeSwitchReservations, isLoading: modeSwitchReservationsLoading } = useQuery({
+    queryKey: ['inventory-reservations', modeSwitchProductId],
+    queryFn: () =>
+      apiClient
+        .get('/inventory/physical/reservations', { params: { productId: modeSwitchProductId! } })
+        .then((r) => r.data),
+    enabled: !!modeSwitchProductId,
+  })
+  const modeSwitchReservationSummary = liveManagedReservationSummary(modeSwitchReservations)
 
   return (
     <>
@@ -1543,6 +1559,13 @@ setSelectedAttrs([]); setSelectedValues({}); setNewValueInput({});
                         </li>
                       ))}
                     </ul>
+                    <p className='mt-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300' data-testid='mode-switch-live-reservations'>
+                      {modeSwitchReservationsLoading
+                        ? 'Live reservations: loading…'
+                        : modeSwitchReservationSummary.holds > 0
+                          ? `Live reservations: ${modeSwitchReservationSummary.units} unit${modeSwitchReservationSummary.units === 1 ? '' : 's'} held in ${modeSwitchReservationSummary.holds} reservation${modeSwitchReservationSummary.holds === 1 ? '' : 's'} — these holds are released on save.`
+                          : 'Live reservations: none — no pending order holds this stock.'}
+                    </p>
                   </div>
                 )}
                 {availabilityMode === 'MANAGED_STOCK' && type !== 'variable' && (

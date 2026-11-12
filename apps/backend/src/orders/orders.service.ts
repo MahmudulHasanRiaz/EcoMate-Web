@@ -1150,53 +1150,53 @@ export class OrdersService {
     id: string,
     opts: { token?: string; userId?: string; role?: string } = {},
   ) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-          },
+    // Shared detail include — the UUID lookup and the displayId fallback
+    // below must fetch the same shape; keep them on this one object so the
+    // two paths can never drift apart.
+    const include = {
+      customer: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
         },
-        status: true,
-        shipment: true,
-        assignee: { select: { id: true, firstName: true, lastName: true } },
-        items: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                sku: true,
-                images: true,
-                slug: true,
-                customizations: true,
-                category: { select: { name: true } },
-              },
+      },
+      status: true,
+      shipment: true,
+      assignee: { select: { id: true, firstName: true, lastName: true } },
+      items: {
+        include: {
+          product: {
+            select: {
+              id: true,
+              name: true,
+              sku: true,
+              images: true,
+              slug: true,
+              customizations: true,
+              category: { select: { name: true } },
             },
-            combo: { select: { id: true, name: true } },
-            variant: {
-              include: {
-                product: {
-                  select: {
-                    id: true,
-                    variants: {
-                      where: { isActive: true },
-                      select: {
-                        id: true,
-                        image: true,
-                        images: true,
-                        attributeValues: {
-                          select: {
-                            attributeValue: {
-                              select: {
-                                value: true,
-                                hexCode: true,
-                                attribute: { select: { name: true } },
-                              },
+          },
+          combo: { select: { id: true, name: true } },
+          variant: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  variants: {
+                    where: { isActive: true },
+                    select: {
+                      id: true,
+                      image: true,
+                      images: true,
+                      attributeValues: {
+                        select: {
+                          attributeValue: {
+                            select: {
+                              value: true,
+                              hexCode: true,
+                              attribute: { select: { name: true } },
                             },
                           },
                         },
@@ -1204,12 +1204,12 @@ export class OrdersService {
                     },
                   },
                 },
-                attributeValues: {
-                  include: {
-                    attributeValue: {
-                      include: {
-                        attribute: { select: { name: true } },
-                      },
+              },
+              attributeValues: {
+                include: {
+                  attributeValue: {
+                    include: {
+                      attribute: { select: { name: true } },
                     },
                   },
                 },
@@ -1217,62 +1217,81 @@ export class OrdersService {
             },
           },
         },
-        payments: {
-          include: {
-            verifier: { select: { id: true, firstName: true, lastName: true } },
-          },
+      },
+      payments: {
+        include: {
+          verifier: { select: { id: true, firstName: true, lastName: true } },
         },
-        dispatchLogs: { orderBy: { createdAt: 'desc' } },
-        dispatches: { orderBy: { createdAt: 'desc' } },
-        // RTN relationship — both directions (original → RTN, RTN → original).
-        returnOfOrder: { include: { status: true } },
-        returnOrders: { include: { status: true } },
-        // Received Return rows: the order-due derivation subtracts their
-        // item value (D1 — the order total is never mutated). Summary fetch
-        // only; the returns module owns the full lifecycle.
-        returns: {
-          where: { status: { in: [...RECEIVED_RETURN_STATUSES] as any } },
-          select: {
-            id: true,
-            status: true,
-            receivedAt: true,
-            items: true,
-          },
+      },
+      dispatchLogs: { orderBy: { createdAt: 'desc' } },
+      dispatches: { orderBy: { createdAt: 'desc' } },
+      // RTN relationship — both directions (original → RTN, RTN → original).
+      returnOfOrder: { include: { status: true } },
+      returnOrders: { include: { status: true } },
+      // Received Return rows: the order-due derivation subtracts their
+      // item value (D1 — the order total is never mutated). Summary fetch
+      // only; the returns module owns the full lifecycle.
+      returns: {
+        where: { status: { in: [...RECEIVED_RETURN_STATUSES] as any } },
+        select: {
+          id: true,
+          status: true,
+          receivedAt: true,
+          items: true,
         },
-        // Include edit lock for staff detail view (stripped for customers).
-        editLock: {
-          include: { user: { select: { firstName: true, lastName: true } } },
-        },
-        // EXCHANGE children: the original order + its item snapshots ride on
-        // the SAME fetch (exchange detail needs old-vs-new). PUBLIC/CUSTOMER
-        // responses never see this — stripped below (another customer's data).
-        exchangeOfOrder: {
-          select: {
-            id: true,
-            displayId: true,
-            kind: true,
-            subtotal: true,
-            shippingCharge: true,
-            discount: true,
-            discountType: true,
-            total: true,
-            status: { select: { id: true, name: true, color: true } },
-            items: {
-              select: {
-                productId: true,
-                variantId: true,
-                quantity: true,
-                price: true,
-                product: { select: { id: true, name: true, sku: true, images: true } },
-                variant: {
-                  select: { id: true, sku: true, image: true, images: true },
-                },
+      },
+      // Include edit lock for staff detail view (stripped for customers).
+      editLock: {
+        include: { user: { select: { firstName: true, lastName: true } } },
+      },
+      // EXCHANGE children: the original order + its item snapshots ride on
+      // the SAME fetch (exchange detail needs old-vs-new). PUBLIC/CUSTOMER
+      // responses never see this — stripped below (another customer's data).
+      exchangeOfOrder: {
+        select: {
+          id: true,
+          displayId: true,
+          kind: true,
+          subtotal: true,
+          shippingCharge: true,
+          discount: true,
+          discountType: true,
+          total: true,
+          status: { select: { id: true, name: true, color: true } },
+          items: {
+            select: {
+              productId: true,
+              variantId: true,
+              quantity: true,
+              price: true,
+              product: { select: { id: true, name: true, sku: true, images: true } },
+              variant: {
+                select: { id: true, sku: true, image: true, images: true },
               },
             },
           },
         },
       },
+    } satisfies Prisma.OrderInclude;
+
+    let order = await this.prisma.order.findUnique({
+      where: { id },
+      include,
     });
+    if (!order) {
+      // Display-id deep-link (admin detail opened by order number, e.g.
+      // /admin/op/orders/ORD-261112-0002): when no row has this UUID,
+      // fall back to an exact displayId lookup. displayId is @unique, so
+      // this can match at most one row, and the owner/token/role checks
+      // below still apply unchanged — a displayId alone grants nothing.
+      // This does NOT touch the public routes: findByDisplayId /
+      // findByViewToken keep their own "never treats the input as …"
+      // rules (see orders.controller.ts).
+      order = await this.prisma.order.findFirst({
+        where: { displayId: id },
+        include,
+      });
+    }
     if (!order || order.trashedAt)
       throw new NotFoundException('Order not found');
     const ownsOrder = opts.userId && order.customerId === opts.userId;

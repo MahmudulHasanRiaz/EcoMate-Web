@@ -23,6 +23,7 @@ import { ManagedStockAdjustmentModal } from '@/features/products/components/mana
 import { adjustDialogKindForViewMode } from './utils/adjust-dialog-routing'
 import { invalidateInventoryStockQueries } from './utils/invalidate-inventory'
 import { managedStockOverviewParams } from './utils/stock-overview-params'
+import { sanitizeSearchState } from './utils/search-param'
 import { useInventoryManagement } from './hooks/use-inventory-management'
 import { dedupePhysicalVariants } from './utils/dedupe-physical-variants'
 import { Link, useSearch, getRouteApi } from '@tanstack/react-router'
@@ -86,7 +87,10 @@ export function Inventory() {
   const [bulkOpen, setBulkOpen] = useState(false)
   const [adjustProductId, setAdjustProductId] = useState<string | undefined>()
   const [adjustVariantId, setAdjustVariantId] = useState<string | undefined>()
-  const [search, setSearch] = useState(() => routeSearch?.q ?? '')
+  // Sanitized (not just `?? ''`): the router JSON-parses `?q=%22null%22`
+  // back to the STRING "null", which `??` cannot catch and which used to
+  // render literally in this input. See utils/search-param.ts.
+  const [search, setSearch] = useState(() => sanitizeSearchState(routeSearch?.q))
   const [page, setPage] = useState(1)
   const [perPage] = useState(20)
   const { data: imEnabled = true } = useInventoryManagement()

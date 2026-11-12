@@ -941,6 +941,54 @@ describe('OrdersService', () => {
       );
     });
 
+    it('resolves by UUID without consulting the displayId fallback', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(mockOrder);
+
+      const result = await service.findOne('order-id-1', {
+        userId: 'user-a',
+        role: 'admin',
+      });
+
+      expect(result.id).toBe('order-id-1');
+      expect(prisma.order.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'order-id-1' } }),
+      );
+      expect(prisma.order.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('resolves by displayId when no UUID row matches (staff context, 2026-11-12)', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(mockOrder);
+
+      const result = await service.findOne('ORD-250115-0001', {
+        userId: 'user-a',
+        role: 'admin',
+      });
+
+      expect(prisma.order.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'ORD-250115-0001' } }),
+      );
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { displayId: 'ORD-250115-0001' },
+        }),
+      );
+      expect(result.id).toBe('order-id-1');
+      expect(result.displayId).toBe('ORD-250115-0001');
+    });
+
+    it('still 404s when neither the UUID nor the displayId matches', async () => {
+      (prisma.order.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.findOne('ORD-999999-9999')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { displayId: 'ORD-999999-9999' } }),
+      );
+    });
+
     it('blocks a staff viewer when another user holds a live edit lock', async () => {
       (prisma.order.findUnique as jest.Mock).mockResolvedValue({
         ...mockOrder,
@@ -1001,6 +1049,63 @@ describe('OrdersService', () => {
         role: 'admin',
       });
       expect(result.id).toBe('order-id-1');
+    });
+  });
+
+  describe('findByDisplayId (public route — unchanged by the findOne displayId fallback)', () => {
+    const publicRow = {
+      id: 'order-id-1',
+      displayId: 'ORD-250115-0001',
+      createdAt: new Date('2025-01-15'),
+      total: 2050,
+      timeline: [],
+      shippingAddress: { address: '123 Test St', city: 'Test City', zone: '' },
+      courierService: null,
+      courierTrackingCode: null,
+      courierConsignmentId: null,
+      dispatches: [],
+      status: { name: 'Pending', color: '#999999' },
+      items: [],
+      // Present on the row on purpose: it must NEVER leak into the DTO.
+      viewToken: 'mock-view-token',
+    };
+
+    it('returns the no-PII display DTO and never accepts a viewToken', async () => {
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(publicRow);
+
+      const result = await service.findByDisplayId('ORD-250115-0001');
+
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            displayId: { equals: 'ORD-250115-0001', mode: 'insensitive' },
+          }),
+        }),
+      );
+      expect(result.displayId).toBe('ORD-250115-0001');
+      expect(result).not.toHaveProperty('viewToken');
+      expect(result).not.toHaveProperty('payments');
+      expect(result).not.toHaveProperty('customer');
+      expect(result.shippingAddress).toEqual({
+        city: 'Test City',
+        district: null,
+      });
+    });
+
+    it('searches displayId only — a UUID input does not resolve via id', async () => {
+      (prisma.order.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.findByDisplayId('order-id-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.order.findUnique).not.toHaveBeenCalled();
+      expect(prisma.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            displayId: { equals: 'order-id-1', mode: 'insensitive' },
+          }),
+        }),
+      );
     });
   });
 
