@@ -122,6 +122,9 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
       expect(ordersService.confirmStaffPartialDelivered).toHaveBeenCalledWith(
         'order-1',
         'system',
+        undefined,
+        undefined,
+        { courier: 'steadfast' },
       );
     });
 
@@ -140,6 +143,9 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
       expect(ordersService.confirmStaffPartialDelivered).toHaveBeenCalledWith(
         'order-1',
         'system',
+        undefined,
+        undefined,
+        { courier: 'pathao' },
       );
     });
 
@@ -158,6 +164,9 @@ describe('CourierWebhookService — staff-partial 15.4 exception (Task 5 Fix 9)'
         'order-1',
         { statusId: 'status-partial' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'steadfast' },
       );
     });
   });

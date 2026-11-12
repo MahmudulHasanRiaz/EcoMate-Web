@@ -1520,7 +1520,15 @@ export class DispatchService {
       ? SYNC_DISPATCH_TO_ORDER[mappedStatus]
       : undefined;
     if (targetName) {
-      await this.advanceOrderStatusFromSync(dispatch.orderId, targetName);
+      // Courier attribution (timeline-courier-actor): the dispatch row's
+      // courier rides to the status-change timeline entry. Stored format:
+      // Prisma CourierService enum — lowercase slug as-is
+      // ('steadfast' | 'pathao' | 'redx' | 'carrybee').
+      await this.advanceOrderStatusFromSync(
+        dispatch.orderId,
+        targetName,
+        dispatch.courier as string,
+      );
     }
   }
 
@@ -1530,7 +1538,11 @@ export class DispatchService {
    * verification, stock/cancel handling, notification hooks); if the direct
    * step is rejected, walk forward through legal transitions.
    */
-  private async advanceOrderStatusFromSync(orderId: string, targetName: string) {
+  private async advanceOrderStatusFromSync(
+    orderId: string,
+    targetName: string,
+    courier: string,
+  ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { status: true },
@@ -1551,6 +1563,12 @@ export class DispatchService {
         orderId,
         { statusId: targetStatus.id },
         'system',
+        undefined,
+        undefined,
+        // Courier attribution (timeline-courier-actor): the status-change
+        // timeline entry carries the courier slug so the admin renders a
+        // Courier badge instead of the generic "Auto" badge.
+        { courier },
       );
       return;
     } catch (e) {
@@ -1608,6 +1626,9 @@ export class DispatchService {
           orderId,
           { statusId: stepStatus.id },
           'system',
+          undefined,
+          undefined,
+          { courier },
         );
       } catch (e2) {
         this.logger.warn(

@@ -104,6 +104,9 @@ describe('CourierWebhookService — return lock on Delivered (2026-10-23)', () =
       'order-1',
       { statusId: 'status-delivered' },
       'system',
+      undefined,
+      undefined,
+      { courier: 'steadfast' },
     );
   });
 
