@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildReconPreview,
+  buildReconSheetRows,
   computeReconVerdict,
   isApplicableReconRow,
 } from '../components/recon-helpers'
@@ -150,5 +151,116 @@ describe('buildReconPreview', () => {
     expect(p.fixable).toBe(false)
     expect(p.fixLines).toEqual([])
     expect(p.notFixedCount).toBe(1)
+  })
+})
+
+describe('buildReconSheetRows', () => {
+  const sheetRow = (overrides: Partial<ReconRow>) =>
+    buildReconSheetRows(report({ rows: [row(overrides)] }))[0]
+
+  it('maps one row per finding, in report order, nothing dropped', () => {
+    const r = report({
+      rows: [
+        row({ category: 'R1', id: 'a' }),
+        row({ category: 'R4', id: 'b' }),
+        row({ category: 'R8', r8Kind: 'human', id: 'c' }),
+      ],
+    })
+    const rows = buildReconSheetRows(r)
+    expect(rows).toHaveLength(3)
+    expect(rows.map((x) => x.key)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('gives a plain problem and the right Qty per category', () => {
+    expect(sheetRow({ category: 'R1', missingManagedQty: 2, missingPhysicalQty: 1 }).problem).toBe(
+      'Missed restock',
+    )
+    expect(sheetRow({ category: 'R1', missingManagedQty: 2, missingPhysicalQty: 1 }).qty).toBe(3)
+    expect(
+      sheetRow({ category: 'R2', missingManagedQty: 0, missingPhysicalQty: 4 }).problem,
+    ).toBe('Physical stock not fixed')
+    expect(sheetRow({ category: 'R2', missingManagedQty: 0, missingPhysicalQty: 4 }).qty).toBe(4)
+    // R3 physical: the received amount; R3 managed: the order-line quantity.
+    expect(
+      sheetRow({ category: 'R3', layer: 'physical', receivedGoodQty: 3 }).problem,
+    ).toBe('Physical stock never used')
+    expect(sheetRow({ category: 'R3', layer: 'physical', receivedGoodQty: 3 }).qty).toBe(3)
+    expect(sheetRow({ category: 'R3', layer: 'managed', orderedQty: 5 }).problem).toBe(
+      'Stock flags still set',
+    )
+    expect(sheetRow({ category: 'R3', layer: 'managed', orderedQty: 5 }).qty).toBe(5)
+    // R4: unknowable by definition.
+    expect(sheetRow({ category: 'R4' }).problem).toBe('Quantity unknown')
+    expect(sheetRow({ category: 'R4' }).qty).toBeNull()
+    // R6: the signed stranded qty — a negative residue shows its magnitude.
+    expect(sheetRow({ category: 'R6', strandedManagedQty: -2 }).problem).toBe(
+      'Stranded managed stock',
+    )
+    expect(sheetRow({ category: 'R6', strandedManagedQty: -2 }).qty).toBe(2)
+    expect(sheetRow({ category: 'R6', strandedManagedQty: 3 }).qty).toBe(3)
+    // R7: the physical quantity on the suspected mirror row.
+    expect(sheetRow({ category: 'R7', physicalQty: 7 }).problem).toBe('Suspected leftover stock')
+    expect(sheetRow({ category: 'R7', physicalQty: 7 }).qty).toBe(7)
+    // R8: the order quantity.
+    expect(
+      sheetRow({ category: 'R8', r8Kind: 'terminal', orderedQty: 2 }).problem,
+    ).toBe('Old return, no Return record')
+    expect(sheetRow({ category: 'R8', r8Kind: 'terminal', orderedQty: 2 }).qty).toBe(2)
+    expect(sheetRow({ category: 'R8', r8Kind: 'human', orderedQty: 2 }).problem).toBe(
+      'Old return, unclear evidence',
+    )
+  })
+
+  it('marks applicable rows Auto-fix and report-only rows Needs you', () => {
+    expect(sheetRow({ category: 'R1' }).result).toBe('Auto-fix')
+    expect(sheetRow({ category: 'R2' }).result).toBe('Auto-fix')
+    expect(sheetRow({ category: 'R6' }).result).toBe('Auto-fix')
+    expect(sheetRow({ category: 'R8', r8Kind: 'pending' }).result).toBe('Auto-fix')
+    expect(sheetRow({ category: 'R3' }).result).toBe('Needs you')
+    expect(sheetRow({ category: 'R4' }).result).toBe('Needs you')
+    expect(sheetRow({ category: 'R7' }).result).toBe('Needs you')
+    expect(sheetRow({ category: 'R8', r8Kind: 'human' }).result).toBe('Needs you')
+  })
+
+  it('never shows a UUID product name — falls back to Unknown product', () => {
+    const uuid = '123e4567-e89b-12d3-a456-426614174000'
+    expect(sheetRow({ productName: uuid, productId: uuid }).itemLabel).toBe('Unknown product')
+    expect(sheetRow({ productName: 'Hoodie', productId: 'some-id' }).itemLabel).toBe('Hoodie')
+  })
+
+  it('keeps the main-view fields free of R-codes and UUIDs', () => {
+    const rows = buildReconSheetRows(
+      report({
+        rows: [
+          row({
+            category: 'R1',
+            orderDisplayId: 'ORD-1',
+            productName: 'Hoodie',
+            missingManagedQty: 2,
+          }),
+          row({
+            category: 'R6',
+            orderDisplayId: '',
+            productName: 'Widget',
+            strandedManagedQty: -2,
+          }),
+          row({
+            category: 'R8',
+            r8Kind: 'human',
+            orderDisplayId: 'ORD-9',
+            productName: 'Mug',
+            orderedQty: 1,
+          }),
+        ],
+      }),
+    )
+    for (const r of rows) {
+      for (const field of [r.problem, r.orderLabel, r.itemLabel, r.result]) {
+        expect(field).not.toMatch(/\bR[1-8](-H)?\b/)
+        expect(field).not.toMatch(
+          /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+        )
+      }
+    }
   })
 })

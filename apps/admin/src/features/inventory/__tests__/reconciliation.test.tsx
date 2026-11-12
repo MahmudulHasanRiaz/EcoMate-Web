@@ -5,11 +5,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Reconciliation } from '../reconciliation'
 
 /**
- * Reconciliation page tests (2026-10-30 directive §2.8, layout redesigned
- * 2026-11-12): the page is hidden without run_stock_reconciliation, Apply
- * stays disabled until preview + backupId + confirmation are all present,
- * checks hide their detail until expanded, and the Q8 settle card is
- * superadmin-only with preview/settle against the q8-settle contract.
+ * Reconciliation page tests (2026-10-30 directive §2.8, details sheet
+ * 2026-11-12): the page is hidden without run_stock_reconciliation;
+ * the details view is a clean sheet — one row per finding, Problem |
+ * Order/Item | Qty | Result, plain English, no R-codes, no UUIDs — with
+ * the evidence behind each row's expansion; the verification checks
+ * hide their detail until expanded; the old Apply and the standalone
+ * Q8 settle card are gone (the one-click fix is the only write path).
  * One-click flow (2026-11-12): neutral verdict banner before any report,
  * details closed by default, one "Check & fix stock" button → preview
  * → exactly one confirm → POST /inventory/reconcile/fix-all → result
@@ -244,139 +246,157 @@ describe('Reconciliation page', () => {
       .element(page.getByText(/do not have access to stock reconciliation/i))
       .toBeInTheDocument()
     await expect
-      .element(page.getByRole('button', { name: /run report/i }))
+      .element(page.getByRole('button', { name: /Check & fix stock/i }))
       .not.toBeInTheDocument()
   })
 
-  it('shows the danger line and keeps Apply disabled until preview + backup + confirm', async () => {
+  it('details show the sheet: one row per finding, plain columns, no codes', async () => {
     authState.permissions = ['run_stock_reconciliation']
     renderPage()
-    // The old UI lives behind details (default closed).
+
+    // Load the report through the one-click button (the dry-run).
+    await userEvent.click(page.getByRole('button', { name: /Check & fix stock/i }))
+    await expect.element(page.getByText(/What will be fixed/i)).toBeInTheDocument()
+
     await userEvent.click(page.getByRole('button', { name: /Show details/i }))
-    await expect.element(page.getByText(/Danger: Apply writes real stock/i)).toBeInTheDocument()
+    await expect.element(page.getByText('Findings (5)')).toBeInTheDocument()
 
-    // Run the dry-run report.
-    await userEvent.click(page.getByRole('button', { name: /run report/i }))
-    await expect.element(page.getByText('RTN-1')).toBeInTheDocument()
-    await expect.element(page.getByText(/R1 missed restock: 1/i)).toBeInTheDocument()
+    // One row per finding, plain problems, no R-codes. (Exact match: the
+    // preview card above repeats similar words, e.g. "1 missed restock(s)
+    // will be added", so a substring match would hit both.)
+    await expect.element(page.getByText('Missed restock', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('Quantity unknown', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('Stranded managed stock', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('Old return, no Return record', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('Old return, unclear evidence', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('ORD-1', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('Hoodie', { exact: true })).toBeInTheDocument()
+    await expect.element(page.getByText('Stranded Widget', { exact: true })).toBeInTheDocument()
 
-    const applyBtn = page.getByRole('button', { name: /Apply 3 selected/i })
-    await expect.element(applyBtn).toBeDisabled()
+    // Result column: applicable rows Auto-fix, report-only rows Needs you.
+    await expect.element(page.getByText('Auto-fix').first()).toBeInTheDocument()
+    await expect.element(page.getByText('Needs you').first()).toBeInTheDocument()
 
-    // R1 row selectable (pre-checked); R4 row never selectable.
-    const r1Checkbox = page.getByRole('checkbox', { name: /Select row R1/i })
-    await expect.element(r1Checkbox).toBeChecked()
-    const r4Checkbox = page.getByRole('checkbox', { name: /Select row R4/i })
-    await expect.element(r4Checkbox).toBeDisabled()
+    // No R-codes, no UUIDs, no old-UI leftovers anywhere on the page.
+    await expect.element(page.getByText(/\bR[1-8](-H)?\b/)).not.toBeInTheDocument()
+    await expect.element(page.getByText(/R1 missed restock/i)).not.toBeInTheDocument()
+    await expect.element(page.getByText(/R8-H/)).not.toBeInTheDocument()
+    await expect.element(page.getByText(/Danger: Apply writes real stock/i)).not.toBeInTheDocument()
+    await expect
+      .element(page.getByRole('button', { name: /run report/i }))
+      .not.toBeInTheDocument()
+    await expect
+      .element(page.getByRole('button', { name: /Apply \d+ selected/i }))
+      .not.toBeInTheDocument()
 
-    // R6 and evidence-backed R8 are applicable (2026-11-11 stock-mode
-    // round); ambiguous R8-H stays report-only and shows as R8-H.
-    const r6Checkbox = page.getByRole('checkbox', { name: /Select row R6/i })
-    await expect.element(r6Checkbox).toBeChecked()
-    const r8Checkbox = page.getByRole('checkbox', { name: /Select row R8\|o8/i })
-    await expect.element(r8Checkbox).toBeChecked()
-    const r8hCheckbox = page.getByRole('checkbox', { name: /Select row R8\|o9/i })
-    await expect.element(r8hCheckbox).toBeDisabled()
-    await expect.element(page.getByText('R8-H', { exact: true })).toBeInTheDocument()
-    await expect.element(page.getByText(/R6 stranded managed: 1/i)).toBeInTheDocument()
-    await expect.element(page.getByText(/R8 legacy returns: 1/i)).toBeInTheDocument()
+    // Evidence stays reachable behind the row's expansion.
+    await userEvent.click(page.getByRole('button', { name: /Details for ORD-1 Hoodie/i }))
+    await expect.element(page.getByText(/managed RETURN ledger/i)).toBeInTheDocument()
+    await expect.element(page.getByText(/Return: RTN-1/i)).toBeInTheDocument()
+  })
 
-    // Backup id alone is not enough — confirmation is also required.
-    await userEvent.fill(page.getByLabelText(/Backup id/i), 'dump-42')
-    await expect.element(applyBtn).toBeDisabled()
-    await userEvent.click(page.getByText(/I reviewed the preview/i))
-    await expect.element(applyBtn).not.toBeDisabled()
-
-    await userEvent.click(applyBtn)
-    await expect.element(page.getByText(/Apply result \(run run-1\)/i)).toBeInTheDocument()
-    expect(mockPost).toHaveBeenCalledWith(
-      '/inventory/reconcile/apply',
-      { backupId: 'dump-42', rowIds: ['R1|r1|p1|v1|managed', 'R6|p6||managed', 'R8|o8||||managed'], confirmed: true },
-      expect.anything(),
-    )
+  it('shows Unknown product instead of a raw product id, and never shows the id', async () => {
+    authState.permissions = ['run_stock_reconciliation']
+    const uuid = '123e4567-e89b-12d3-a456-426614174000'
+    mockPost.mockImplementation((url: string) => {
+      if (url === '/inventory/reconcile')
+        return Promise.resolve({
+          data: {
+            ...REPORT,
+            rows: [
+              {
+                id: `R3|${uuid}||managed`,
+                category: 'R3',
+                orderDisplayId: 'ORD-99',
+                returnDisplayId: null,
+                productId: uuid,
+                productName: uuid,
+                variantId: null,
+                layer: 'managed',
+                orderedQty: 3,
+                receivedGoodQty: 0,
+                damagedQty: 0,
+                alreadyRestoredManaged: 0,
+                alreadyRestoredPhysical: 0,
+                missingManagedQty: 0,
+                missingPhysicalQty: 0,
+                evidence: 'Order Cancelled with lingering managed flags',
+              },
+            ],
+            counts: { R1: 0, R2: 0, R3: 1, R4: 0, R5: {}, R6: 0, R7: 0, R8: 0, R8H: 0 },
+            checks: [],
+          },
+        })
+      return Promise.reject(new Error('unknown url ' + url))
+    })
+    renderPage()
+    await userEvent.click(page.getByRole('button', { name: /Check & fix stock/i }))
+    await userEvent.click(page.getByRole('button', { name: /Show details/i }))
+    await expect.element(page.getByText('Unknown product')).toBeInTheDocument()
+    await expect.element(page.getByText('Stock flags still set')).toBeInTheDocument()
+    await expect.element(page.getByText(uuid)).not.toBeInTheDocument()
   })
 
   it('hides check details until the row is expanded, keeping the 400-char collapse', async () => {
     authState.permissions = ['run_stock_reconciliation']
     renderPage()
+    await userEvent.click(page.getByRole('button', { name: /Check & fix stock/i }))
     await userEvent.click(page.getByRole('button', { name: /Show details/i }))
-    await userEvent.click(page.getByRole('button', { name: /run report/i }))
-    await expect.element(page.getByText('RTN-1')).toBeInTheDocument()
-
-    // Compact table: code + one-line label + count, detail hidden by default.
     await expect.element(page.getByText('Managed adds missing')).toBeInTheDocument()
-    await expect.element(page.getByText('one row')).not.toBeInTheDocument()
 
-    await userEvent.click(page.getByRole('button', { name: /Q1 details/i }))
-    await expect.element(page.getByText('one row')).toBeInTheDocument()
+    // No check codes in the main view — the label is the identifier.
+    await expect.element(page.getByText('Q1', { exact: true })).not.toBeInTheDocument()
+    await expect.element(page.getByText('Q8', { exact: true })).not.toBeInTheDocument()
+
+    // Compact table: label + count, detail hidden by default.
+    await expect.element(page.getByText('one row', { exact: true })).not.toBeInTheDocument()
+
+    await userEvent.click(
+      page.getByRole('button', { name: /Details for Managed adds missing/i }),
+    )
+    await expect.element(page.getByText('one row', { exact: true })).toBeInTheDocument()
 
     // Long Q8 detail collapses past 400 chars behind "Show full detail".
-    await userEvent.click(page.getByRole('button', { name: /Q8 details/i }))
+    await userEvent.click(
+      page.getByRole('button', { name: /Details for Ledger-vs-state/i }),
+    )
     await expect.element(page.getByRole('button', { name: /Show full detail/i })).toBeInTheDocument()
     await userEvent.click(page.getByRole('button', { name: /Show full detail/i }))
     await expect.element(page.getByRole('button', { name: /Show less/i })).toBeInTheDocument()
   })
 
-  it('hides the Q8 settle card from non-superadmins', async () => {
-    authState.permissions = ['run_stock_reconciliation']
-    authState.role = 'admin'
-    renderPage()
-    await userEvent.click(page.getByRole('button', { name: /Show details/i }))
-    await expect
-      .element(page.getByText(/Settle orphaned Q8 units/i))
-      .not.toBeInTheDocument()
-  })
-
-  it('superadmin can preview then settle orphaned Q8 units', async () => {
+  it('the standalone Q8 settle card is gone — Q8 settles only inside the one-click fix', async () => {
     authState.permissions = ['run_stock_reconciliation']
     authState.role = 'superadmin'
     renderPage()
+    await userEvent.click(page.getByRole('button', { name: /Check & fix stock/i }))
+    // The one-click preview still carries the Q8 settle line for superadmins.
+    await expect
+      .element(page.getByText(/2 stuck reservation\(s\) will be released/i))
+      .toBeInTheDocument()
     await userEvent.click(page.getByRole('button', { name: /Show details/i }))
-    await expect.element(page.getByText(/Settle orphaned Q8 units/i)).toBeInTheDocument()
-
-    // Preview is a dry run — nothing is written.
-    await userEvent.click(page.getByRole('button', { name: /^Preview$/i }))
-    await expect.element(page.getByText(/Preview — nothing was written/i)).toBeInTheDocument()
-    await expect.element(page.getByText(/Released units: 2/i)).toBeInTheDocument()
-    await expect.element(page.getByText(/Flags cleared: 1/i)).toBeInTheDocument()
-    await expect.element(page.getByText('LED-1')).toBeInTheDocument()
-    expect(mockPost).toHaveBeenCalledWith(
-      '/inventory/reconciliation/q8-settle',
-      { dryRun: true },
-      expect.anything(),
-    )
-
-    // Settle stays disabled until confirmed.
-    const settleBtn = page.getByRole('button', { name: /^Settle$/i })
-    await expect.element(settleBtn).toBeDisabled()
-    await userEvent.click(page.getByText(/I understand settling writes ledger entries/i))
-    await expect.element(settleBtn).not.toBeDisabled()
-
-    await userEvent.click(settleBtn)
-    await expect.element(page.getByText(/^Settled$/i)).toBeInTheDocument()
-    await expect.element(page.getByText(/Remaining fails: 0/i)).toBeInTheDocument()
-    expect(mockPost).toHaveBeenCalledWith(
-      '/inventory/reconciliation/q8-settle',
-      { dryRun: false },
-      expect.anything(),
-    )
+    await expect.element(page.getByText(/Settle orphaned Q8 units/i)).not.toBeInTheDocument()
+    await expect
+      .element(page.getByRole('button', { name: /^Preview$/i }))
+      .not.toBeInTheDocument()
+    await expect
+      .element(page.getByRole('button', { name: /^Settle$/i }))
+      .not.toBeInTheDocument()
   })
 
-  it('details are closed by default and the banner is neutral before any check', async () => {
+  it('details are closed by default and show an empty state until a report is loaded', async () => {
     authState.permissions = ['run_stock_reconciliation']
     renderPage()
     await expect.element(page.getByText(/Not checked yet/i)).toBeInTheDocument()
     await expect
       .element(page.getByRole('button', { name: /Check & fix stock/i }))
       .toBeInTheDocument()
-    // Old UI hidden until details are opened.
+    // Details hidden until opened; the old Run report button is gone.
     await expect
       .element(page.getByRole('button', { name: /run report/i }))
       .not.toBeInTheDocument()
     await userEvent.click(page.getByRole('button', { name: /Show details/i }))
-    await expect
-      .element(page.getByRole('button', { name: /run report/i }))
-      .toBeInTheDocument()
+    await expect.element(page.getByText(/No report yet/i)).toBeInTheDocument()
     await expect
       .element(page.getByRole('button', { name: /Hide details/i }))
       .toBeInTheDocument()
