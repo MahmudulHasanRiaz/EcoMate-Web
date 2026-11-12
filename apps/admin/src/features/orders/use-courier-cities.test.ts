@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   normalizeCourierCities,
+  normalizeCourierZones,
   readLastGoodCities,
   readLastGoodEntry,
   COURIER_CITIES_LAST_GOOD_KEY,
@@ -65,6 +66,84 @@ describe('normalizeCourierCities (finding 2)', () => {
       courierConfigured: false,
       source: null,
     })
+  })
+
+  it('unwraps the { data: [...] } envelope (P0 round: was degraded to [])', () => {
+    expect(
+      normalizeCourierCities({
+        data: [
+          { id: 1, name: 'Dhaka' },
+          { id: 2, name: 'Chattogram' },
+        ],
+      }),
+    ).toEqual({
+      cities: [
+        { id: 1, name: 'Dhaka' },
+        { id: 2, name: 'Chattogram' },
+      ],
+      courierConfigured: true,
+      source: null,
+    })
+  })
+
+  it('prefers cities over data when both are present', () => {
+    expect(
+      normalizeCourierCities({
+        cities: [{ id: 1, name: 'Dhaka' }],
+        data: [{ id: 2, name: 'Chattogram' }],
+        courierConfigured: true,
+        source: 'pathao',
+      }),
+    ).toEqual({
+      cities: [{ id: 1, name: 'Dhaka' }],
+      courierConfigured: true,
+      source: 'pathao',
+    })
+  })
+})
+
+describe('normalizeCourierZones (finding 2)', () => {
+  it('passes the current envelope through', () => {
+    expect(
+      normalizeCourierZones({
+        zones: [
+          { id: 1, name: 'Banani' },
+          { id: 2, name: 'Uttara' },
+        ],
+      }),
+    ).toEqual([
+      { id: 1, name: 'Banani' },
+      { id: 2, name: 'Uttara' },
+    ])
+  })
+
+  it('still accepts the legacy bare-array body', () => {
+    expect(normalizeCourierZones([{ id: 1, name: 'Banani' }])).toEqual([
+      { id: 1, name: 'Banani' },
+    ])
+  })
+
+  it('unwraps the { data: [...] } envelope (P0 round: was degraded to [])', () => {
+    expect(
+      normalizeCourierZones({
+        data: [
+          { id: 1, name: 'Banani' },
+          { id: 2, name: 'Uttara' },
+        ],
+      }),
+    ).toEqual([
+      { id: 1, name: 'Banani' },
+      { id: 2, name: 'Uttara' },
+    ])
+  })
+
+  it('prefers zones over data when both are present', () => {
+    expect(
+      normalizeCourierZones({
+        zones: [{ id: 1, name: 'Banani' }],
+        data: [{ id: 2, name: 'Uttara' }],
+      }),
+    ).toEqual([{ id: 1, name: 'Banani' }])
   })
 })
 

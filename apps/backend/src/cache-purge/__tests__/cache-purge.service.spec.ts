@@ -168,6 +168,31 @@ describe('CachePurgeService', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('attempts every Cloudflare zone even when the first one fails', async () => {
+    process.env['CLOUDFLARE_API_TOKEN'] = 'cf-token';
+    process.env['CLOUDFLARE_ZONE_ID'] = 'zone-1, zone-2';
+    const { fetchMock } = mockFetchOnce([
+      {
+        ok: false,
+        status: 403,
+        body: { success: false, errors: [{ message: 'Invalid API Token' }] },
+      },
+      { ok: true, status: 200, body: { success: true, errors: [] } },
+    ]);
+
+    const result = await service.purgeAll();
+
+    // Both zones attempted (no early return), one purged, one failed.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.layers.cloudflare.status).toBe('failed');
+    expect(result.layers.cloudflare.detail).toContain('1 of 2 zones');
+    expect(result.layers.cloudflare.detail).toContain('1 purged');
+    expect(result.layers.cloudflare.detail).toContain('zone-1');
+    expect(result.layers.cloudflare.detail).toContain('Invalid API Token');
+    // The version still bumps — the Cloudflare failure stops nothing.
+    expect(result.layers.versionBump.status).toBe('purged');
+  });
+
   it('reports the storefront layer as not_configured when no revalidation secret is set', async () => {
     process.env['STOREFRONT_URL'] = 'https://shop.example.com';
     const { fetchMock } = mockFetchOnce([]);
@@ -239,6 +264,38 @@ describe('CachePurgeService', () => {
     const first = await service.purgeAll();
     const second = await service.purgeAll();
     expect(Number(second.version)).toBeGreaterThan(Number(first.version));
+  });
+
+  it('reports a version-bump write failure as a failed layer, not a 500', async () => {
+    prisma.systemSetting.upsert = jest.fn(async () => {
+      throw new Error('DB down');
+    });
+
+    const result = await service.purgeAll();
+
+    // purgeAll resolves (no throw) with the bump as one failed layer…
+    expect(result.layers.versionBump.status).toBe('failed');
+    expect(result.layers.versionBump.detail).toContain('DB down');
+    // …and the returned version is the last-known STORED value, not
+    // the un-stored next value, so the button remembers truthfully.
+    expect(result.version).toBe('1000');
+    // Every other layer still ran.
+    expect(result.layers.backendCache.status).toBe('purged');
+  });
+
+  it('reports a version-bump read failure as a failed layer with an empty version', async () => {
+    prisma.systemSetting.findUnique = jest.fn(async ({ where }: any) => {
+      if (where.key === 'cache_version')
+        throw new Error('DB down');
+      return null;
+    });
+
+    const result = await service.purgeAll();
+
+    expect(result.layers.versionBump.status).toBe('failed');
+    expect(result.layers.versionBump.detail).toContain('DB down');
+    expect(result.version).toBe('');
+    expect(result.layers.backendCache.status).toBe('purged');
   });
 
   it('getCacheVersion returns the stored version, and null when never purged', async () => {

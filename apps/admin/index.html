@@ -240,6 +240,10 @@
       })();
     </script>
 
-    <script type="module" src="/src/main.tsx"></script>
+    <!-- data-cfasync: Cloudflare Rocket Loader must not rewrite the module
+      entry (it breaks module execution — same as apps/pos). Vite strips
+      this attribute from the injected tag at build time; the
+      'admin-cfasync' plugin in vite.config.ts adds it back. -->
+    <script type="module" data-cfasync="false" src="/src/main.tsx"></script>
   </body>
 </html>

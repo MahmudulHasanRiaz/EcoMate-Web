@@ -28,7 +28,9 @@ import { PrismaService } from '../prisma/prisma.service';
  *     reports `not_configured`.
  *  4. versionBump — upserts SystemSetting `cache_version` to a strictly
  *     increasing value. Runs LAST and always: a failure in another layer
- *     must never stop the bump.
+ *     must never stop the bump. A bump failure itself is reported as a
+ *     failed layer (never a 500) and the returned version is the
+ *     last-known stored value, so the button remembers truthfully.
  *
  * Tenant scope: zones come from this tenant's own env, the storefront
  * URL from this tenant's own `storefront_url` setting / STOREFRONT_URL /
@@ -163,8 +165,15 @@ export class CachePurgeService {
           'The Cloudflare edge cache was NOT purged.',
       };
     }
-    try {
-      for (const zoneId of zoneIds) {
+    // Attempt EVERY configured zone: one zone's failure must not skip
+    // the rest (nit fixed in the SW-fix round, 2026-11-12 — the old
+    // loop returned failed on the first bad zone). Zone ids are
+    // identifiers, not secrets (see PR body), so a failed zone is
+    // named in the detail for the superadmin reading the result.
+    const failures: string[] = [];
+    let purgedCount = 0;
+    for (const zoneId of zoneIds) {
+      try {
         const res = await fetch(
           `${CLOUDFLARE_API_BASE}/zones/${encodeURIComponent(zoneId)}/purge_cache`,
           {
@@ -181,19 +190,29 @@ export class CachePurgeService {
         if (!res.ok || body?.success === false) {
           const message =
             body?.errors?.[0]?.message || `Cloudflare returned HTTP ${res.status}`;
-          return { status: 'failed', detail: `Cloudflare purge failed: ${message}` };
+          failures.push(`${zoneId}: ${message}`);
+        } else {
+          purgedCount++;
         }
+      } catch (error) {
+        // Network / timeout for this zone only — keep purging the rest.
+        failures.push(`${zoneId}: ${safeMessage(error)}`);
       }
-      return {
-        status: 'purged',
-        detail: `Purged everything in ${zoneIds.length} Cloudflare zone${zoneIds.length === 1 ? '' : 's'}.`,
-      };
-    } catch (error) {
+    }
+    if (failures.length > 0) {
       return {
         status: 'failed',
-        detail: `Cloudflare purge failed: ${safeMessage(error)}`,
+        detail:
+          `Cloudflare purge failed for ${failures.length} of ${zoneIds.length} ` +
+          `zone${zoneIds.length === 1 ? '' : 's'}` +
+          (purgedCount > 0 ? ` (${purgedCount} purged)` : '') +
+          `: ${failures.join('; ')}`,
       };
     }
+    return {
+      status: 'purged',
+      detail: `Purged everything in ${zoneIds.length} Cloudflare zone${zoneIds.length === 1 ? '' : 's'}.`,
+    };
   }
 
   private async purgeStorefront(
@@ -242,27 +261,48 @@ export class CachePurgeService {
     version: string;
     result: PurgeLayerResult;
   }> {
-    const current = await this.prisma.systemSetting.findUnique({
-      where: { key: CACHE_VERSION_KEY },
-    });
-    const prev = Number.parseInt(current?.value ?? '', 10);
-    const next = String(
-      Math.max(Date.now(), Number.isFinite(prev) ? prev + 1 : 0),
-    );
-    await this.prisma.systemSetting.upsert({
-      where: { key: CACHE_VERSION_KEY },
-      update: { value: next },
-      create: { key: CACHE_VERSION_KEY, value: next },
-    });
-    return {
-      version: next,
-      result: {
-        status: 'purged',
-        detail:
-          `Cache version is now ${next}. Devices running the latest ` +
-          `admin bundle will reload on their next visit.`,
-      },
-    };
+    // A bump failure must not 500 the whole endpoint (nit fixed in the
+    // SW-fix round, 2026-11-12): the other layers already ran and are
+    // reported, so the bump is one failed layer. The returned version
+    // is the last-known STORED value ('' when even the read failed) —
+    // never the un-stored next value — so the button's
+    // rememberCacheVersion stores what the server actually has.
+    let previous: string | null = null;
+    try {
+      const current = await this.prisma.systemSetting.findUnique({
+        where: { key: CACHE_VERSION_KEY },
+      });
+      previous = current?.value ?? null;
+      const prev = Number.parseInt(current?.value ?? '', 10);
+      const next = String(
+        Math.max(Date.now(), Number.isFinite(prev) ? prev + 1 : 0),
+      );
+      await this.prisma.systemSetting.upsert({
+        where: { key: CACHE_VERSION_KEY },
+        update: { value: next },
+        create: { key: CACHE_VERSION_KEY, value: next },
+      });
+      return {
+        version: next,
+        result: {
+          status: 'purged',
+          detail:
+            `Cache version is now ${next}. Devices running the latest ` +
+            `admin bundle will reload on their next visit.`,
+        },
+      };
+    } catch (error) {
+      return {
+        version: previous ?? '',
+        result: {
+          status: 'failed',
+          detail:
+            `Could not bump the cache version: ${safeMessage(error)}. ` +
+            `Devices running the latest admin bundle will NOT reload on ` +
+            `their next visit until a purge succeeds.`,
+        },
+      };
+    }
   }
 
   /**

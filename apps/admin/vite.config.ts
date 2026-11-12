@@ -163,11 +163,36 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         injectRegister: 'auto',
         // No manifest: the admin must not be installable (license gate), but
-        // the service worker stays registered to precache app-shell assets —
-        // full page reloads then load instantly from the SW cache.
+        // the service worker stays registered to precache the hashed
+        // JS/CSS assets — reloads then load those instantly from the SW
+        // cache. The HTML shell itself is deliberately NOT precached
+        // (see navigateFallback below): navigations must revalidate.
         manifest: false,
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          // P0 stale-bundle fix (2026-11-12): vite-plugin-pwa 1.3.0
+          // defaults navigateFallback to "index.html", which makes
+          // Workbox register a NavigationRoute serving the PRECACHED
+          // (stale) shell cache-first for every document navigation —
+          // the old bundle kept running after deploys even though the
+          // server served new bytes. Setting it to undefined removes
+          // the route entirely (workbox-build 7.4.1 only emits the
+          // NavigationRoute/createHandlerBoundToURL block when the
+          // option is truthy — verified in the built dist/sw.js), so
+          // navigations always hit the network and get fresh HTML
+          // (nginx no-cache on index.html). D18's periodic update
+          // checks + controllerchange reload still run on top.
+          navigateFallback: undefined,
+          // ALSO drop html from the precache: even without a
+          // NavigationRoute, workbox-precaching's precacheAndRoute
+          // serves a precached index.html cache-first for directory
+          // navigations (generateURLVariations defaults directoryIndex
+          // to 'index.html', so /admin/ resolves to the precached
+          // shell). Hashed JS/CSS/assets stay precached + immutable —
+          // only the unversioned shell leaves the cache. Offline cost:
+          // none in practice — the admin is online-only (all API calls
+          // are NetworkOnly); an offline navigation now fails instead
+          // of showing a stale shell.
+          globPatterns: ['**/*.{js,css,ico,png,svg,woff2}'],
           // Workbox's 2 MiB precache default THROWS (fails the build) as soon
           // as any emitted asset grows past it. The eagerly-loaded app entry
           // is ~2.1 MB, so raise the limit to comfortably clear it; every
@@ -187,6 +212,45 @@ export default defineConfig(({ mode }) => {
           ],
         },
       }),
+      {
+        // Cloudflare Rocket Loader protection (P0 stale-bundle round,
+        // 2026-11-12): the served FixedPlus admin HTML shows Rocket
+        // Loader active — rocket-loader.min.js injected and the module
+        // entry + registerSW script tags rewritten to hashed types
+        // (e.g. type="5c77…-module"), with NO data-cfasync anywhere.
+        // Vite strips data-cfasync from the script tag it injects, so
+        // add it back here — same pattern as apps/pos
+        // (pos vite.config.ts "pos-api-base-html"). Post-order AND after
+        // VitePWA in this array, so it runs after VitePWA injects the
+        // registerSW tag; both external scripts are then left alone by
+        // Rocket Loader instead of being deferred/rewritten. Verified in
+        // the built dist/index.html.
+        name: 'admin-cfasync',
+        // enforce: 'post' is load-bearing: VitePWA's build plugin is
+        // also post-enforced and injects the registerSW tag in a
+        // post-order transformIndexHtml hook. Without this, this
+        // plugin (a normal plugin) sorts BEFORE VitePWA and its
+        // registerSW replace runs before the tag exists — the module
+        // replace still worked, the registerSW one silently missed
+        // (caught by the dist/index.html check, 2026-11-12). With
+        // enforce post + later array position, this hook runs after
+        // VitePWA's injection.
+        enforce: 'post',
+        transformIndexHtml: {
+          order: 'post',
+          handler(html: string) {
+            return html
+              .replace(
+                '<script type="module" crossorigin src=',
+                '<script type="module" data-cfasync="false" crossorigin src=',
+              )
+              .replace(
+                '<script id="vite-plugin-pwa:register-sw" src=',
+                '<script id="vite-plugin-pwa:register-sw" data-cfasync="false" src=',
+              )
+          },
+        },
+      },
     ],
     resolve: {
       alias: {
