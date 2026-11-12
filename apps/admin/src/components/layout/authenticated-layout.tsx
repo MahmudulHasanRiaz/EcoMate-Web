@@ -11,6 +11,7 @@ import { PanelProvider } from '@/context/panel-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
 import { AttendanceClock } from '@/features/hr-attendance/components/attendance-clock'
+import { PurgeAllCacheButton } from '@/features/cache-purge/components/purge-all-cache-button'
 import { SkipToMain } from '@/components/skip-to-main'
 import { toast } from 'sonner'
 
@@ -334,6 +335,10 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
               page renders. Keeping it mounted here (not per-page) is what makes
               the clock available across the whole app. */}
           <AttendanceClock />
+          {/* "Purge all cache" escape hatch (P0 stale-bundle round): small
+              sticky desktop-corner button, superadmin-only (the component
+              itself returns null for every other role). */}
+          <PurgeAllCacheButton />
           <SidebarInset
             data-panel={panel}
             className={cn(

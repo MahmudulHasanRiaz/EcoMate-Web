@@ -9,6 +9,34 @@ interface CacheEntry<T> {
 const MAX_MEMORY_ENTRIES = 10_000;
 const CLEANUP_INTERVAL_MS = 60_000;
 
+/**
+ * Redis key prefixes that are NOT app cache and must NEVER be deleted by a
+ * cache purge. The backend shares one Redis with state that is not cache:
+ * BullMQ job queues (`bull:`), the rate-limit counters (`rl:`) and the
+ * login/order brute-force counters (`ratelimit:`). Deleting those would
+ * drop queued jobs and reset abuse counters, so a purge deletes every
+ * other key and keeps these. This is why purge uses a SCAN + protected
+ * prefix list and never FLUSHDB.
+ */
+export const CACHE_PURGE_PROTECTED_REDIS_PREFIXES = [
+  'bull:',
+  'rl:',
+  'ratelimit:',
+] as const;
+
+export function isProtectedRedisKey(key: string): boolean {
+  return CACHE_PURGE_PROTECTED_REDIS_PREFIXES.some((prefix) =>
+    key.startsWith(prefix),
+  );
+}
+
+export interface ClearAllResult {
+  memoryCleared: number;
+  redisDeleted: number;
+  redisSkipped: number;
+  redisAvailable: boolean;
+}
+
 @Injectable()
 export class CacheService implements OnModuleDestroy {
   private store = new Map<string, CacheEntry<any>>();
@@ -213,5 +241,52 @@ export class CacheService implements OnModuleDestroy {
 
   clear(): void {
     this.store.clear();
+  }
+
+  /**
+   * Purge ALL app cache: the in-memory mirror AND the shared Redis copy.
+   *
+   * The old `clear()` only emptied the in-memory mirror, so Redis entries
+   * — the copy the whole backend actually reads — survived a "clear".
+   * `clearAll()` closes that gap. It never touches protected Redis keys
+   * (BullMQ jobs, rate-limit and brute-force counters — see
+   * CACHE_PURGE_PROTECTED_REDIS_PREFIXES) and never FLUSHDBs. A Redis
+   * failure does not throw: memory is still cleared and the result
+   * reports `redisAvailable: false` so the caller can say so honestly.
+   */
+  async clearAll(): Promise<ClearAllResult> {
+    const memoryCleared = this.store.size;
+    this.store.clear();
+
+    let redisDeleted = 0;
+    let redisSkipped = 0;
+    let redisAvailable = false;
+    if (this.redis) {
+      try {
+        let cursor = '0';
+        do {
+          const [nextCursor, keys] = await this.redis.scan(
+            cursor,
+            'MATCH',
+            '*',
+            'COUNT',
+            100,
+          );
+          const deletable = keys.filter(
+            (key) => !isProtectedRedisKey(key),
+          );
+          redisSkipped += keys.length - deletable.length;
+          if (deletable.length) {
+            await this.redis.del(...deletable);
+            redisDeleted += deletable.length;
+          }
+          cursor = nextCursor;
+        } while (cursor !== '0');
+        redisAvailable = true;
+      } catch {
+        redisAvailable = false;
+      }
+    }
+    return { memoryCleared, redisDeleted, redisSkipped, redisAvailable };
   }
 }

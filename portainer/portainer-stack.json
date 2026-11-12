@@ -16,6 +16,8 @@
     { "name": "BETTER_AUTH_SECRET", "label": "⭐ Better-Auth Secret", "default": "" },
     { "name": "INTERNAL_SHARED_SECRET", "label": "Internal service secret (optional — same value on backend + storefront exempts internal calls from rate limiting)", "default": "" },
     { "name": "REVALIDATION_SECRET", "label": "Storefront revalidation secret (optional — enables POST /api/revalidate on-demand cache invalidation; empty = endpoint disabled)", "default": "" },
+    { "name": "CLOUDFLARE_API_TOKEN", "label": "Cloudflare API token for the Purge all cache button (optional — Zone:Cache Purge on this tenant's zone only; empty = Cloudflare layer reports 'not configured')", "default": "" },
+    { "name": "CLOUDFLARE_ZONE_ID", "label": "Cloudflare Zone ID for this tenant's domain (optional — comma-separated if several zones; empty = Cloudflare layer reports 'not configured')", "default": "" },
     { "name": "UPLOADS_URL", "label": "Media static server URL (optional — empty = default http://media-static:80 nginx; set http://backend:4000 to roll back to backend-served images)", "default": "" },
     { "name": "ADMIN_EMAIL", "label": "First admin email (seed)", "default": "" },
     { "name": "ADMIN_PASSWORD", "label": "First admin password (seed)", "default": "" },
