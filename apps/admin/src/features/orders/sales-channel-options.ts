@@ -18,6 +18,31 @@ export interface SourcePlatformView {
 }
 
 /**
+ * Coerce a `GET /sales-channel/sources` body to the platform array the
+ * order-create page renders with `sourceOptions.map(...)`.
+ *
+ * The endpoint returns a bare array today, but the old derivation
+ * `(messagingSources ?? [])` passed a truthy envelope object straight
+ * through — `(envelope || []).map` throws `(oe || []).map is not a function`
+ * and white-screens the whole page. Accept a bare array, a
+ * `{sources: [...]}` envelope, or a `{data: [...]}` envelope; anything else
+ * is an empty list. Entries without a slug or displayName are dropped so the
+ * `<option>` list can never render a blank/broken row.
+ */
+export function normalizeSourcePlatforms(body: unknown): SourcePlatformView[] {
+  let list: unknown[] = [];
+  if (Array.isArray(body)) list = body;
+  else if (body && typeof body === 'object') {
+    const b = body as Record<string, unknown>;
+    if (Array.isArray(b.sources)) list = b.sources;
+    else if (Array.isArray(b.data)) list = b.data;
+  }
+  return (list as SourcePlatformView[]).filter(
+    (s) => s && typeof s.slug === 'string' && s.slug.trim() && typeof s.displayName === 'string' && s.displayName.trim(),
+  );
+}
+
+/**
  * Manual-order creation ordering: Messaging and Phone Call first. All four are
  * retained — Website and POS remain available for exceptional operational use.
  */
