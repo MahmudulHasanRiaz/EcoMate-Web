@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { BackupService } from '../backup/backup.service';
@@ -99,7 +100,11 @@ export class ReconciliationFixAllService {
      * Test seam only (Nest passes nothing here): poll cadence / budget
      * for the auto-backup wait. Production defaults are the exported
      * FIX_ALL_BACKUP_* constants above.
+     * @Optional: the param is a plain object type with no provider
+     * token — without this, Nest throws UnknownDependenciesException
+     * at boot (index [5]) and the app crashloops (2026-11-12).
      */
+    @Optional()
     private readonly options: {
       pollIntervalMs?: number;
       pollTimeoutMs?: number;

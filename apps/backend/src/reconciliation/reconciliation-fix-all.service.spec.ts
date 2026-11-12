@@ -2,6 +2,12 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { PrismaService } from '../prisma/prisma.service';
+import { BackupService } from '../backup/backup.service';
+import { ReconciliationFinderService } from './reconciliation-finder.service';
+import { ReconciliationApplyService } from './reconciliation-apply.service';
+import { Q8SettleService } from './q8-settle.service';
 import { ReconciliationFixAllService } from './reconciliation-fix-all.service';
 
 /**
@@ -256,5 +262,38 @@ describe('ReconciliationFixAllService', () => {
     const out = await service.fixAll(baseInput);
     expect(apply.apply).toHaveBeenCalledTimes(1);
     expect(out.backupId).toBe('bk-1');
+  });
+});
+
+/**
+ * REGRESSION (2026-11-12): the `options` test-seam constructor param is
+ * a plain object type with no provider token. Nest resolves EVERY
+ * constructor param, so the real module failed to boot with
+ * UnknownDependenciesException (dependency at index [5]) and the
+ * backend crashlooped on every start — while all unit tests passed,
+ * because they construct the service with direct `new` and bypass DI.
+ * This test builds the service THROUGH Nest DI with no options passed,
+ * so it fails on the unfixed code and passes once `options` is
+ * @Optional().
+ */
+describe('ReconciliationFixAllService — Nest DI', () => {
+  it('instantiates through Nest DI with default options and runs fixAll', async () => {
+    const { prisma, finder, apply, backup, settle } = makeService();
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReconciliationFixAllService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: ReconciliationFinderService, useValue: finder },
+        { provide: ReconciliationApplyService, useValue: apply },
+        { provide: BackupService, useValue: backup },
+        { provide: Q8SettleService, useValue: settle },
+      ],
+    }).compile();
+    const service = module.get(ReconciliationFixAllService);
+    const out = await service.fixAll(baseInput);
+    expect(out.backupId).toBe('bk-1');
+    expect(apply.apply).toHaveBeenCalledTimes(1);
+    expect(settle.settle).toHaveBeenCalledTimes(1);
+    await module.close();
   });
 });
