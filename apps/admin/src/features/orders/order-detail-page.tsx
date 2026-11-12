@@ -86,7 +86,7 @@ import {
 import { DISPATCH_STATUSES, getDispatchIdentifierLabels } from '@/features/dispatch/data/data'
 import { formatCourierDispatchToast } from '@/features/dispatch/courier-errors'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
-import { countTimelineSources, filterTimeline, loadTimelineFilter, saveTimelineFilter, type TimelineFilter } from '@/features/orders/timeline-filter'
+import { countTimelineSources, filterTimeline, loadTimelineFilter, saveTimelineFilter, timelineActorBadge, type TimelineFilter } from '@/features/orders/timeline-filter'
 
 const nn = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nn(v).toFixed(2)
@@ -1798,6 +1798,8 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                         const isGrouped = prev && (t.type === prev.type || (isStatus && prevIsStatus))
                         const performer = t.performedBy || t.performer || ''
                         const performerEmail = performer.includes('@') ? performer : undefined
+                        const actorBadge = timelineActorBadge(t)
+                        const courierName = typeof (t as any).courier === 'string' ? (t as any).courier : ''
                         return (
                           <div
                             key={i}
@@ -1843,13 +1845,18 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                                   <EyeOff className='h-2.5 w-2.5 mr-1' />Private
                                 </Badge>
                               )}
-                              {performer && performer.toLowerCase() !== 'system' && performer.toLowerCase() !== 'customer' && (
+                              {isStatus && actorBadge === 'courier' && (
+                                <Badge variant='outline' className='text-xs font-medium bg-muted/40'>
+                                  <Truck className='h-3 w-3 mr-1' />{courierName}
+                                </Badge>
+                              )}
+                              {actorBadge === 'staff' && (
                                 <UserBadge email={performerEmail || performer} showEmail={false} size='sm' />
                               )}
-                              {performer.toLowerCase() === 'system' && (
+                              {actorBadge === 'auto' && (
                                 <Badge variant='secondary' className='text-[10px] h-4 font-normal'>Auto</Badge>
                               )}
-                              {performer.toLowerCase() === 'customer' && (
+                              {actorBadge === 'customer' && (
                                 <Badge variant='secondary' className='text-[10px] h-4 font-normal'>Customer</Badge>
                               )}
                               <span className='text-xs text-muted-foreground inline-flex items-center gap-1 ml-auto'>

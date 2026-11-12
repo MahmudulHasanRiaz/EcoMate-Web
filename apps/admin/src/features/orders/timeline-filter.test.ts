@@ -5,6 +5,7 @@ import {
   filterTimeline,
   loadTimelineFilter,
   saveTimelineFilter,
+  timelineActorBadge,
   timelineSourceOf,
 } from './timeline-filter'
 
@@ -69,6 +70,46 @@ describe('filterTimeline', () => {
     expect(filterTimeline(ENTRIES, 'courier')).toEqual([ENTRIES[1]])
     expect(filterTimeline(ENTRIES, 'staff')).toEqual([ENTRIES[2]])
     expect(filterTimeline(ENTRIES, 'system')).toEqual([ENTRIES[0], ENTRIES[3]])
+  })
+})
+
+describe('timelineActorBadge', () => {
+  it('shows the courier for a courier-driven status change, never Auto', () => {
+    // The exact reported shape: Packed → Shipping, performedBy 'system',
+    // courier stamped by the backend.
+    expect(
+      timelineActorBadge({
+        status: 'Shipping',
+        oldStatus: 'Packed',
+        performedBy: 'system',
+        courier: 'steadfast',
+      }),
+    ).toBe('courier')
+    expect(
+      timelineActorBadge({
+        status: 'Shipping',
+        oldStatus: 'Packed',
+        performedBy: 'system',
+        courier: 'pathao',
+      }),
+    ).toBe('courier')
+  })
+
+  it('keeps bare system changes as Auto and staff/customer as before', () => {
+    expect(timelineActorBadge({ status: 'Shipping', performedBy: 'system' })).toBe('auto')
+    expect(timelineActorBadge({ status: 'Shipping', performedBy: 'someone@example.com' })).toBe('staff')
+    expect(timelineActorBadge({ status: 'Shipping', performedBy: 'customer' })).toBe('customer')
+    expect(timelineActorBadge({ status: 'Shipping' })).toBe('none')
+  })
+
+  it('maps a literal auto actor to Auto, never to a staff badge', () => {
+    expect(timelineActorBadge({ status: 'Shipping', performedBy: 'auto' })).toBe('auto')
+  })
+
+  it('ignores a blank courier field', () => {
+    expect(
+      timelineActorBadge({ status: 'Shipping', performedBy: 'system', courier: '   ' }),
+    ).toBe('auto')
   })
 })
 
