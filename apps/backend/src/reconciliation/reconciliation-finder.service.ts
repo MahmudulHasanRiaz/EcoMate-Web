@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { StockReconciliationService } from '../stock/stock-reconciliation.service';
+import { Q8_SETTLEMENT_NOTE_PREFIX } from './q8-settle.service';
 
 /**
  * Stock-reconciliation FINDER (2026-10-30 directive §3/§4).
@@ -57,6 +58,12 @@ import { StockReconciliationService } from '../stock/stock-reconciliation.servic
  *              INVENTORY_CONTROLLED') AND at least one further managed
  *              entry performed AFTER it: managed stock kept moving
  *              after the switch, so the switch was never cleaned up.
+ *              Entries written by the Q8 settlement (note starting
+ *              'Q8 settlement — ', see Q8_SETTLEMENT_NOTE_PREFIX) are
+ *              NOT counted here: a settle only releases already-retired
+ *              managed holds, so counting its own entries would re-flag
+ *              every settled unit (2026-11-12: the Gadget settle wrote 5
+ *              RELEASE entries and R6 came back as 1 with qty already 0).
  *              The heal's own mode-change entry becomes the last entry,
  *              so a re-run finds no residue (idempotency key).
  *   R7 — (2026-11-11, stock-mode round §5) REPORT-ONLY, never applied:
@@ -202,7 +209,11 @@ export interface ManagedModeResidue {
 /**
  * Pure residue computation over one unit's managed ledger entries
  * (any order — sorted here by performedAt). Residue = a mode-change
- * entry exists AND at least one managed entry was performed after it.
+ * entry exists AND at least one NON-SETTLEMENT managed entry was
+ * performed after it. Entries written by the Q8 settlement (note
+ * starting Q8_SETTLEMENT_NOTE_PREFIX) are cleanup of already-retired
+ * holds, not genuine managed movement, so they never count — otherwise
+ * every settle re-creates the flag it cleared.
  */
 export function computeManagedModeResidue(
   entries: { note?: string | null; performedAt?: Date | string | null }[],
@@ -218,7 +229,9 @@ export function computeManagedModeResidue(
     if (note.startsWith(MODE_CHANGE_TO_IC_NOTE_PREFIX)) lastIdx = i;
   }
   if (lastIdx < 0) return { residue: false, lastModeChangeAt: null, laterEntries: 0 };
-  const laterEntries = sorted.length - 1 - lastIdx;
+  const laterEntries = sorted
+    .slice(lastIdx + 1)
+    .filter((e) => !(e.note ?? '').startsWith(Q8_SETTLEMENT_NOTE_PREFIX)).length;
   return {
     residue: laterEntries > 0,
     lastModeChangeAt: sorted[lastIdx].performedAt

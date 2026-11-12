@@ -1,4 +1,4 @@
-import { Q8SettleService } from './q8-settle.service';
+import { Q8SettleService, Q8_SETTLEMENT_NOTE_PREFIX } from './q8-settle.service';
 import { InventoryController } from '../inventory/inventory.controller';
 import { ROLES_KEY } from '../common/decorators/roles.decorator';
 import { PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
@@ -174,6 +174,33 @@ describe('Q8SettleService', () => {
     expect(reconciliation.verifyStockIntegrity).toHaveBeenCalledWith([
       'p:p-gadget|',
     ]);
+  });
+
+  it('every ledger entry carries the Q8 settlement marker (the R6 finder ignores exactly this prefix)', async () => {
+    // Locks the writer side of the contract: the finder skips entries
+    // whose note starts with Q8_SETTLEMENT_NOTE_PREFIX, so every note
+    // this service writes — live release, already-deducted release and
+    // residual sweep — must start with it, in both dry-run and real run.
+    // The literal pins the prefix text itself (em dash included), so a
+    // silent rewording cannot desync writer and finder.
+    const dry = await makeService({ verificationFail: 1 }).service.settle({
+      dryRun: true,
+      performedBy: 'boss@example.com',
+    });
+    expect(dry.settled.ledgerEntries).toHaveLength(4);
+    for (const note of dry.settled.ledgerEntries) {
+      expect(note.startsWith('Q8 settlement — ')).toBe(true);
+      expect(note.startsWith(Q8_SETTLEMENT_NOTE_PREFIX)).toBe(true);
+    }
+
+    const { service, tx } = makeService({ verificationFail: 0 });
+    await service.settle({ dryRun: false, performedBy: 'boss@example.com' });
+    expect(tx.managedStockLedger.create).toHaveBeenCalledTimes(4);
+    for (const call of tx.managedStockLedger.create.mock.calls) {
+      const note = call[0].data.note as string;
+      expect(note.startsWith('Q8 settlement — ')).toBe(true);
+      expect(note.startsWith(Q8_SETTLEMENT_NOTE_PREFIX)).toBe(true);
+    }
   });
 
   it('uses the finder R6 orphan predicate (INVENTORY_CONTROLLED only)', async () => {

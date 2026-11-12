@@ -2,6 +2,17 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockReconciliationService } from '../stock/stock-reconciliation.service';
 
+/**
+ * Marker prefix for every ledger note the Q8 settlement writes
+ * (q8-settle.service.ts computeOps: live release, already-deducted
+ * release, residual sweep — all three start with this prefix).
+ * The R6 finder ignores entries carrying it (see
+ * computeManagedModeResidue): a settle is cleanup of already-retired
+ * managed holds, not managed stock moving after the switch, so its own
+ * entries must not re-create the residue flag they were written to clear.
+ */
+export const Q8_SETTLEMENT_NOTE_PREFIX = 'Q8 settlement — ';
+
 export interface Q8SettleRequest {
   dryRun?: boolean;
   performedBy?: string;
@@ -226,7 +237,7 @@ export class Q8SettleService {
         reservedBefore: before,
         reservedAfter: running,
         note:
-          `Q8 settlement — released ${rel} reserved unit(s) for order ${ref} ` +
+          `${Q8_SETTLEMENT_NOTE_PREFIX}released ${rel} reserved unit(s) for order ${ref} ` +
           `(managed layer retired for INVENTORY_CONTROLLED; the hold is inert)` +
           (rel < line.qty
             ? ` — shortfall ${line.qty - rel}: counter held less than the flagged hold`
@@ -240,7 +251,7 @@ export class Q8SettleService {
         line,
         reservedAt: running,
         note:
-          `Q8 settlement — cleared already-deducted reservation flag for order ${ref} ` +
+          `${Q8_SETTLEMENT_NOTE_PREFIX}cleared already-deducted reservation flag for order ${ref} ` +
           `(stock was deducted at delivery; no counter move)`,
       });
     }
@@ -249,7 +260,7 @@ export class Q8SettleService {
         kind: 'residual',
         residual: running,
         note:
-          `Q8 settlement — cleared ${running} orphaned reserved unit(s) with no ` +
+          `${Q8_SETTLEMENT_NOTE_PREFIX}cleared ${running} orphaned reserved unit(s) with no ` +
           `backing reservation line (managed layer retired)`,
       });
       released += running;
