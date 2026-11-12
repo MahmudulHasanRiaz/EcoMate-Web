@@ -569,6 +569,36 @@ describe('ReconciliationFinderService', () => {
     expect(q5.detail).toBe('None.');
   });
 
+  it('Q4: detail is capped at 1000 chars with a marker; the count stays full', async () => {
+    const q4Products = Array.from({ length: 40 }, (_, i) => ({
+      id: `qp-${i}`,
+      name: `Divergent Product Number ${i} With A Fairly Long Name`,
+      managedStockQuantity: 5,
+      variants: [],
+    }));
+    const { service } = makeService({ imEnabled: true, q4Products, q4Physical: [] });
+    const report = await service.buildReport();
+    const q4 = report.checks.find((c) => c.key === 'Q4')!;
+    // The count is never capped — only the detail string is.
+    expect(q4.value).toBe(40);
+    expect(q4.detail.length).toBeLessThanOrEqual(1000);
+    expect(q4.detail.endsWith('… (truncated)')).toBe(true);
+    expect(q4.detail).toContain('Divergence can be expected when sync is off');
+  });
+
+  it('Q4: short detail passes through uncapped with no marker', async () => {
+    const { service } = makeService({
+      imEnabled: true,
+      q4Products: [{ id: 'qp-1', name: 'Solo Widget', managedStockQuantity: 5, variants: [] }],
+      q4Physical: [],
+    });
+    const report = await service.buildReport();
+    const q4 = report.checks.find((c) => c.key === 'Q4')!;
+    expect(q4.value).toBe(1);
+    expect(q4.detail).toContain('Solo Widget: managed=5 physical=0');
+    expect(q4.detail.endsWith('… (truncated)')).toBe(false);
+  });
+
   it('Q8: detail names the failing unit with ledger-vs-state numbers', async () => {
     const { service } = makeService({
       verification: {

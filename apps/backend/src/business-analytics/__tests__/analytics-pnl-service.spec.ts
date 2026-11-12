@@ -322,16 +322,76 @@ describe('AnalyticsPnlService fetch wiring', () => {
     // (envelope maps CostState 'actual' to KPI state 'ok').
     expect(res.data.lines.cogs.state).toBe('ok');
     expect(res.data.lines.cogs.value).toBe(390);
-    // The ladder is unavailable ONLY because the shipping cost is missing;
-    // the reason must say so instead of the generic "ladder inputs incomplete".
-    expect(res.data.lines.grossProfit.state).toBe('unavailable');
-    expect(res.data.lines.grossProfit.reason).toContain(
-      'shipping cost missing on 1 recognised order(s)',
-    );
+    // Gross Profit depends ONLY on netSales + COGS: the ladder is
+    // unavailable ONLY because the shipping cost is missing, and that is a
+    // downstream input — it must not mark Gross Profit unavailable (staging
+    // 2026-11-12: the waterfall showed ৳160 + Unavailable badge while the
+    // KPI card hid the number). Gross Profit is ok at 550 − 390 = ৳160.
+    expect(res.data.lines.grossProfit).toMatchObject({ value: 160, state: 'ok' });
+    expect(res.data.lines.grossProfit.reason).toBeUndefined();
+    // Net Profit DOES consume the ladder, so it stays unavailable and its
+    // reason still names the missing shipping cost.
     expect(res.data.lines.netProfit.state).toBe('unavailable');
     expect(res.data.lines.netProfit.reason).toContain(
       'shipping cost missing on 1 recognised order(s)',
     );
+  });
+
+  it('gross profit is unavailable ONLY when its own input (COGS) is missing', async () => {
+    mockPrisma.order.findMany.mockImplementation(async (args: any) => {
+      if (args.select?.timeline) {
+        return [
+          {
+            id: 'o-nocost',
+            total: 300,
+            subtotal: 300,
+            shippingCharge: 0,
+            discount: 0,
+            discountType: 'flat',
+            status: { name: 'Delivered' },
+            timeline: [
+              { status: 'Delivered', timestamp: '2026-09-10T10:00:00+06:00' },
+            ],
+            createdAt: new Date('2026-09-10T00:00:00+06:00'),
+            paymentOptionType: 'FULL_PAYMENT',
+            customerId: null,
+            customerPhone: null,
+            guestPhone: null,
+            shippingCost: 60,
+            shippingCostSource: 'manual',
+            items: [
+              {
+                productId: 'p1',
+                variantId: null,
+                price: 100,
+                quantity: 3,
+                // No saved cost at all: COGS excludes these units, so Gross
+                // Profit has no admissible figure — but the shipping cost IS
+                // recorded, so the reason must name the COGS gap only.
+                costSnapshot: null,
+                costType: 'actual',
+                isManual: false,
+                manualName: null,
+                addonAmount: 0,
+                addonCostAmount: 0,
+              },
+            ],
+            payments: [],
+            refunds: [],
+            returns: [],
+            dispatches: [],
+          },
+        ];
+      }
+      return [];
+    });
+    const res = await service.getPnl({} as any);
+    expect(res.data.lines.cogs.state).toBe('unavailable');
+    expect(res.data.lines.grossProfit).toMatchObject({ value: 300, state: 'unavailable' });
+    expect(res.data.lines.grossProfit.reason).toBe(
+      'cost missing on 3 unit(s) in 1 line(s)',
+    );
+    expect(res.data.lines.grossProfit.reason).not.toContain('shipping');
   });
 
   it('all-actual ladder: costNotSet is zero and profit lines are ok', async () => {

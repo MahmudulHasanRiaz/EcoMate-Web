@@ -156,6 +156,21 @@ export interface ReconReport {
 }
 
 export const RECEIVED_RETURN_STATUSES = ['RECEIVED', 'RESTOCKED', 'CLOSED'] as const;
+
+/**
+ * Server-side bound on the Q4 detail string. The client collapses the
+ * detail at 400 chars for display, but the cap bounds what crosses the
+ * wire: with many divergent products the joined per-product entries run
+ * to several thousand chars. The count (`value`) is never capped — only
+ * the detail string is truncated, and the marker says so.
+ */
+export const Q4_DETAIL_MAX_CHARS = 1000;
+const Q4_TRUNCATED_MARKER = '… (truncated)';
+
+export function capQ4Detail(detail: string): string {
+  if (detail.length <= Q4_DETAIL_MAX_CHARS) return detail;
+  return detail.slice(0, Q4_DETAIL_MAX_CHARS - Q4_TRUNCATED_MARKER.length) + Q4_TRUNCATED_MARKER;
+}
 const TERMINAL_ORDER_STATUSES = ['Delivered', 'Partial', 'Cancelled', 'Returned'];
 
 /**
@@ -1258,7 +1273,7 @@ export class ReconciliationFinderService {
       label: 'Managed/physical divergence for MANAGED_STOCK + IM ON products (list only)',
       value: q4Value,
       pass: null,
-      detail: q4Detail,
+      detail: capQ4Detail(q4Detail),
     });
 
     // Q5 — lingering flags on terminal orders (the S1 drift scan, read-only).

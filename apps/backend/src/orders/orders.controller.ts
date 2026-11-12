@@ -167,6 +167,14 @@ export class OrdersController {
     return this.svc.findByDisplayId(reference);
   }
 
+  /**
+   * Detail by UUID or displayId (e.g. /orders/ORD-261112-0002) — the
+   * displayId fallback lives in svc.findOne and only runs when no UUID
+   * row matches; the owner/token/role checks there are unchanged. This
+   * route's public token behaviour is untouched; the "never treats the
+   * input as a displayId" rule still applies to public/token/:viewToken
+   * and the "displayId only" rule still applies to public/:reference.
+   */
   @Public()
   @RateLimitPolicy('checkout')
   @Get(':id')

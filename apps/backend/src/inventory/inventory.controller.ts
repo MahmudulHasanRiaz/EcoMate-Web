@@ -10,6 +10,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { InventoryEnabledGuard } from '../stock/inventory-enabled.guard';
 import { ReconciliationFinderService } from '../reconciliation/reconciliation-finder.service';
 import { ReconciliationApplyService } from '../reconciliation/reconciliation-apply.service';
+import { Q8SettleService } from '../reconciliation/q8-settle.service';
 import { ReconcileApplyDto } from './dto/reconcile-apply.dto';
 import {
   AdjustInventoryDto,
@@ -31,6 +32,7 @@ export class InventoryController {
     private readonly reconFinder: ReconciliationFinderService,
     private readonly reconApply: ReconciliationApplyService,
     private readonly prisma: PrismaService,
+    private readonly q8SettleService: Q8SettleService,
   ) {}
 
   /** Parse a client perPage into 1..MAX_PER_PAGE (fallback on garbage input). */
@@ -323,6 +325,31 @@ export class InventoryController {
       backupId: body.backupId,
       confirmed: body.confirmed,
       rowIds: body.rowIds ?? [],
+    });
+  }
+
+  /**
+   * Q8 orphaned managed-reservation settlement (2026-11-12, verify205
+   * round). Settles ONLY managed reservedStock + stale flags on products
+   * that are now INVENTORY_CONTROLLED and whose managed leg can never
+   * settle through the normal router (the finder's R6 predicate) — e.g.
+   * the staging TEST-AUDIT Gadget unit. Writes RELEASE ledger entries
+   * (one per flagged line) + an ADJUSTMENT entry for any counter remainder
+   * with no backing line. Writes NOTHING else: no order status change, no
+   * physical stock change, no Return, nothing marked received. Superadmin
+   * ONLY. `{ dryRun: true }` previews exactly what would change.
+   * The acting user is recorded from the auth token, never from the body.
+   */
+  @Roles('superadmin')
+  @Permissions('run_stock_reconciliation')
+  @Post('reconciliation/q8-settle')
+  async q8Settle(
+    @Body() body: { dryRun?: boolean },
+    @CurrentUser() user: { email: string },
+  ) {
+    return this.q8SettleService.settle({
+      dryRun: body?.dryRun === true,
+      performedBy: user?.email ?? 'unknown',
     });
   }
 }

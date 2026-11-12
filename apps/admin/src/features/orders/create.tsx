@@ -980,11 +980,18 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
       navigate({ to: '/op/orders/$id', params: { id: savedId } })
     },
     onError: (err: any) => {
-      toast.error(
+      const message =
         err?.response?.data?.message ||
-          (isExchange
-            ? 'Failed to create the exchange order'
-            : isEdit ? 'Failed to update order' : 'Failed to create order'),
+        (isExchange
+          ? 'Failed to create the exchange order'
+          : isEdit ? 'Failed to update order' : 'Failed to create order')
+      // Owner decision (2026-11-12, verify205 round): when creation fails
+      // for insufficient physical stock, point staff at the fix instead of
+      // leaving them with just the shortage figure.
+      toast.error(
+        message.includes('Insufficient physical stock')
+          ? `${message} Add physical stock in Inventory → Stock first.`
+          : message,
       )
     },
   })

@@ -858,16 +858,28 @@ export interface PnlResponse {
  * Only ladder inputs are named (COGS / fulfillment / fees / marketing);
  * COD settlement is a bridge input, not a ladder input.
  */
+/**
+ * The COGS-only gap reason. Gross Profit depends on netSales + COGS alone,
+ * so its reason names only the COGS gap — never shipping/fees/marketing,
+ * which enter at Contribution. Shared with ladderGapReason so the two can
+ * never disagree about what is missing from COGS.
+ */
+export function cogsGapReason(result: PnlResult): string {
+  const cov = result.coverage;
+  if (cov.cogs.unavailableUnits > 0) {
+    return `cost missing on ${cov.cogs.unavailableUnits} unit(s) in ${cov.cogs.unavailableItems} line(s)`;
+  }
+  if (result.cogs.state === 'estimated') {
+    return 'some line costs are estimated, not actual';
+  }
+  return '';
+}
+
 export function ladderGapReason(result: PnlResult, ladder: CostState): string {
   const cov = result.coverage;
   const gaps: string[] = [];
-  if (cov.cogs.unavailableUnits > 0) {
-    gaps.push(
-      `cost missing on ${cov.cogs.unavailableUnits} unit(s) in ${cov.cogs.unavailableItems} line(s)`,
-    );
-  } else if (result.cogs.state === 'estimated') {
-    gaps.push('some line costs are estimated, not actual');
-  }
+  const cogsGap = cogsGapReason(result);
+  if (cogsGap) gaps.push(cogsGap);
   if (cov.shipping.unavailableOrders > 0) {
     gaps.push(
       `shipping cost missing on ${cov.shipping.unavailableOrders} recognised order(s)`,
@@ -1225,7 +1237,18 @@ export class AnalyticsPnlService {
             : kpiZero('no reversal refunds in range'),
           netSales: money(result.netSales.amount, 'actual', 'Delivered transition'),
           cogs: money(result.cogs.amount, result.cogs.state, 'Delivered transition', 'costSnapshot coverage'),
-          grossProfit: money(result.grossProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition', ladderReason),
+          // Gross Profit depends ONLY on netSales + COGS — the ladder
+          // (shipping/fees/marketing) enters at Contribution, so a missing
+          // downstream input must not mark it unavailable (staging
+          // 2026-11-12: shipping cost missing on the single manual order
+          // showed ৳160 + Unavailable badge in the waterfall while the KPI
+          // card hid the number). State + reason follow COGS alone.
+          grossProfit: money(
+            result.grossProfit.amount,
+            result.cogs.state,
+            'Delivered transition',
+            result.cogs.state === 'actual' ? '' : cogsGapReason(result),
+          ),
           fulfillmentCost: money(result.fulfillmentCost.amount, result.fulfillmentCost.state, 'recognised order cohort', 'shippingCost source coverage'),
           paymentFees: money(result.paymentFees.amount, result.paymentFees.state, 'recognised order cohort', 'feeAmount coverage'),
           marketingCost: result.marketingCost.state === 'unavailable'

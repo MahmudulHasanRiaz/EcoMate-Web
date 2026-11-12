@@ -138,6 +138,31 @@ export function canApplyManagedAdjustment(args: {
   return true
 }
 
+export interface LiveManagedReservationSummary {
+  /** Units held by live managed reservations. */
+  units: number
+  /** Number of live managed reservation rows. */
+  holds: number
+}
+
+/**
+ * Sum the LIVE managed holds for a product from the
+ * GET /inventory/physical/reservations payload — the same rows the Stock
+ * page's "Pending Reservations" tab lists. Physical rows are excluded:
+ * the mode-switch zeroes MANAGED stock, so only managed holds are at
+ * risk when the mode changes. Rows without `isManaged` (or a non-array
+ * payload, e.g. while loading) count as zero — never a crash, never a
+ * stale figure presented as live.
+ */
+export function liveManagedReservationSummary(rows: unknown): LiveManagedReservationSummary {
+  if (!Array.isArray(rows)) return { units: 0, holds: 0 }
+  const managed = rows.filter((r: any) => r?.isManaged)
+  return {
+    units: managed.reduce((s, r: any) => s + (Number(r?.reservedQuantity) || 0), 0),
+    holds: managed.length,
+  }
+}
+
 /**
  * The mode-switch note appears only for an EXISTING product whose SAVED
  * mode is MANAGED_STOCK and whose form mode has been changed AWAY from it.
