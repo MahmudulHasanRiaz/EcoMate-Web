@@ -148,17 +148,37 @@ export function OrderActionMenu({ order }: { order: any }) {
             <Plus className='h-4 w-4' />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align='end' className='w-56'>
-          {visible.map((a) => (
-            <DropdownMenuItem
-              key={a.key}
-              onClick={a.run}
-              disabled={a.disabled?.(order) ?? false}
-              title={a.disabledReason?.(order) ?? undefined}
-            >
-              {a.icon} {a.label}
-            </DropdownMenuItem>
-          ))}
+        <DropdownMenuContent align='end' className='w-72'>
+          {visible.map((a) => {
+            // The blocking reason is rendered IN PLACE under the label: a
+            // disabled Radix menu item carries `data-disabled:pointer-events-none`
+            // (see components/ui/dropdown-menu.tsx), so it can never receive
+            // hover and the old `title`-only tooltip could never appear —
+            // staff saw a dead entry with no explanation. Owner rule: a
+            // disabled action must show its blocking reason in place. The
+            // title attribute stays as a fallback (tests / assistive tech).
+            const reason = a.disabledReason?.(order) ?? null
+            const isDisabled = a.disabled?.(order) ?? false
+            return (
+              <DropdownMenuItem
+                key={a.key}
+                onClick={a.run}
+                disabled={isDisabled}
+                title={reason ?? undefined}
+                className={reason ? 'items-start py-2' : undefined}
+              >
+                {a.icon}
+                <span className='flex min-w-0 flex-col leading-snug'>
+                  <span>{a.label}</span>
+                  {reason && (
+                    <span className='whitespace-normal text-xs font-normal text-muted-foreground'>
+                      {reason}
+                    </span>
+                  )}
+                </span>
+              </DropdownMenuItem>
+            )
+          })}
         </DropdownMenuContent>
       </DropdownMenu>
       <CreateReturnDialog order={order} open={returnOpen} onClose={() => setReturnOpen(false)} />

@@ -140,7 +140,7 @@ describe('OrderActionMenu (Task 4 Fix 8)', () => {
       })
       await userEvent.click(getByRole('button', { name: 'Order actions' }))
       const el = Array.from(document.querySelectorAll('[role="menuitem"]')).find((n) =>
-        n.textContent?.trim() === 'Create return',
+        n.textContent?.includes('Create return'),
       ) as HTMLElement | undefined
       expect(el).toBeDefined()
       const disabledAttr =
@@ -152,6 +152,27 @@ describe('OrderActionMenu (Task 4 Fix 8)', () => {
       expect(host.getAttribute('title')).toMatch(/shipping|partial|delivered/i)
     },
   )
+
+  it('shows the blocking reason IN PLACE under disabled return + exchange (Pending)', async () => {
+    const { getByRole, getByText } = await renderMenu({
+      ...saleOrder,
+      status: { id: 'st-pending', name: 'Pending' },
+    })
+    await userEvent.click(getByRole('button', { name: 'Order actions' }))
+    // Visible text in the open menu — NOT a title tooltip: a disabled
+    // Radix item has pointer-events: none, so a tooltip can never appear
+    // on hover and the reason was invisible before this fix.
+    await expect.element(getByText(/Returns are allowed only from Shipping, Partial or Delivered status/)).toBeInTheDocument()
+    await expect.element(getByText(/Exchanges are allowed only from Shipping, Delivered, Partial or Return Pending status/)).toBeInTheDocument()
+  })
+
+  it('shows no reason line when return + exchange are enabled (Delivered)', async () => {
+    const { getByRole, getByText } = await renderMenu()
+    await userEvent.click(getByRole('button', { name: 'Order actions' }))
+    await expect.element(getByText('Create return', { exact: true })).toBeInTheDocument()
+    await expect.element(getByText(/Returns are allowed only from/)).not.toBeInTheDocument()
+    await expect.element(getByText(/Exchanges are allowed only from/)).not.toBeInTheDocument()
+  })
 
   it('Create Exchange Order asks Full or Partial FIRST; Full goes to the exchange page', async () => {
     const { getByRole, getByText } = await renderMenu()

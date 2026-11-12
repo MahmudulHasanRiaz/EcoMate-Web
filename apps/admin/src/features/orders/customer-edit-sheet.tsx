@@ -8,7 +8,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/com
 import { Separator } from '@/components/ui/separator'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { apiClient } from '@/lib/api-client'
-import { toast } from 'sonner'
+import { useCourierCities, normalizeCourierZones } from './use-courier-cities'
 
 /**
  * Order-scoped customer identity for the edit sheet (D-A write parity).
@@ -94,7 +94,18 @@ export function CustomerEditSheet({
   const [zoneId, setZoneId] = useState(initZoneId)
   const [customerNotes, setCustomerNotes] = useState(initCustNotes)
   const [officeNotes, setOfficeNotes] = useState(initOfficeNotes)
-  const [cities, setCities] = useState<any[]>([])
+  // Courier city list — shared hook, see use-courier-cities.ts: no courier
+  // configured = graceful empty + hint (never an error toast); a failed
+  // fetch retries and keeps serving the last-good list.
+  const {
+    cities,
+    courierConfigured,
+    citiesLoading,
+    citiesLoadFailed,
+    showingStaleList,
+    citiesSettled,
+    retryCities,
+  } = useCourierCities()
   const [zones, setZones] = useState<any[]>([])
 
   // Reset fields whenever sheet opens with fresh values
@@ -104,21 +115,22 @@ export function CustomerEditSheet({
       setEmail(initEmail); setPhone(initPhone)
       setAddress(initAddress); setCityId(initCityId); setZoneId(initZoneId)
       setCustomerNotes(initCustNotes); setOfficeNotes(initOfficeNotes)
-      // Fetch cities
-      apiClient.get('/couriers/cities').then(r => setCities(r.data as any[])).catch(() => toast.error('Failed to fetch cities'))
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (cityId) {
-      apiClient.get(`/couriers/zones?cityId=${cityId}`).then(r => setZones(r.data as any[])).catch(() => toast.error('Failed to fetch zones'))
+      apiClient.get(`/couriers/zones?cityId=${cityId}`).then(r => setZones(normalizeCourierZones(r.data))).catch(() => {})
     } else {
       setZones([])
     }
   }, [cityId])
 
-  const cityOptions = useMemo(() => cities.map((c: any) => ({ id: c.id, label: c.name })), [cities])
-  const zoneOptions = useMemo(() => zones.map((z: any) => ({ id: z.id, label: z.name })), [zones])
+  // SearchableSelect matches by strict equality against the string state,
+  // so numeric courier ids must be coerced or a picked city/zone would
+  // never display as selected.
+  const cityOptions = useMemo(() => cities.map((c: any) => ({ id: String(c.id), label: c.name })), [cities])
+  const zoneOptions = useMemo(() => zones.map((z: any) => ({ id: String(z.id), label: z.name })), [zones])
 
   function handleSave() {
     onSave({ firstName, lastName, email, phone, address, cityId, zoneId, customerNotes, officeNotes })
@@ -175,7 +187,21 @@ export function CustomerEditSheet({
                   onChange={val => { setCityId(val); setZoneId(''); setZones([]) }}
                   placeholder='Select City...'
                   searchPlaceholder='Search cities...'
+                  loading={citiesLoading}
                 />
+                {citiesSettled && courierConfigured === false && (
+                  <p className='text-[11px] text-muted-foreground'>
+                    No courier account connected — city is optional.
+                  </p>
+                )}
+                {(citiesLoadFailed || showingStaleList) && (
+                  <p className='text-[11px] text-muted-foreground'>
+                    {showingStaleList
+                      ? 'Couldn’t load the latest cities — showing the last saved list.'
+                      : 'Couldn’t load cities — check your connection.'}{' '}
+                    <button type='button' onClick={retryCities} className='underline font-medium text-foreground'>Retry</button>
+                  </p>
+                )}
               </div>
               <div className='space-y-1'>
                 <Label className='text-xs'>Zone</Label>

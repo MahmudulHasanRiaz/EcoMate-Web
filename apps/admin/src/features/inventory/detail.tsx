@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { MovementLedger } from './components/movement-ledger'
 import { AdjustStockModal } from './components/adjust-stock-modal'
+import { invalidateInventoryStockQueries } from './utils/invalidate-inventory'
 
 interface StockItem {
   id: string
@@ -440,9 +441,9 @@ export function InventoryDetail() {
         productName={product.name}
         availabilityMode={product.availabilityMode}
         onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ['inventory-stock-detail'] })
-          queryClient.invalidateQueries({ queryKey: ['inventory-physical-detail'] })
-          queryClient.invalidateQueries({ queryKey: ['inventory-reservations-detail'] })
+          // Finding 3: this page invalidated only its own *-detail keys —
+          // the drawer's per-product queries and the lists went stale.
+          invalidateInventoryStockQueries(queryClient)
         }}
       />
     </>

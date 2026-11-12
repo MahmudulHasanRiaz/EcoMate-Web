@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { invalidateInventoryStockQueries } from '@/features/inventory/utils/invalidate-inventory'
 import { DESTRUCTIVE_CONFIRM_MESSAGE, isDestructiveAdjustmentError } from '@/lib/destructive-adjustment'
 import { apiClient } from '@/lib/api-client'
 import { appUrl } from '@/lib/utils'
@@ -87,10 +88,11 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
       }[]
     }) => apiClient.post('/inventory/physical/bulk-adjust', data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
+      // Finding 3 (2026-11-12): invalidate through the shared helper, not
+      // hand-listed keys — the ['physical-stock', warehouse] table and the
+      // per-product drawer keys were stale up to 30s after a bulk adjust here.
+      invalidateInventoryStockQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['inventory-history-logs'] })
-      queryClient.invalidateQueries({ queryKey: ['physical-reservations'] })
       toast.success('Physical stock adjustments applied successfully')
       reset()
       onOpenChange(false)
@@ -320,7 +322,11 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
           </div>
 
           {/* Destructive-adjustment acknowledgement: a single entry must never be
-              able to silently wipe a location's stock without being called out. */}
+              able to silently wipe a location's stock without being called out.
+              Confirmation covers ONLY a large deduction WITHIN the available
+              stock at a location — it never allows stock to go below zero
+              (the server's below-zero write guard rejects that outright,
+              confirmed or not). */}
           {items.some((i) => i.quantity < 0) && (
             <label className="flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/5 p-3.5 cursor-pointer">
               <Checkbox
@@ -329,10 +335,12 @@ export function PhysicalAdjustDialog({ open, onOpenChange, preSelected }: Props)
                 className="mt-0.5"
               />
               <span className="text-sm text-destructive leading-snug">
-                This is a stock <strong>deduction</strong>. If it removes most of a
-                location&apos;s stock for an item, the server will reject it unless
-                you confirm here — tick to confirm the quantities are intentional
-                (for example a damage or loss write-off).
+                This is a stock <strong>deduction</strong>. Tick to confirm the quantities are
+                intentional (for example a damage or loss write-off).
+                Confirmation only covers a large deduction within the available
+                stock at a location — it never allows stock to go below zero:
+                a deduction larger than the available stock is always rejected,
+                with or without confirmation.
               </span>
             </label>
           )}

@@ -96,7 +96,7 @@ function makeService(scenario: any = {}) {
   };
   const reconciliation: any = {
     scanDriftedOrders: jest.fn(async () => scenario.drifted ?? []),
-    verifyStockIntegrity: jest.fn(async () => ({
+    verifyStockIntegrity: jest.fn(async () => scenario.verification ?? ({
       checked: 0,
       pass: 0,
       fail: 0,
@@ -542,6 +542,62 @@ describe('ReconciliationFinderService', () => {
     const report = await service.buildReport();
     expect(report.counts.R8).toBe(0);
     expect(report.rows.filter((r) => r.category === 'R8')).toHaveLength(0);
+  });
+
+  it('Q5: detail names drifted orders by displayId plus the drift reason', async () => {
+    const { service } = makeService({
+      drifted: [
+        { id: 'o-d1', displayId: 'ORD-260101-0001', statusName: 'Delivered', reasons: ['reserved-not-deducted'] },
+        { id: 'o-d2', displayId: 'ORD-260101-0002', statusName: 'Cancelled', reasons: ['managed-flags-lingering', 'active-physical-reservation'] },
+      ],
+    });
+    const report = await service.buildReport();
+    const q5 = report.checks.find((c) => c.key === 'Q5')!;
+    expect(q5.value).toBe(2);
+    expect(q5.pass).toBe(false);
+    expect(q5.detail).toContain('ORD-260101-0001 (Delivered) — reserved, never deducted');
+    expect(q5.detail).toContain('ORD-260101-0002 (Cancelled) — managed flags still set, ACTIVE physical reservation');
+    expect(q5.detail).not.toContain('o-d1');
+  });
+
+  it('Q5: clean drift scan passes with "None."', async () => {
+    const { service } = makeService({ drifted: [] });
+    const report = await service.buildReport();
+    const q5 = report.checks.find((c) => c.key === 'Q5')!;
+    expect(q5.value).toBe(0);
+    expect(q5.pass).toBe(true);
+    expect(q5.detail).toBe('None.');
+  });
+
+  it('Q8: detail names the failing unit with ledger-vs-state numbers', async () => {
+    const { service } = makeService({
+      verification: {
+        checked: 15,
+        pass: 14,
+        fail: 1,
+        products: [
+          {
+            key: 'p:prod-1|',
+            scope: 'MANAGED',
+            onHandExpected: 10,
+            onHandActual: 8,
+            reservedExpected: 0,
+            reservedActual: 0,
+            availableExpected: 10,
+            availableActual: 8,
+            pass: false,
+            notes: ['on-hand 8 / reserved 0 vs snap 10 / 0'],
+          },
+        ],
+        negativeAvailable: [],
+      },
+    });
+    const report = await service.buildReport();
+    const q8 = report.checks.find((c) => c.key === 'Q8')!;
+    expect(q8.value).toBe(1);
+    expect(q8.pass).toBe(false);
+    expect(q8.detail).toContain('checked=15 pass=14 fail=1');
+    expect(q8.detail).toContain('p:prod-1| [MANAGED]: on-hand 8 (ledger 10), reserved 0 (ledger 0)');
   });
 
   it('IM off: physical layer is never expected (managed-only scope)', async () => {

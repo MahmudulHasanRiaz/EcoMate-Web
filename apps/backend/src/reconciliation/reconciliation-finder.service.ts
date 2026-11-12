@@ -1243,8 +1243,24 @@ export class ReconciliationFinderService {
       detail: q4Detail,
     });
 
-    // Q5 — lingering flags on terminal orders (the S1 drift scan, read-only)
+    // Q5 — lingering flags on terminal orders (the S1 drift scan, read-only).
+    // The detail names each order by DISPLAY id plus the reason it is
+    // drifted (see scanDriftedOrders): an order id alone cannot be looked
+    // up in the admin UI, and a bare count cannot tell real drift
+    // (reserved, never deducted) from a correct terminal state.
     const drifted = await this.reconciliation.scanDriftedOrders();
+    const driftReasonText = (reason: string): string => {
+      switch (reason) {
+        case 'reserved-not-deducted':
+          return 'reserved, never deducted';
+        case 'managed-flags-lingering':
+          return 'managed flags still set';
+        case 'active-physical-reservation':
+          return 'ACTIVE physical reservation';
+        default:
+          return reason;
+      }
+    };
     checks.push({
       key: 'Q5',
       label: 'Terminal/partial orders with lingering stock flags (S1 drift scan)',
@@ -1253,7 +1269,14 @@ export class ReconciliationFinderService {
       detail:
         drifted
           .slice(0, 50)
-          .map((d) => `${d.id} (${d.statusName})`)
+          .map((d) => {
+            const display = (d as any).displayId ?? d.id;
+            const reasons: string[] = (d as any).reasons ?? [];
+            const why = reasons.length
+              ? ` — ${reasons.map(driftReasonText).join(', ')}`
+              : '';
+            return `${display} (${d.statusName})${why}`;
+          })
           .join('; ') || 'None.',
     });
 
@@ -1353,6 +1376,19 @@ export class ReconciliationFinderService {
       if (u.productId) keySet.add(`p:${u.productId}|${u.variantId ?? ''}`);
     }
     const verification = await this.reconciliation.verifyStockIntegrity([...keySet]);
+    // Name the failing units: a bare fail count cannot be acted on — the
+    // next verification round (or a human with DB access) needs the unit
+    // key plus what the ledger says vs what the state says. Capped like Q7.
+    const failingUnits = (verification.products ?? []).filter((p) => !p.pass);
+    const failingList = failingUnits
+      .slice(0, 20)
+      .map(
+        (p) =>
+          `${p.key} [${p.scope}]: on-hand ${p.onHandActual} (ledger ${p.onHandExpected}), ` +
+          `reserved ${p.reservedActual} (ledger ${p.reservedExpected})` +
+          (p.notes?.[0] ? ` — ${p.notes[0]}` : ''),
+      )
+      .join('; ');
     checks.push({
       key: 'Q8',
       label: 'Ledger-vs-state verification re-run (S1 verifier)',
@@ -1360,6 +1396,7 @@ export class ReconciliationFinderService {
       pass: verification.fail === 0,
       detail:
         `checked=${verification.checked} pass=${verification.pass} fail=${verification.fail}. ` +
+        (failingList ? `Failing: ${failingList}. ` : '') +
         'CAVEAT: PASS proves ledger/state agreement only, NOT semantic ' +
         'correctness — Q1/Q2 are the semantic proofs.',
     });

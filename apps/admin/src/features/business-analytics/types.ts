@@ -133,6 +133,13 @@ export interface OverviewData {
     bridge: BridgeData
     lenses: { booked: KpiValue; recognised: KpiValue; cashCollected: KpiValue }
     strip: RecognitionStripData
+    /**
+     * Manual lines whose cost was never set (Workstream C): their COGS is
+     * already inside lines.cogs at full price (profit contribution 0).
+     * Rendered in the waterfall under COGS so the missing cost stays
+     * visible instead of reading as a real cost.
+     */
+    costNotSet: { units: number; amount: number; lines: number }
     coverage: CostCoverage
     marketing: {
       datedRows: number

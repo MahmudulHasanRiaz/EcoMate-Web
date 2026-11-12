@@ -253,4 +253,138 @@ describe('AnalyticsPnlService fetch wiring', () => {
     expect(mockFulfillment.buildSettlementSource).toHaveBeenCalledTimes(1);
     expect(mockFulfillment.buildSettlementSource).toHaveBeenCalledWith(['cod-1']);
   });
+
+  // ── Finding 8 (2026-11-12): costNotSet exposure + specific ladder reason ──
+
+  it('exposes the costNotSet bucket and names the missing ladder input (staging manual order)', async () => {
+    mockPrisma.order.findMany.mockImplementation(async (args: any) => {
+      if (args.select?.timeline) {
+        return [
+          {
+            id: 'o-manual',
+            total: 550,
+            subtotal: 550,
+            shippingCharge: 0,
+            discount: 0,
+            discountType: 'flat',
+            status: { name: 'Delivered' },
+            timeline: [
+              { status: 'Delivered', timestamp: '2026-09-10T10:00:00+06:00' },
+            ],
+            createdAt: new Date('2026-09-10T00:00:00+06:00'),
+            paymentOptionType: 'FULL_PAYMENT',
+            customerId: null,
+            customerPhone: null,
+            guestPhone: null,
+            // No courier/shipping cost was ever recorded for this order —
+            // genuinely missing data, not a code error.
+            shippingCost: null,
+            shippingCostSource: null,
+            items: [
+              {
+                productId: null,
+                variantId: null,
+                price: 200,
+                quantity: 2,
+                costSnapshot: 120,
+                costType: 'actual',
+                isManual: true,
+                manualName: 'Custom Gift Wrap Service',
+                addonAmount: 0,
+                addonCostAmount: 0,
+              },
+              {
+                productId: null,
+                variantId: null,
+                price: 150,
+                quantity: 1,
+                costSnapshot: 150,
+                costType: 'not_set',
+                isManual: true,
+                manualName: 'Handwritten Note Card',
+                addonAmount: 0,
+                addonCostAmount: 0,
+              },
+            ],
+            payments: [],
+            refunds: [],
+            returns: [],
+            dispatches: [],
+          },
+        ];
+      }
+      return [];
+    });
+    const res = await service.getPnl({} as any);
+    // The bucket is in the envelope now (it was computed but dropped).
+    expect(res.data.costNotSet).toEqual({ units: 1, amount: 150, lines: 1 });
+    // COGS counts the not_set line at full price — never 'unavailable'
+    // (envelope maps CostState 'actual' to KPI state 'ok').
+    expect(res.data.lines.cogs.state).toBe('ok');
+    expect(res.data.lines.cogs.value).toBe(390);
+    // The ladder is unavailable ONLY because the shipping cost is missing;
+    // the reason must say so instead of the generic "ladder inputs incomplete".
+    expect(res.data.lines.grossProfit.state).toBe('unavailable');
+    expect(res.data.lines.grossProfit.reason).toContain(
+      'shipping cost missing on 1 recognised order(s)',
+    );
+    expect(res.data.lines.netProfit.state).toBe('unavailable');
+    expect(res.data.lines.netProfit.reason).toContain(
+      'shipping cost missing on 1 recognised order(s)',
+    );
+  });
+
+  it('all-actual ladder: costNotSet is zero and profit lines are ok', async () => {
+    mockPrisma.order.findMany.mockImplementation(async (args: any) => {
+      if (args.select?.timeline) {
+        return [
+          {
+            id: 'o-actual',
+            total: 550,
+            subtotal: 550,
+            shippingCharge: 0,
+            discount: 0,
+            discountType: 'flat',
+            status: { name: 'Delivered' },
+            timeline: [
+              { status: 'Delivered', timestamp: '2026-09-10T10:00:00+06:00' },
+            ],
+            createdAt: new Date('2026-09-10T00:00:00+06:00'),
+            paymentOptionType: 'FULL_PAYMENT',
+            customerId: null,
+            customerPhone: null,
+            guestPhone: null,
+            shippingCost: 60,
+            shippingCostSource: 'manual',
+            items: [
+              {
+                productId: 'p1',
+                variantId: null,
+                price: 500,
+                quantity: 1,
+                costSnapshot: 300,
+                costType: 'actual',
+                isManual: false,
+                manualName: null,
+                addonAmount: 0,
+                addonCostAmount: 0,
+              },
+            ],
+            payments: [],
+            refunds: [],
+            returns: [],
+            dispatches: [],
+          },
+        ];
+      }
+      return [];
+    });
+    const res = await service.getPnl({} as any);
+    expect(res.data.costNotSet).toEqual({ units: 0, amount: 0, lines: 0 });
+    expect(res.data.lines.grossProfit).toMatchObject({
+      value: 200,
+      state: 'ok',
+    });
+    expect(res.meta.ladderState).toBe('actual');
+  });
 });

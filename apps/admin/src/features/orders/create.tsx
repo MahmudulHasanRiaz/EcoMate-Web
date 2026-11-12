@@ -45,6 +45,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { SafeImage } from '@/components/safe-image'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { useCourierCities, normalizeCourierZones } from './use-courier-cities'
 import { normalizePhone } from '@/lib/phone-utils'
 import { variantLabel, variantThumbUrl } from '@/lib/product-variant'
 import { byExactMatchFirst } from '@/lib/search-products'
@@ -103,7 +104,18 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   const [customerResults, setCustomerResults] = useState<any[]>([])
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false)
 
-  const [cities, setCities] = useState<any[]>([])
+  // Courier city list — see use-courier-cities.ts for the failure modes:
+  // no courier configured = graceful empty + hint (never an error toast);
+  // a failed fetch retries and keeps serving the last-good list.
+  const {
+    cities,
+    courierConfigured,
+    citiesLoading,
+    citiesLoadFailed,
+    showingStaleList,
+    citiesSettled,
+    retryCities,
+  } = useCourierCities()
   const [zones, setZones] = useState<any[]>([])
   const [shipZones, setShipZones] = useState<any[]>([])
   const [useDiffShipping, setUseDiffShipping] = useState(false)
@@ -145,23 +157,27 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
 
   const [shippingChargeManuallyEdited, setShippingChargeManuallyEdited] = useState(false)
 
+  // SearchableSelect matches options by strict equality against the
+  // string state (customerCityId etc.), so courier ids — numbers from the
+  // courier API — must be coerced to strings or a picked city/zone would
+  // never display as selected.
   const cityOptions = useMemo(() => {
     return (cities || []).map((c: any) => ({
-      id: c.id,
+      id: String(c.id),
       label: c.name,
     }))
   }, [cities])
 
   const zoneOptions = useMemo(() => {
     return (zones || []).map((z: any) => ({
-      id: z.id,
+      id: String(z.id),
       label: z.name,
     }))
   }, [zones])
 
   const shipZoneOptions = useMemo(() => {
     return (shipZones || []).map((z: any) => ({
-      id: z.id,
+      id: String(z.id),
       label: z.name,
     }))
   }, [shipZones])
@@ -353,12 +369,13 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   // Pre-fill the form from the loaded order. Runs ONCE per order: `hydrated`
 // guards against clobbering the user's in-progress edits if the query
 // refetches in the background.
-// Wait for the city list before hydrating so the stored city name can be
-  // resolved to a real id — but never block forever if the lookup fails.
-  const [citiesFailed, setCitiesFailed] = useState(false)
+  // Wait for the city list to settle before hydrating so the stored city
+  // name can be resolved to a real id — but never block forever if the
+  // lookup fails (`citiesSettled` is true after success OR final failure,
+  // and true at once when a last-good list was restored).
   useEffect(() => {
     if (!isPrefilled || !editOrder || hydrated) return
-    if (cities.length === 0 && !citiesFailed) return
+    if (!citiesSettled) return
     const o = editOrder as any
   const sa = (o.shippingAddress && typeof o.shippingAddress === 'object') ? o.shippingAddress : {}
 
@@ -455,25 +472,15 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
   setSelectedCustomerId(o.customerId || null)
   setCustomerMatched(!!o.customerId)
   setHydrated(true)
-  }, [isPrefilled, editOrder, hydrated, cities, citiesFailed])
+  }, [isPrefilled, editOrder, hydrated, cities, citiesSettled])
 
   const productSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const productDropdownRef = useRef<HTMLDivElement>(null)
   const customerDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    apiClient.get('/couriers/cities')
-      .then(r => setCities(r.data as any[]))
-      .catch(() => {
-        // Edit hydration waits on this list; release it so the form still loads.
-        setCitiesFailed(true)
-        toast.error('Failed to fetch cities')
-      })
-  }, [])
-
-  useEffect(() => {
     if (customerCityId) {
-      apiClient.get(`/couriers/zones?cityId=${customerCityId}`).then(r => setZones(r.data as any[])).catch(() => {})
+      apiClient.get(`/couriers/zones?cityId=${customerCityId}`).then(r => setZones(normalizeCourierZones(r.data))).catch(() => {})
     } else {
       setZones([])
     }
@@ -481,7 +488,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
 
   useEffect(() => {
     if (shipCityId) {
-      apiClient.get(`/couriers/zones?cityId=${shipCityId}`).then(r => setShipZones(r.data as any[])).catch(() => {})
+      apiClient.get(`/couriers/zones?cityId=${shipCityId}`).then(r => setShipZones(normalizeCourierZones(r.data))).catch(() => {})
     } else {
       setShipZones([])
     }
@@ -1362,7 +1369,24 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                       placeholder='Select city...'
                       searchPlaceholder='Search cities...'
                       disabled={isExchange}
+                      loading={citiesLoading}
                     />
+                    {/* No courier configured is NOT an error — the city just
+                        stays optional (finding 2). A failed fetch retries
+                        in the background and keeps the last-good list. */}
+                    {citiesSettled && courierConfigured === false && (
+                      <p className='text-[11px] text-muted-foreground mt-1'>
+                        No courier account connected — city is optional. Connect Pathao or Carrybee in Courier settings to enable city &amp; zone selection.
+                      </p>
+                    )}
+                    {(citiesLoadFailed || showingStaleList) && (
+                      <p className='text-[11px] text-muted-foreground mt-1'>
+                        {showingStaleList
+                          ? 'Couldn’t load the latest cities — showing the last saved list.'
+                          : 'Couldn’t load cities — check your connection.'}{' '}
+                        <button type='button' onClick={retryCities} className='underline font-medium text-foreground'>Retry</button>
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label className='text-xs font-medium text-muted-foreground mb-1 block'>Courier Delivery Zone</Label>
@@ -1415,6 +1439,7 @@ export function OrderFormPage({ mode = 'create', orderId }: OrderFormPageProps) 
                           onChange={val => { setShipCityId(val); setShipZoneId('') }}
                           placeholder='Select city...'
                           searchPlaceholder='Search cities...'
+                          loading={citiesLoading}
                         />
                       </div>
                       <div>

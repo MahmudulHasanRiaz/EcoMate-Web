@@ -411,6 +411,101 @@ describe('StockReconciliationService', () => {
     }
   });
 
+  // ── Q5 drift scan is status-aware (2026-11-12, staging Q5=3) ───────
+  // A Delivered order whose lines were deducted is DONE — its flags are
+  // history (the restore path requires BOTH flags to restore a deducted
+  // line), so the scan must not flag it. Only reserved-but-never-deducted
+  // (Delivered/Partial) or any-flag-set (Cancelled/Returned) is drift.
+
+  const scanOrder = (overrides: Record<string, any> = {}) => ({
+    id: 'order-1',
+    displayId: 'ORD-1',
+    status: { name: 'Delivered' },
+    items: [],
+    ...overrides,
+  });
+  const scanItem = (overrides: Record<string, any> = {}) => ({
+    managedStockReserved: false,
+    managedStockDeducted: false,
+    comboComponents: [],
+    ...overrides,
+  });
+
+  it('scan: Delivered order with reserved+deducted lines is NOT drift (correct terminal state)', async () => {
+    prisma.order.findMany.mockResolvedValue([
+      scanOrder({
+        items: [scanItem({ managedStockReserved: true, managedStockDeducted: true })],
+      }),
+    ]);
+
+    const result = await service.scanDriftedOrders();
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('scan: Delivered order with reserved-but-never-deducted lines IS drift', async () => {
+    prisma.order.findMany.mockResolvedValue([
+      scanOrder({
+        items: [scanItem({ managedStockReserved: true, managedStockDeducted: false })],
+      }),
+    ]);
+
+    const result = await service.scanDriftedOrders();
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: 'order-1',
+      displayId: 'ORD-1',
+      statusName: 'Delivered',
+      reasons: ['reserved-not-deducted'],
+    });
+  });
+
+  it('scan: Cancelled order with only the deducted flag set IS drift (restore clears both)', async () => {
+    prisma.order.findMany.mockResolvedValue([
+      scanOrder({
+        status: { name: 'Cancelled' },
+        items: [scanItem({ managedStockReserved: false, managedStockDeducted: true })],
+      }),
+    ]);
+
+    const result = await service.scanDriftedOrders();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].reasons).toEqual(['managed-flags-lingering']);
+  });
+
+  it('scan: Delivered order with no managed flags but an ACTIVE physical reservation IS drift', async () => {
+    prisma.order.findMany.mockResolvedValue([
+      scanOrder({ items: [scanItem()] }),
+    ]);
+    prisma.physicalReservation.findMany.mockResolvedValue([{ orderId: 'order-1' }]);
+
+    const result = await service.scanDriftedOrders();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].reasons).toEqual(['active-physical-reservation']);
+  });
+
+  it('scan: Delivered combo component reserved-but-never-deducted IS drift', async () => {
+    prisma.order.findMany.mockResolvedValue([
+      scanOrder({
+        items: [
+          scanItem({
+            comboComponents: [
+              { managedStockReserved: true, managedStockDeducted: false },
+            ],
+          }),
+        ],
+      }),
+    ]);
+
+    const result = await service.scanDriftedOrders();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].reasons).toEqual(['reserved-not-deducted']);
+  });
+
   it('heal double-run: the second healAll produces an EMPTY delta (idempotency regression)', async () => {
     // Stateful fake: the Cancelled order is dirty until restoreForOrder
     // "heals" it; the scan then no longer returns it — the same contract
