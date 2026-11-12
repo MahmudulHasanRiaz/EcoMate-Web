@@ -2014,7 +2014,19 @@ export class StockService {
     }
 
     if (showManaged) {
-      const orderItemWhere: any = { managedStockReserved: true };
+      // Active holds ONLY (2026-11-12, Q8 follow-up): a line whose stock
+      // was already deducted at delivery (`managedStockDeducted=true`) is
+      // history, not a hold — the deduct path already decremented
+      // `reservedStock` and deliberately left `managedStockReserved` set
+      // (existing Q5/Q6 semantics), so presenting it here over-counts the
+      // dashboard ("N items reserved") and offers a Release action that
+      // would decrement `reservedStock` a second time. The dashboard is an
+      // active-holds view ("No active reservations."), so deducted lines
+      // are excluded, not labelled.
+      const orderItemWhere: any = {
+        managedStockReserved: true,
+        managedStockDeducted: false,
+      };
       if (productId) orderItemWhere.productId = productId;
       const managedItems = await this.prisma.orderItem.findMany({
         where: orderItemWhere,
@@ -2025,7 +2037,10 @@ export class StockService {
         },
       });
 
-      const comboCompWhere: any = { managedStockReserved: true };
+      const comboCompWhere: any = {
+        managedStockReserved: true,
+        managedStockDeducted: false,
+      };
       if (productId) comboCompWhere.productId = productId;
       const managedComboComps = await this.prisma.orderItemComboComponent.findMany({
         where: comboCompWhere,

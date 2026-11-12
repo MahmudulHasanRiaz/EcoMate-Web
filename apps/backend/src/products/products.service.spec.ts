@@ -129,6 +129,12 @@ describe('ProductsService', () => {
       },
       orderItem: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      orderItemComboComponent: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       comboItem: {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -2381,6 +2387,279 @@ describe('ProductsService', () => {
         expect(sql).toContain('COALESCE(p."salePrice", p."basePrice")');
         // Additive-only deploy safety (migration-safety gate).
         expect(sql).not.toMatch(/\bDROP\b|\bDELETE\b|\bTRUNCATE\b/i);
+      });
+    });
+  });
+
+  describe('clearManagedStockForModeChange — reservation settlement (Q8 root cause, 2026-11-12)', () => {
+    // The mode switch left `reservedStock` and the `managedStockReserved`
+    // flags untouched, so a product switching MS→IC with stock 2 /
+    // reserved 2 came out 0 / 2 / −2 (Q8 FAIL) and no later order flow
+    // could ever release those holds (the router skips the managed leg
+    // for IC products). The settlement must release every flagged line
+    // and leave `reservedStock` 0 on every counter row.
+    const clear = (overrides: any = {}) =>
+      (service as any).clearManagedStockForModeChange({
+        productId: 'prod-1',
+        fromMode: 'MANAGED_STOCK',
+        toMode: 'INVENTORY_CONTROLLED',
+        performedBy: 'user-1',
+        ...overrides,
+      });
+
+    const ledgerData = () =>
+      (prisma.managedStockLedger.create as jest.Mock).mock.calls.map(
+        (c) => c[0].data,
+      );
+    const releases = () => ledgerData().filter((d) => d.type === 'RELEASE');
+
+    const simpleProduct = (reserved: number, qty = 0) => ({
+      type: 'simple',
+      managedStockQuantity: qty,
+      reservedStock: reserved,
+    });
+
+    it('releases live reservations + clears already-deducted flags, ending at reserved 0', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+        simpleProduct(2),
+      );
+      (prisma.orderItem.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'oi-live',
+          variantId: null,
+          quantity: 1,
+          managedStockDeducted: false,
+          order: { id: 'o-pending', displayId: 'ORD-261024-0003' },
+        },
+        {
+          id: 'oi-live-2',
+          variantId: null,
+          quantity: 1,
+          managedStockDeducted: false,
+          order: { id: 'o-return', displayId: 'ORD-261022-0008' },
+        },
+        {
+          id: 'oi-deducted',
+          variantId: null,
+          quantity: 1,
+          managedStockDeducted: true,
+          order: { id: 'o-delivered', displayId: 'ORD-261024-0002' },
+        },
+      ]);
+      (prisma.orderItemComboComponent.findMany as jest.Mock).mockResolvedValue(
+        [],
+      );
+
+      await clear();
+
+      // Every flagged line's flag is cleared, deducted or not.
+      expect(prisma.orderItem.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['oi-live', 'oi-live-2', 'oi-deducted'] } },
+        data: { managedStockReserved: false },
+      });
+      // Only the two LIVE units decrement the counter (2 × 1); the
+      // deducted unit was already decremented at delivery.
+      expect(prisma.product.update).toHaveBeenCalledTimes(2);
+      expect(prisma.product.update).toHaveBeenCalledWith({
+        where: { id: 'prod-1' },
+        data: { reservedStock: { decrement: 1 } },
+      });
+      // One RELEASE entry per flagged line.
+      expect(releases()).toHaveLength(3);
+      const live = releases().filter((r) => r.quantity === 1);
+      expect(live).toHaveLength(2);
+      expect(live[0]).toMatchObject({
+        direction: 'IN',
+        reservedBefore: 2,
+        reservedAfter: 1,
+        referenceType: 'ORDER',
+        referenceId: 'o-pending',
+        performedById: 'user-1',
+      });
+      expect(live[0].note).toContain('ORD-261024-0003');
+      expect(live[0].note).toContain('released 1 reserved unit(s)');
+      const deducted = releases().find((r) => r.quantity === 0);
+      expect(deducted).toMatchObject({
+        referenceId: 'o-delivered',
+        reservedBefore: 0,
+        reservedAfter: 0,
+      });
+      expect(deducted.note).toContain('already-deducted');
+      // No residual sweep: the counter is exactly 0 after the releases.
+      expect(
+        ledgerData().filter(
+          (d) => d.type === 'ADJUSTMENT' && d.note.includes('orphaned'),
+        ),
+      ).toHaveLength(0);
+    });
+
+    it('already-deducted history rows clear their flags with NO counter move', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+        simpleProduct(0),
+      );
+      (prisma.orderItem.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'oi-d1',
+          variantId: null,
+          quantity: 1,
+          managedStockDeducted: true,
+          order: { id: 'o-d1', displayId: 'ORD-261024-0002' },
+        },
+        {
+          id: 'oi-d2',
+          variantId: null,
+          quantity: 1,
+          managedStockDeducted: true,
+          order: { id: 'o-d2', displayId: 'ORD-261023-0003' },
+        },
+      ]);
+      (prisma.orderItemComboComponent.findMany as jest.Mock).mockResolvedValue(
+        [],
+      );
+
+      await clear();
+
+      expect(prisma.orderItem.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['oi-d1', 'oi-d2'] } },
+        data: { managedStockReserved: false },
+      });
+      // No decrement and no sweep: the counter already sits at 0.
+      expect(prisma.product.update).not.toHaveBeenCalled();
+      expect(releases()).toHaveLength(2);
+      expect(releases().every((r) => r.quantity === 0)).toBe(true);
+    });
+
+    it('zero reservations behaves exactly as before (one qty clearing entry, nothing else)', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+        simpleProduct(0),
+      );
+      (prisma.orderItem.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.orderItemComboComponent.findMany as jest.Mock).mockResolvedValue(
+        [],
+      );
+
+      await clear();
+
+      expect(prisma.orderItem.updateMany).not.toHaveBeenCalled();
+      expect(prisma.orderItemComboComponent.updateMany).not.toHaveBeenCalled();
+      expect(prisma.product.update).not.toHaveBeenCalled();
+      expect(releases()).toHaveLength(0);
+      // Only the pre-existing quantity-0 ADJUSTMENT clearing entry.
+      expect(ledgerData()).toHaveLength(1);
+      expect(ledgerData()[0]).toMatchObject({
+        type: 'ADJUSTMENT',
+        quantity: 0,
+        stockBefore: 0,
+        stockAfter: 0,
+      });
+    });
+
+    it('variable product: a live reservation releases the VARIANT counter, not the product row', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue({
+        type: 'variable',
+        managedStockQuantity: 0,
+        reservedStock: 0,
+      });
+      (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([
+        { id: 'v-a', managedStockQuantity: 0, reservedStock: 2 },
+        { id: 'v-b', managedStockQuantity: 0, reservedStock: 0 },
+      ]);
+      (prisma.orderItem.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'oi-var',
+          variantId: 'v-a',
+          quantity: 2,
+          managedStockDeducted: false,
+          order: { id: 'o-var', displayId: 'ORD-261024-0010' },
+        },
+      ]);
+      (prisma.orderItemComboComponent.findMany as jest.Mock).mockResolvedValue(
+        [],
+      );
+
+      await clear();
+
+      expect(prisma.orderItem.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['oi-var'] } },
+        data: { managedStockReserved: false },
+      });
+      expect(prisma.productVariant.update).toHaveBeenCalledWith({
+        where: { id: 'v-a' },
+        data: { reservedStock: { decrement: 2 } },
+      });
+      // The product row itself is never touched for a variant hold.
+      expect(prisma.product.update).not.toHaveBeenCalled();
+      expect(releases()).toHaveLength(1);
+      expect(releases()[0]).toMatchObject({
+        variantId: 'v-a',
+        quantity: 2,
+        reservedBefore: 2,
+        reservedAfter: 0,
+        referenceId: 'o-var',
+      });
+    });
+
+    it('combo-component lines release the component product counter and clear their flags', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+        simpleProduct(2),
+      );
+      (prisma.orderItem.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.orderItemComboComponent.findMany as jest.Mock).mockResolvedValue(
+        [
+          {
+            id: 'cc-1',
+            variantId: null,
+            totalQuantity: 2,
+            managedStockDeducted: false,
+            orderItem: {
+              order: { id: 'o-combo', displayId: 'ORD-261024-0009' },
+            },
+          },
+        ],
+      );
+
+      await clear();
+
+      expect(prisma.orderItemComboComponent.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['cc-1'] } },
+        data: { managedStockReserved: false },
+      });
+      expect(prisma.product.update).toHaveBeenCalledWith({
+        where: { id: 'prod-1' },
+        data: { reservedStock: { decrement: 2 } },
+      });
+      expect(releases()).toHaveLength(1);
+      expect(releases()[0]).toMatchObject({
+        quantity: 2,
+        referenceId: 'o-combo',
+      });
+      expect(releases()[0].note).toContain('ORD-261024-0009');
+    });
+
+    it('orphaned reserved units with no backing line are zeroed by the residual sweep', async () => {
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(
+        simpleProduct(3),
+      );
+      (prisma.orderItem.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.orderItemComboComponent.findMany as jest.Mock).mockResolvedValue(
+        [],
+      );
+
+      await clear();
+
+      expect(prisma.product.update).toHaveBeenCalledWith({
+        where: { id: 'prod-1' },
+        data: { reservedStock: 0 },
+      });
+      const sweep = ledgerData().filter(
+        (d) => d.type === 'ADJUSTMENT' && d.note.includes('orphaned'),
+      );
+      expect(sweep).toHaveLength(1);
+      expect(sweep[0]).toMatchObject({
+        quantity: 3,
+        direction: 'IN',
+        reservedBefore: 3,
+        reservedAfter: 0,
       });
     });
   });

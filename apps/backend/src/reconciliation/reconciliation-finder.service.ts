@@ -213,6 +213,25 @@ export function computeManagedModeResidue(
   };
 }
 
+/**
+ * Split a stock-verification unit key (`p:<productId>|<variantId>` with
+ * optional `|wh:<warehouseId>` / `|bin:<binId>` suffixes, as built by
+ * StockReconciliationService.verifyStockIntegrity) into its product and
+ * variant ids. The verifier returns bare keys only — the finder uses this
+ * to resolve human-readable names for the Q8 detail.
+ */
+export function parseVerificationUnitKey(key: string): {
+  productId: string | null;
+  variantId: string | null;
+} {
+  const body = key.startsWith('p:') ? key.slice(2) : key;
+  const [productId = '', variantId = ''] = body.split('|');
+  return {
+    productId: productId || null,
+    variantId: variantId && !variantId.startsWith('wh:') ? variantId : null,
+  };
+}
+
 @Injectable()
 export class ReconciliationFinderService {
   private readonly logger = new Logger(ReconciliationFinderService.name);
@@ -1171,10 +1190,9 @@ export class ReconciliationFinderService {
         : 'IM is OFF on this stack — physical layer not applicable.',
     });
 
-    // Q3 — negative available (managed products + variants, physical rows)
+    // Q3 — negative available (all products + variants, physical rows)
     const [negProducts, negVariants, negPhysical] = await Promise.all([
       this.prisma.product.findMany({
-        where: { availabilityMode: 'MANAGED_STOCK' },
         select: { managedStockQuantity: true, reservedStock: true },
       }),
       this.prisma.productVariant.findMany({
@@ -1193,7 +1211,7 @@ export class ReconciliationFinderService {
       label: 'Negative available anywhere (quantity − reserved < 0)',
       value: negCount,
       pass: negCount === 0,
-      detail: 'Managed products + variants and physical rows combined.',
+      detail: 'All products + variants and physical rows combined.',
     });
 
     // Q4 — managed/physical divergence (list only, never auto-fixed)
@@ -1380,14 +1398,58 @@ export class ReconciliationFinderService {
     // next verification round (or a human with DB access) needs the unit
     // key plus what the ledger says vs what the state says. Capped like Q7.
     const failingUnits = (verification.products ?? []).filter((p) => !p.pass);
-    const failingList = failingUnits
-      .slice(0, 20)
-      .map(
-        (p) =>
+    // Name the failing units in human terms: the verifier returns bare unit
+    // keys (`p:<productId>|<variantId>[|wh:…]`), so a human reading the page
+    // cannot tell which product failed. Resolve product name + SKU (variant
+    // SKU when the unit is a variant) from the same Product/ProductVariant
+    // tables the finder already reads elsewhere. The key stays visible — it
+    // is the join key for DB lookups — and a product deleted since the
+    // verification ran degrades to key-only rather than failing the report.
+    const failingSlice = failingUnits.slice(0, 20);
+    const failingProductIds = [
+      ...new Set(
+        failingSlice
+          .map((p) => parseVerificationUnitKey(p.key).productId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const failingVariantIds = [
+      ...new Set(
+        failingSlice
+          .map((p) => parseVerificationUnitKey(p.key).variantId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const failingProducts = failingProductIds.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: failingProductIds } },
+          select: { id: true, name: true, sku: true },
+        })
+      : [];
+    const failingVariants = failingVariantIds.length
+      ? await this.prisma.productVariant.findMany({
+          where: { id: { in: failingVariantIds } },
+          select: { id: true, sku: true },
+        })
+      : [];
+    const failingProductById = new Map(failingProducts.map((p) => [p.id, p]));
+    const failingVariantById = new Map(failingVariants.map((v) => [v.id, v]));
+    const failingList = failingSlice
+      .map((p) => {
+        const { productId, variantId } = parseVerificationUnitKey(p.key);
+        const product = productId ? failingProductById.get(productId) : undefined;
+        const variant = variantId ? failingVariantById.get(variantId) : undefined;
+        const sku = variant?.sku ?? product?.sku ?? null;
+        const label = product
+          ? `"${product.name}"${sku ? ` (SKU ${sku})` : ''}`
+          : null;
+        return (
           `${p.key} [${p.scope}]: on-hand ${p.onHandActual} (ledger ${p.onHandExpected}), ` +
           `reserved ${p.reservedActual} (ledger ${p.reservedExpected})` +
-          (p.notes?.[0] ? ` — ${p.notes[0]}` : ''),
-      )
+          (label ? ` — ${label}` : '') +
+          (p.notes?.[0] ? ` — ${p.notes[0]}` : '')
+        );
+      })
       .join('; ');
     checks.push({
       key: 'Q8',

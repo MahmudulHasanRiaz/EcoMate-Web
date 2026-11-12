@@ -95,6 +95,43 @@ export const isApplicableReconRow = (r: ReconRow): boolean =>
   r.category === 'R6' ||
   (r.category === 'R8' && r.r8Kind !== 'human')
 
+/**
+ * Human labels for the R5 out-of-scope counts — the backend sends raw keys
+ * (returnPending, alwaysMode, …) which read as jargon on the chips.
+ * alwaysMode = products on ALWAYS_IN_STOCK / ALWAYS_OUT_OF_STOCK.
+ * Unknown keys fall back to the raw key rather than disappearing.
+ */
+const R5_LABELS: Record<string, string> = {
+  returnPending: 'return pending',
+  damaged: 'damaged',
+  partialWithoutRecord: 'partial without record',
+  alwaysMode: 'always in/out of stock',
+  imOffInventoryControlled: 'inventory-controlled (IM off)',
+}
+
+/** Long check details (e.g. Q4's 300+ divergence entries) render as one
+    unreadable wall — collapse past 400 chars behind a toggle. Short
+    details render exactly as before. */
+function CheckDetail({ detail }: { detail: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const LIMIT = 400
+  if (detail.length <= LIMIT) {
+    return <span className='block text-xs text-muted-foreground'>{detail}</span>
+  }
+  return (
+    <span className='block text-xs text-muted-foreground'>
+      {expanded ? detail : `${detail.slice(0, LIMIT)}…`}
+      <button
+        type='button'
+        onClick={() => setExpanded((v) => !v)}
+        className='ml-1 font-medium text-foreground underline'
+      >
+        {expanded ? 'Show less' : 'Show full detail'}
+      </button>
+    </span>
+  )
+}
+
 const EMPTY_PERMISSIONS: string[] = []
 
 export function Reconciliation() {
@@ -241,7 +278,7 @@ export function Reconciliation() {
                   <Badge variant='secondary'>R8-H ambiguous (report-only): {report.counts.R8H}</Badge>
                   {Object.entries(report.counts.R5).map(([k, v]) => (
                     <Badge key={k} variant='outline'>
-                      R5 {k}: {v}
+                      R5 {R5_LABELS[k] ?? k}: {v}
                     </Badge>
                   ))}
                 </div>
@@ -258,9 +295,9 @@ export function Reconciliation() {
                         <TableHead>Layer</TableHead>
                         <TableHead className='text-right'>Ordered</TableHead>
                         <TableHead className='text-right'>Good</TableHead>
-                        <TableHead className='text-right'>Dmg</TableHead>
-                        <TableHead className='text-right'>Restored M/P</TableHead>
-                        <TableHead className='text-right'>Missing M/P</TableHead>
+                        <TableHead className='text-right' title='Damaged quantity received'>Dmg</TableHead>
+                        <TableHead className='text-right' title='Already restored: managed / physical'>Restored M/P</TableHead>
+                        <TableHead className='text-right' title='Still missing: managed / physical'>Missing M/P</TableHead>
                         <TableHead>Evidence</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -327,7 +364,7 @@ export function Reconciliation() {
                         </Badge>
                         <span>
                           <span className='font-medium'>{c.label}</span> = {c.value}
-                          <span className='block text-xs text-muted-foreground'>{c.detail}</span>
+                          <CheckDetail detail={c.detail} />
                         </span>
                       </li>
                     ))}
@@ -339,7 +376,7 @@ export function Reconciliation() {
                   <div className='flex flex-col gap-3 sm:flex-row sm:items-end'>
                     <div className='flex-1'>
                       <label htmlFor='recon-backup-id' className='mb-1 block text-sm font-medium'>
-                        Backup id (restore-tested dump taken just now)
+                        Backup id (restore-tested dump)
                       </label>
                       <Input
                         id='recon-backup-id'

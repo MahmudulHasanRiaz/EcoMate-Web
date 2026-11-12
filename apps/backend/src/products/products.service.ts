@@ -272,6 +272,16 @@ export class ProductsService {
    * Quantities are read FRESH from the stored rows at call time (callers
    * invoke this AFTER their main update), so a draft whose variants were
    * wholesale-replaced in the same save is cleaned on its final values.
+   *
+   * Reservations (2026-11-12, Q8 root cause): zeroing the quantity alone
+   * strands the managed RESERVATIONS — `clearManagedStockForModeChange`
+   * never touched `reservedStock` or the `managedStockReserved` flags, so
+   * a product that switched MS→IC with stock 2 / reserved 2 / available 0
+   * came out 0 / 2 / −2 (Q8 FAIL), and the router never moves managed
+   * counters for IC products, so no later order flow could ever consume or
+   * release those holds. The settlement step at the end of this helper
+   * releases every flagged line and sweeps any orphaned reserved units, so
+   * `reservedStock` is 0 on every counter row when it returns.
    */
   private async clearManagedStockForModeChange(params: {
     productId: string;
@@ -282,9 +292,23 @@ export class ProductsService {
     const { productId, fromMode, toMode, performedBy } = params;
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
-      select: { type: true, managedStockQuantity: true },
+      select: { type: true, managedStockQuantity: true, reservedStock: true },
     });
     if (!product) return;
+
+    // Every managed counter row this product owns (product row + each
+    // variant row). `reserved` is tracked in-memory as lines are released
+    // so the ledger entries carry exact before/after figures and the
+    // residual sweep below sees what is left.
+    type CounterRow = {
+      model: 'product' | 'productVariant';
+      id: string;
+      variantId?: string;
+      reserved: number;
+    };
+    const counters: CounterRow[] = [
+      { model: 'product', id: productId, reserved: product.reservedStock ?? 0 },
+    ];
 
     const recordClearing = async (args: {
       variantId?: string;
@@ -312,7 +336,7 @@ export class ProductsService {
       const variants =
         (await this.prisma.productVariant.findMany({
           where: { productId },
-          select: { id: true, managedStockQuantity: true },
+          select: { id: true, managedStockQuantity: true, reservedStock: true },
         })) ?? [];
       for (const v of variants) {
         const qty = v.managedStockQuantity ?? 0;
@@ -323,6 +347,12 @@ export class ProductsService {
             data: { managedStockQuantity: 0 },
           });
         }
+        counters.push({
+          model: 'productVariant',
+          id: v.id,
+          variantId: v.id,
+          reserved: v.reservedStock ?? 0,
+        });
       }
       if ((product.managedStockQuantity ?? 0) !== 0) {
         await this.prisma.product.update({
@@ -330,19 +360,276 @@ export class ProductsService {
           data: { managedStockQuantity: 0 },
         });
       }
-      return;
+    } else {
+      // simple + combo (a combo's own counter lives on the product row,
+      // exactly like a simple product's — previously combo had NO cleanup
+      // branch at all and its quantity survived the switch).
+      const qty = product.managedStockQuantity ?? 0;
+      await recordClearing({ qty, variant: false });
+      if (qty !== 0) {
+        await this.prisma.product.update({
+          where: { id: productId },
+          data: { managedStockQuantity: 0 },
+        });
+      }
     }
 
-    // simple + combo (a combo's own counter lives on the product row,
-    // exactly like a simple product's — previously combo had NO cleanup
-    // branch at all and its quantity survived the switch).
-    const qty = product.managedStockQuantity ?? 0;
-    await recordClearing({ qty, variant: false });
-    if (qty !== 0) {
-      await this.prisma.product.update({
-        where: { id: productId },
-        data: { managedStockQuantity: 0 },
-      });
+    // Settle the managed reservations against the counters above. The
+    // quantity clearing just zeroed every managedStockQuantity, so the
+    // on-hand leg of the settlement ledger entries is 0 throughout.
+    await this.releaseManagedReservationsForModeChange({
+      productId,
+      fromMode,
+      toMode,
+      performedBy,
+      counters,
+    });
+  }
+
+  /**
+   * Reservation settlement for a mode switch (2026-11-12, Q8 root cause).
+   *
+   * Why NOT `StockService.release()`: its `applyStockChange` skips the
+   * managed leg once `availabilityMode` is no longer MANAGED_STOCK — and
+   * this runs AFTER the caller flipped the mode — so a `release()` call
+   * here would silently move nothing and write no ledger entry. The
+   * settlement therefore writes the counters + ledger rows directly.
+   *
+   * Per flagged line — an OrderItem on this product (or one of its
+   * variants), or an OrderItemComboComponent where this product is the
+   * component:
+   *  - live hold (`managedStockDeducted=false`): decrement the counter
+   *    row's `reservedStock` by the line qty (clamped to what the counter
+   *    holds) and write a RELEASE ledger entry (reservedBefore →
+   *    reservedAfter, referenceId = the order). A live Pending order's
+   *    hold is inert for an IC product — the router skips the managed leg
+   *    for IC — so releasing it destroys nothing the order flow could
+   *    still consume. The release is explicit and ledger-recorded, never
+   *    silent.
+   *  - already deducted (`managedStockDeducted=true`): the counter was
+   *    already decremented at delivery; NO counter move — a second
+   *    decrement would corrupt the counter (the same double-decrement
+   *    guard the order release paths use). The stale flag is still
+   *    cleared, recorded by a quantity-0 RELEASE entry (the same
+   *    auditability convention as the quantity-0 ADJUSTMENT rows above).
+   *
+   * The flag is cleared BEFORE the counter move, so a failure mid-loop
+   * can never double-release the same line on retry. Any counter left
+   * holding reserved units with no backing flagged line (lines deleted,
+   * or a counter inflated by a path that never set flags) is zeroed by
+   * the residual sweep with an ADJUSTMENT entry, so `reservedStock` is 0
+   * on every counter row when this returns.
+   */
+  private async releaseManagedReservationsForModeChange(params: {
+    productId: string;
+    fromMode: string;
+    toMode: string;
+    performedBy?: string;
+    counters: Array<{
+      model: 'product' | 'productVariant';
+      id: string;
+      variantId?: string;
+      reserved: number;
+    }>;
+  }): Promise<void> {
+    const { productId, fromMode, toMode, performedBy, counters } = params;
+    const counterByKey = new Map(
+      counters.map((c) => [`${c.model}:${c.id}`, c]),
+    );
+    const counterFor = (variantId?: string | null) =>
+      variantId
+        ? counterByKey.get(`productVariant:${variantId}`)
+        : counterByKey.get(`product:${productId}`);
+
+    const [items, components] = await Promise.all([
+      this.prisma.orderItem.findMany({
+        where: { productId, managedStockReserved: true },
+        select: {
+          id: true,
+          variantId: true,
+          quantity: true,
+          managedStockDeducted: true,
+          order: { select: { id: true, displayId: true } },
+        },
+      }),
+      this.prisma.orderItemComboComponent.findMany({
+        where: { productId, managedStockReserved: true },
+        select: {
+          id: true,
+          variantId: true,
+          totalQuantity: true,
+          managedStockDeducted: true,
+          orderItem: {
+            select: { order: { select: { id: true, displayId: true } } },
+          },
+        },
+      }),
+    ]);
+
+    type FlaggedLine = {
+      kind: 'item' | 'component';
+      id: string;
+      variantId: string | null;
+      qty: number;
+      deducted: boolean;
+      orderId: string | null;
+      orderDisplayId: string | null;
+    };
+    const lines: FlaggedLine[] = [
+      ...items.map((i) => ({
+        kind: 'item' as const,
+        id: i.id,
+        variantId: i.variantId,
+        qty: i.quantity,
+        deducted: i.managedStockDeducted,
+        orderId: i.order?.id ?? null,
+        orderDisplayId: i.order?.displayId ?? null,
+      })),
+      ...components.map((c) => ({
+        kind: 'component' as const,
+        id: c.id,
+        variantId: c.variantId,
+        qty: c.totalQuantity,
+        deducted: c.managedStockDeducted,
+        orderId: c.orderItem?.order?.id ?? null,
+        orderDisplayId: c.orderItem?.order?.displayId ?? null,
+      })),
+    ];
+
+    // Clear every flag FIRST (see docblock: a retry can then never
+    // double-release a line whose counter move already landed).
+    if (lines.length > 0) {
+      const itemIds = lines
+        .filter((l) => l.kind === 'item')
+        .map((l) => l.id);
+      const compIds = lines
+        .filter((l) => l.kind === 'component')
+        .map((l) => l.id);
+      if (itemIds.length > 0) {
+        await this.prisma.orderItem.updateMany({
+          where: { id: { in: itemIds } },
+          data: { managedStockReserved: false },
+        });
+      }
+      if (compIds.length > 0) {
+        await this.prisma.orderItemComboComponent.updateMany({
+          where: { id: { in: compIds } },
+          data: { managedStockReserved: false },
+        });
+      }
+    }
+
+    for (const line of lines) {
+      const counter = counterFor(line.variantId);
+      const orderRef = line.orderDisplayId ?? line.orderId ?? 'unknown order';
+      if (!line.deducted) {
+        // Live hold: release the counter. Clamp to what the counter
+        // actually holds — a counter short of the flagged qty is itself
+        // corrupt data, and the shortfall is named in the note rather
+        // than driving the counter negative.
+        let released = 0;
+        if (counter) {
+          released = Math.min(line.qty, counter.reserved);
+          if (released > 0) {
+            if (counter.model === 'product') {
+              await this.prisma.product.update({
+                where: { id: counter.id },
+                data: { reservedStock: { decrement: released } },
+              });
+            } else {
+              await this.prisma.productVariant.update({
+                where: { id: counter.id },
+                data: { reservedStock: { decrement: released } },
+              });
+            }
+            counter.reserved -= released;
+          }
+        }
+        await this.prisma.managedStockLedger.create({
+          data: {
+            productId,
+            ...(counter?.variantId ? { variantId: counter.variantId } : {}),
+            quantity: released,
+            direction: 'IN',
+            type: 'RELEASE',
+            stockBefore: 0,
+            stockAfter: 0,
+            reservedBefore: (counter?.reserved ?? 0) + released,
+            reservedAfter: counter?.reserved ?? 0,
+            referenceType: 'ORDER',
+            referenceId: line.orderId,
+            note:
+              `Mode changed from ${fromMode} to ${toMode} — released ${released} reserved unit(s) ` +
+              `for order ${orderRef} (managed layer retired; the hold is inert for ${toMode})` +
+              (released < line.qty
+                ? ` — shortfall ${line.qty - released}: counter held less than the flagged hold`
+                : ''),
+            performedById: performedBy,
+          },
+        });
+      } else {
+        // Already deducted at delivery: the counter was decremented then,
+        // so no counter move here — only the stale flag is cleared,
+        // recorded by a quantity-0 RELEASE entry.
+        await this.prisma.managedStockLedger.create({
+          data: {
+            productId,
+            ...(counter?.variantId ? { variantId: counter.variantId } : {}),
+            quantity: 0,
+            direction: 'IN',
+            type: 'RELEASE',
+            stockBefore: 0,
+            stockAfter: 0,
+            reservedBefore: counter?.reserved ?? null,
+            reservedAfter: counter?.reserved ?? null,
+            referenceType: 'ORDER',
+            referenceId: line.orderId,
+            note:
+              `Mode changed from ${fromMode} to ${toMode} — cleared already-deducted reservation ` +
+              `flag for order ${orderRef} (stock was deducted at delivery; no counter move)`,
+            performedById: performedBy,
+          },
+        });
+      }
+    }
+
+    // Residual sweep: any counter still holding reserved units with no
+    // backing flagged line (lines deleted, or a counter inflated by a path
+    // that never set flags) is zeroed so the managed layer retires clean —
+    // a leftover here is exactly the Q8 FAIL this fix prevents.
+    for (const counter of counters) {
+      if (counter.reserved > 0) {
+        const residual = counter.reserved;
+        if (counter.model === 'product') {
+          await this.prisma.product.update({
+            where: { id: counter.id },
+            data: { reservedStock: 0 },
+          });
+        } else {
+          await this.prisma.productVariant.update({
+            where: { id: counter.id },
+            data: { reservedStock: 0 },
+          });
+        }
+        counter.reserved = 0;
+        await this.prisma.managedStockLedger.create({
+          data: {
+            productId,
+            ...(counter.variantId ? { variantId: counter.variantId } : {}),
+            quantity: residual,
+            direction: 'IN',
+            type: 'ADJUSTMENT',
+            stockBefore: 0,
+            stockAfter: 0,
+            reservedBefore: residual,
+            reservedAfter: 0,
+            note:
+              `Mode changed from ${fromMode} to ${toMode} — cleared ${residual} orphaned reserved unit(s) ` +
+              `with no backing reservation line (managed layer retired)`,
+            performedById: performedBy,
+          },
+        });
+      }
     }
   }
 

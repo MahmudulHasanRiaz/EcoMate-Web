@@ -32,9 +32,9 @@ describe('destructive-adjustment guard wiring (Fix 3)', () => {
     ).toBe(false)
   })
 
-  it('confirm copy is the exact Bengali string', () => {
+  it('confirm copy is the exact string', () => {
     expect(DESTRUCTIVE_CONFIRM_MESSAGE).toBe(
-      'This removes the last remaining unit(s) at this location — stock will reach zero. Confirm?',
+      'This removes most or all of the remaining available stock at this location. Confirm?',
     )
   })
 })

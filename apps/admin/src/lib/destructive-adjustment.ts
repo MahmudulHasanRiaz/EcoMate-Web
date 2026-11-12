@@ -8,7 +8,7 @@ export const DESTRUCTIVE_ADJUSTMENT_CODE = 'DESTRUCTIVE_ADJUSTMENT'
 
 /** Confirm copy shown when the guard fires. */
 export const DESTRUCTIVE_CONFIRM_MESSAGE =
-  'This removes the last remaining unit(s) at this location — stock will reach zero. Confirm?'
+  'This removes most or all of the remaining available stock at this location. Confirm?'
 
 /** True when `err` is the server's destructive-adjustment refusal. */
 export function isDestructiveAdjustmentError(err: unknown): boolean {
