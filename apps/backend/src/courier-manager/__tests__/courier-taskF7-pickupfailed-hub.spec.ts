@@ -146,6 +146,9 @@ describe('Courier Task 3 — PICKUP_FAILED + ASSIGNED_TO_HUB states', () => {
         'order-1',
         { statusId: 'status-shipping' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'pathao' },
       );
     });
   });
@@ -168,6 +171,9 @@ describe('Courier Task 3 — PICKUP_FAILED + ASSIGNED_TO_HUB states', () => {
         'order-1',
         { statusId: 'status-shipping' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'carrybee' },
       );
     });
   });

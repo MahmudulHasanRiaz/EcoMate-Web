@@ -15,6 +15,23 @@ describe('deriveTimelineSource', () => {
     ).toBe('courier');
   });
 
+  it('classifies a courier-driven status-change entry (performedBy system + courier) as courier', () => {
+    // The exact shape OrdersService.updateStatus writes for a courier-driven
+    // change (ORD-261110-0012: Packed → Shipping, performedBy 'system'):
+    // the courier slug — not the 'system' actor — decides the source, so the
+    // admin renders a Courier badge instead of the generic "Auto" badge.
+    expect(
+      deriveTimelineSource({
+        status: 'Shipping',
+        oldStatus: 'Packed',
+        timestamp: '2026-11-10T23:38:14Z',
+        note: '',
+        performedBy: 'system',
+        courier: 'steadfast',
+      }),
+    ).toBe('courier');
+  });
+
   it('classifies entries carrying a courier name (no type) as courier', () => {
     expect(deriveTimelineSource({ courier: 'redx', status: 'PICKED_UP' })).toBe(
       'courier',

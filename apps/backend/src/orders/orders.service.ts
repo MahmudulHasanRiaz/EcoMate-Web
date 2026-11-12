@@ -146,7 +146,7 @@ const ORDER_STATUS_LIFECYCLE_EVENT = {
  *  - take ownership of an order (auto-assignment),
  *  - mark an order as 'Returned' (manual-confirmation-only, restores stock).
  */
-const AUTOMATED_ACTORS = new Set(['system', 'reconcile', 'webhook']);
+const AUTOMATED_ACTORS = new Set(['system', 'reconcile', 'webhook', 'auto']);
 
 function isAutomatedActor(actor?: string | null): boolean {
   return !actor || AUTOMATED_ACTORS.has(actor);
@@ -4560,7 +4560,7 @@ export class OrdersService {
     userId: string,
     performedBy?: string,
     tx?: Prisma.TransactionClient,
-    internalOpts?: { allowStaffPartialToDelivered?: boolean },
+    internalOpts?: { allowStaffPartialToDelivered?: boolean; courier?: string },
   ) {
     const order = await this.prisma.order.findUnique({
       where: { id },
@@ -4701,6 +4701,12 @@ export class OrdersService {
         timestamp: new Date().toISOString(),
         note: dto.note || '',
         performedBy: performedBy || userId,
+        // Courier attribution (timeline-courier-actor): a courier-driven
+        // status change carries the courier slug so read-time attribution
+        // (deriveTimelineSource) classifies it 'courier' instead of the
+        // generic 'system' the admin renders as "Auto". performedBy
+        // semantics are unchanged ('system' for courier-driven changes).
+        ...(internalOpts?.courier ? { courier: internalOpts.courier } : {}),
       },
     ];
 
@@ -5129,6 +5135,7 @@ export class OrdersService {
     performedBy?: string,
     note?: string,
     performedByEmail?: string,
+    internalOpts?: { courier?: string },
   ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -5177,7 +5184,13 @@ export class OrdersService {
       'system',
       performedByEmail ?? performedBy ?? 'system',
       undefined,
-      { allowStaffPartialToDelivered: true },
+      {
+        allowStaffPartialToDelivered: true,
+        // Courier attribution (timeline-courier-actor): the Rule 15.4
+        // promotion is courier-triggered (webhook tryAdvanceOrderStatus),
+        // so the status-change entry carries the courier slug.
+        ...(internalOpts?.courier ? { courier: internalOpts.courier } : {}),
+      },
     );
   }
 

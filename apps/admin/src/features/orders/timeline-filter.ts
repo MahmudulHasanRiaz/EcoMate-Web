@@ -44,6 +44,25 @@ export function timelineSourceOf(entry: any): Exclude<TimelineFilter, 'all'> {
     : 'system'
 }
 
+export type TimelineActorBadge = 'courier' | 'auto' | 'customer' | 'staff' | 'none'
+
+/**
+ * Which actor badge a timeline entry gets. A named courier wins over the
+ * generic "Auto" label: a courier-driven status change (performedBy 'system'
+ * + a `courier` field stamped by the backend) shows the courier, never "Auto".
+ * A bare 'system' (or a legacy literal 'auto') with no courier stays "Auto";
+ * staff names still show as staff.
+ */
+export function timelineActorBadge(entry: any): TimelineActorBadge {
+  const courier = typeof entry?.courier === 'string' ? entry.courier.trim() : ''
+  if (courier) return 'courier'
+  const performer = entry?.performedBy || entry?.performer || ''
+  const lower = String(performer).toLowerCase()
+  if (lower === 'system' || lower === 'auto') return 'auto'
+  if (lower === 'customer') return 'customer'
+  return performer ? 'staff' : 'none'
+}
+
 export function countTimelineSources(
   entries: any[] | null | undefined,
 ): Record<TimelineFilter, number> {

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { OrdersService } from './orders.service';
+import { deriveTimelineSource } from './timeline-source';
 import { OrdersEventService } from './orders-event.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TrackingCaptureService } from '../tracking/tracking-capture.service';
@@ -3754,6 +3755,27 @@ describe('OrdersService', () => {
         expect(result.statusId).toBe('status-return-pending');
       });
 
+      it("blocks the literal 'auto' actor from moving a Partial order (guard hole)", async () => {
+        // 'auto' was missing from AUTOMATED_ACTORS, so a literal 'auto'
+        // actor bypassed the Partial automation-stop (and the Returned /
+        // Delivered-with-open-return locks) and could take ownership.
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(partialOrder);
+        (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+          returnPendingStatus,
+        );
+
+        await expect(
+          service.updateStatus(
+            'order-id-1',
+            { statusId: 'status-return-pending' },
+            'auto',
+          ),
+        ).rejects.toThrow(
+          'Order is Partial: automated processes cannot change its status.',
+        );
+        expect(prisma.order.update).not.toHaveBeenCalled();
+      });
+
       it('rejects the generic Partial → Delivered path — RTN resolution is required', async () => {
         // Business rule change (RTN feature): the generic status machine no
         // longer allows staff to close a Partial order as Delivered. The
@@ -3775,6 +3797,92 @@ describe('OrdersService', () => {
         ).rejects.toThrow(/Cannot transition from "Partial" to "Delivered"/);
 
         expect(prisma.order.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('updateStatus courier attribution (timeline-courier-actor)', () => {
+      const shippingOrder = {
+        ...mockOrder,
+        status: { ...mockInitialStatus, name: 'Shipping' },
+      };
+      const returnPendingStatus = {
+        id: 'status-return-pending',
+        name: 'Return Pending',
+        isInitial: false,
+        nextStatuses: [],
+      };
+
+      function stubShippingToReturnPending() {
+        (prisma.order.findUnique as jest.Mock).mockResolvedValue(shippingOrder);
+        (prisma.orderStatus.findUnique as jest.Mock).mockResolvedValue(
+          returnPendingStatus,
+        );
+        (prisma.order.update as jest.Mock).mockResolvedValue({
+          ...shippingOrder,
+          statusId: 'status-return-pending',
+          status: returnPendingStatus,
+        });
+        (prisma.orderItem as any).findMany = jest.fn().mockResolvedValue([]);
+        (prisma.orderItem as any).update = jest.fn().mockResolvedValue({});
+        (prisma.systemSetting.findMany as jest.Mock).mockResolvedValue([]);
+      }
+
+      function writtenTimeline(): any[] {
+        const calls = (prisma.order.update as jest.Mock).mock.calls as any[];
+        return calls[0][0].data.timeline as any[];
+      }
+
+      it('stamps the courier slug on a courier-driven status-change entry', async () => {
+        stubShippingToReturnPending();
+
+        const result = await service.updateStatus(
+          'order-id-1',
+          { statusId: 'status-return-pending' },
+          'system',
+          undefined,
+          undefined,
+          { courier: 'steadfast' },
+        );
+
+        expect(result.statusId).toBe('status-return-pending');
+        const entries = writtenTimeline();
+        const last = entries[entries.length - 1];
+        expect(last.status).toBe('Return Pending');
+        expect(last.oldStatus).toBe('Shipping');
+        // performedBy semantics unchanged — the courier rides its own field.
+        expect(last.performedBy).toBe('system');
+        expect(last.courier).toBe('steadfast');
+        // …so read-time attribution calls it courier, never system/"Auto".
+        expect(deriveTimelineSource(last)).toBe('courier');
+      });
+
+      it('writes no courier field when no courier is passed (staff shape unchanged)', async () => {
+        stubShippingToReturnPending();
+
+        await service.updateStatus(
+          'order-id-1',
+          { statusId: 'status-return-pending' },
+          userId,
+        );
+
+        const entries = writtenTimeline();
+        const last = entries[entries.length - 1];
+        expect(last).not.toHaveProperty('courier');
+        expect(deriveTimelineSource(last)).toBe('staff');
+      });
+
+      it("never assigns ownership to the literal 'auto' actor", async () => {
+        stubShippingToReturnPending();
+
+        const result = await service.updateStatus(
+          'order-id-1',
+          { statusId: 'status-return-pending' },
+          'auto',
+        );
+
+        expect(result.statusId).toBe('status-return-pending');
+        const data = (prisma.order.update as jest.Mock).mock.calls[0][0].data;
+        expect(data).not.toHaveProperty('assignedToId');
       });
     });
 

@@ -117,6 +117,9 @@ describe('Courier Task A — mapping corrections batch', () => {
         'order-1',
         { statusId: 'status-partial' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'steadfast' },
       );
       const upserts = (prisma.dispatch.upsert as jest.Mock).mock.calls as any[];
       for (const [args] of upserts) {
@@ -238,6 +241,9 @@ describe('Courier Task A — mapping corrections batch', () => {
         'order-1',
         expect.objectContaining({ statusId: 'status-shipping' }),
         'system',
+        undefined,
+        undefined,
+        { courier: 'redx' },
       );
     });
 
@@ -257,6 +263,9 @@ describe('Courier Task A — mapping corrections batch', () => {
         'order-1',
         { statusId: 'status-rp' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'redx' },
       );
       const upserts = (prisma.dispatch.upsert as jest.Mock).mock.calls as any[];
       for (const [args] of upserts) {
@@ -280,6 +289,9 @@ describe('Courier Task A — mapping corrections batch', () => {
         'order-1',
         expect.objectContaining({ statusId: 'status-rp' }),
         'system',
+        undefined,
+        undefined,
+        { courier: 'pathao' },
       );
       const statusIds = (ordersService.updateStatus as jest.Mock).mock.calls.map(
         (c: any[]) => (c[1] as any)?.statusId,
@@ -300,6 +312,9 @@ describe('Courier Task A — mapping corrections batch', () => {
         'order-1',
         expect.objectContaining({ statusId: 'status-rp' }),
         'system',
+        undefined,
+        undefined,
+        { courier: 'carrybee' },
       );
     });
   });

@@ -136,6 +136,9 @@ describe('Courier Task 1 — paid means delivered + money recording', () => {
         'order-1',
         { statusId: 'status-delivered' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'pathao' },
       );
     });
 
@@ -184,6 +187,9 @@ describe('Courier Task 1 — paid means delivered + money recording', () => {
         'order-1',
         { statusId: 'status-delivered' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'carrybee' },
       );
     });
 
@@ -265,6 +271,9 @@ describe('Courier Task 1 — paid means delivered + money recording', () => {
         'order-1',
         { statusId: 'status-delivered' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'redx' },
       );
     });
 

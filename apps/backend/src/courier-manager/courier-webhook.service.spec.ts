@@ -92,6 +92,9 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         'order-1',
         { statusId: 'status-partial' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'steadfast' },
       );
     });
 
@@ -114,6 +117,9 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         'order-1',
         { statusId: 'status-partial' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'steadfast' },
       );
     });
 
@@ -161,6 +167,9 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         'order-1',
         { statusId: 'status-partial' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'pathao' },
       );
     });
 
@@ -184,6 +193,9 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         'order-1',
         { statusId: 'status-partial' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'redx' },
       );
     });
 
@@ -204,6 +216,9 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         'order-1',
         { statusId: 'status-partial' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'redx' },
       );
     });
 
@@ -224,6 +239,9 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         'order-1',
         { statusId: 'status-partial' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'carrybee' },
       );
     });
   });
@@ -671,6 +689,9 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         'order-1',
         expect.objectContaining({ statusId: 'status-shipping' }),
         'system',
+        undefined,
+        undefined,
+        { courier: 'pathao' },
       );
     });
 
@@ -764,6 +785,9 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         'order-1',
         expect.objectContaining({ statusId: 'status-shipping' }),
         'system',
+        undefined,
+        undefined,
+        { courier: 'pathao' },
       );
     });
 
@@ -777,6 +801,9 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         'order-1',
         expect.objectContaining({ statusId: 'status-shipping' }),
         'system',
+        undefined,
+        undefined,
+        { courier: 'pathao' },
       );
     });
   });
@@ -817,6 +844,9 @@ describe('CourierWebhookService — PARTIAL rules', () => {
         'order-1',
         { statusId: 'status-delivered' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'steadfast' },
       );
     });
 

@@ -212,6 +212,9 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
         'order-1',
         { statusId: 'status-delivered' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'redx' },
       );
     });
 
@@ -297,6 +300,9 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
         'order-1',
         { statusId: 'status-rp' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'steadfast' },
       );
     });
 
@@ -336,6 +342,9 @@ describe('CourierWebhookService — Task 5 owner-approved status mappings', () =
         'order-1',
         { statusId: 'status-partial' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'steadfast' },
       );
     });
 

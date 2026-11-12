@@ -138,6 +138,9 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
         'order-1',
         { statusId: 'status-rp' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'pathao' },
       );
       // …and no Order row is ever created (no phantom Orders).
       expect(prisma.order.create).toBeUndefined();
@@ -273,6 +276,9 @@ describe('CourierWebhookService — Return records (Task 6)', () => {
         'order-1',
         { statusId: 'status-rp' },
         'system',
+        undefined,
+        undefined,
+        { courier: 'steadfast' },
       );
     });
 

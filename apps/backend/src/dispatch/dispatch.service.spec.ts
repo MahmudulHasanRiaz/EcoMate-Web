@@ -629,6 +629,9 @@ describe('DispatchService', () => {
         'order-1',
         expect.objectContaining({ statusId: 'status-shipping' }),
         'system',
+        undefined,
+        undefined,
+        { courier: 'steadfast' },
       );
 
       // Sync logged.
@@ -669,6 +672,9 @@ describe('DispatchService', () => {
         'order-1',
         expect.objectContaining({ statusId: 'status-delivered' }),
         'system',
+        undefined,
+        undefined,
+        { courier: 'steadfast' },
       );
       expect(prisma.courierDispatchLog.create.mock.calls[0][0].data.status).toBe('SYNC_UNCHANGED');
     });
@@ -697,6 +703,9 @@ describe('DispatchService', () => {
         'order-1',
         expect.objectContaining({ statusId: 'status-shipping' }),
         'system',
+        undefined,
+        undefined,
+        { courier: 'pathao' },
       );
     });
 
@@ -733,6 +742,9 @@ describe('DispatchService', () => {
         'order-1',
         expect.objectContaining({ statusId: 'status-shipping' }),
         'system',
+        undefined,
+        undefined,
+        { courier: 'pathao' },
       );
     });
 

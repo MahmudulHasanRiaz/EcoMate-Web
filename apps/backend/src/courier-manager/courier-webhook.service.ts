@@ -411,6 +411,7 @@ export class CourierWebhookService {
       // partial_delivered_approval_pending — the rider's word, not ours).
       await this.tryAdvanceOrderStatus(order.id, orderStatusName, {
         confirmedPartial: rawStatus === 'partial_delivered',
+        courier: 'steadfast',
       });
     }
 
@@ -906,7 +907,9 @@ export class CourierWebhookService {
     const isPartial = rawStatus.startsWith('partial');
 
     if (mapped.advanceOrder) {
-      await this.tryAdvanceOrderStatus(order.id, mapped.advanceOrder);
+      await this.tryAdvanceOrderStatus(order.id, mapped.advanceOrder, {
+        courier: 'steadfast',
+      });
     }
 
     // ---- Unified Return entity (Task 6) ----------------------------------
@@ -1276,7 +1279,7 @@ export class CourierWebhookService {
   private async tryAdvanceOrderStatus(
     orderId: string,
     targetName: string,
-    opts?: { confirmedPartial?: boolean },
+    opts?: { confirmedPartial?: boolean; courier?: string },
   ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -1300,7 +1303,13 @@ export class CourierWebhookService {
     // Failure keeps the lock (warn + return — never fall through).
     if (order.status.name === 'Partial' && targetName === 'Partial' && opts?.confirmedPartial) {
       try {
-        await this.ordersService.confirmStaffPartialDelivered(orderId, 'system');
+        await this.ordersService.confirmStaffPartialDelivered(
+          orderId,
+          'system',
+          undefined,
+          undefined,
+          { courier: opts?.courier },
+        );
         return;
       } catch (e) {
         const reason = (e as Error).message;
@@ -1361,7 +1370,17 @@ export class CourierWebhookService {
     if (!targetStatus) return;
 
     try {
-      await this.ordersService.updateStatus(orderId, { statusId: targetStatus.id }, 'system');
+      await this.ordersService.updateStatus(
+        orderId,
+        { statusId: targetStatus.id },
+        'system',
+        undefined,
+        undefined,
+        // Courier attribution (timeline-courier-actor): the status-change
+        // timeline entry carries the courier slug so the admin renders a
+        // Courier badge instead of the generic "Auto" badge.
+        { courier: opts?.courier },
+      );
       return;
     } catch (e) {
       this.logger.warn(`Direct transition to ${targetName} failed: ${(e as Error).message}`);
@@ -1398,7 +1417,14 @@ export class CourierWebhookService {
       const allowed = ORDER_TRANSITIONS[current.status.name] || [];
       if (!allowed.includes(step)) continue;
       try {
-        await this.ordersService.updateStatus(orderId, { statusId: stepStatus.id }, 'system');
+        await this.ordersService.updateStatus(
+          orderId,
+          { statusId: stepStatus.id },
+          'system',
+          undefined,
+          undefined,
+          { courier: opts?.courier },
+        );
       } catch (e2) {
         this.logger.warn(`Step ${current.status.name}→${step} failed: ${(e2 as Error).message}`);
         break;
@@ -1610,6 +1636,7 @@ export class CourierWebhookService {
       // vocabulary — every PARTIAL arrival here is a confirmed partial.
       await this.tryAdvanceOrderStatus(order.id, orderStatusName, {
         confirmedPartial: dispatchStatus === 'PARTIAL',
+        courier: 'pathao',
       });
     }
 
@@ -1801,6 +1828,7 @@ export class CourierWebhookService {
       // Task 5 (Fix 9, Rule 15.4): same confirmed-partial rule as Pathao.
       await this.tryAdvanceOrderStatus(order.id, orderStatusName, {
         confirmedPartial: dispatchStatus === 'PARTIAL',
+        courier: 'redx',
       });
     }
 
@@ -1866,7 +1894,9 @@ export class CourierWebhookService {
 
     const orderStatusName = REDX_DISPATCH_TO_ORDER['DELIVERED'];
     if (orderStatusName) {
-      await this.tryAdvanceOrderStatus(orderId, orderStatusName);
+      await this.tryAdvanceOrderStatus(orderId, orderStatusName, {
+        courier: 'redx',
+      });
     }
 
     this.logger.log(
@@ -1999,6 +2029,7 @@ export class CourierWebhookService {
       // Task 5 (Fix 9, Rule 15.4): same confirmed-partial rule as Pathao.
       await this.tryAdvanceOrderStatus(order.id, orderStatusName, {
         confirmedPartial: dispatchStatus === 'PARTIAL',
+        courier: 'carrybee',
       });
     }
 
