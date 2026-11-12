@@ -157,7 +157,10 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      # Backend boot takes several minutes on this host (startup-script work
+      # + Nest bootstrap before /api/health answers). A 15s grace marked the
+      # container unhealthy mid-boot and failed every redeploy (Deploy #88).
+      start_period: 600s
     deploy:
       resources:
         limits:
