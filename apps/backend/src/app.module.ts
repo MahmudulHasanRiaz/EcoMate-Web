@@ -54,6 +54,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { ImagesModule } from './images/images.module';
 import { AddressesModule } from './addresses/addresses.module';
 import { CacheModule } from './cache/cache.module';
+import { CachePurgeModule } from './cache-purge/cache-purge.module';
 import { RolesGuard } from './auth/roles.guard';
 import { DualModeAuthGuard } from './common/guards/dual-mode-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -163,6 +164,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     ImagesModule,
     AddressesModule,
     CacheModule,
+    CachePurgeModule,
     BlockedEntriesModule,
     BlockSettingsModule,
     CourierSettlementModule,

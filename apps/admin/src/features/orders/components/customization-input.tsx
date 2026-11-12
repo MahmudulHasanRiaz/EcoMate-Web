@@ -23,7 +23,16 @@ export function CustomizationInput({
   onChange: (next: CustomizationSelection) => void
   disabled?: boolean
 }) {
-  const groups = definition || []
+  // Corrupt legacy / direct-DB data must never crash the page: a group
+  // whose options is not an array (object, string, …) renders as an
+  // empty option list, and a non-array definition renders nothing.
+  // (P0 stale-bundle round, 2026-11-12: this is the only remaining
+  // executable `(x || []).map` on the orders path — the old
+  // `(g.options || []).map` threw when options was a truthy non-array.
+  // It needs corrupt customizations data AND a customised product in
+  // the cart, so it cannot explain a page-load 500 — closed as
+  // defense-in-depth, with a regression test.)
+  const groups = Array.isArray(definition) ? definition : []
   const answerOf = (key: string) => value?.groups.find((g) => g.key === key)
 
   const setAnswer = (key: string, patch: { optionKeys?: string[]; text?: string }) => {
@@ -71,7 +80,7 @@ export function CustomizationInput({
                 >
                   None
                 </button>
-                {(g.options || []).map((o) => {
+                {(Array.isArray(g.options) ? g.options : []).map((o) => {
                   const active = (ans?.optionKeys || []).includes(o.key)
                   return (
                     <button
@@ -89,7 +98,7 @@ export function CustomizationInput({
               </div>
             ) : (
               <div className='flex flex-wrap gap-3'>
-                {(g.options || []).map((o) => {
+                {(Array.isArray(g.options) ? g.options : []).map((o) => {
                   const selected = ans?.optionKeys || []
                   const active = selected.includes(o.key)
                   return (

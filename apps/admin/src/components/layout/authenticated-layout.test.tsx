@@ -37,6 +37,9 @@ vi.mock('@/components/layout/app-sidebar', () => ({ AppSidebar: () => null }))
 // The real widget portals into the <Header>; stub it so the layout test stays
 // focused on permission + license bootstrapping.
 vi.mock('@/features/hr-attendance/components/attendance-clock', () => ({ AttendanceClock: () => null }))
+// Same for the purge button: its mutation needs a QueryClient the layout
+// test does not provide; the button itself is covered by its own tests.
+vi.mock('@/features/cache-purge/components/purge-all-cache-button', () => ({ PurgeAllCacheButton: () => null }))
 vi.mock('@/components/skip-to-main', () => ({ SkipToMain: () => null }))
 vi.mock('@/components/layout/header', () => ({ Header: () => null }))
 vi.mock('@/components/layout/main', () => ({ Main: ({ children }: any) => children }))

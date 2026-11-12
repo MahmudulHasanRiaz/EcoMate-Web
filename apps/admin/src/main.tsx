@@ -12,6 +12,7 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { handleQueryError } from '@/lib/query-error-handler'
 import { APP_BASEPATH } from '@/lib/app-href'
 import { initSwUpdate } from '@/lib/sw-update'
+import { initCacheVersionCheck } from '@/lib/cache-version'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
 import { ThemeProvider } from './context/theme-provider'
@@ -24,6 +25,11 @@ import './styles/index.css'
 // D18: keep long-lived admin tabs on the latest deploy — periodic SW
 // update checks + one reload when a new SW takes control (see lib/sw-update).
 initSwUpdate()
+
+// "Purge all cache" version check (P0 stale-bundle round): reload once
+// when the backend's cache_version changes (see lib/cache-version).
+// The SW-fix builder on this branch reuses the same mechanism.
+initCacheVersionCheck()
 
 const queryClient = new QueryClient({  defaultOptions: {
     queries: {

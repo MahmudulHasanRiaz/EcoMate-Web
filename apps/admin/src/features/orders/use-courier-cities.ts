@@ -62,7 +62,15 @@ export function normalizeCourierCities(body: unknown): CourierCitiesData {
     return { cities, courierConfigured: true, source: null }
   }
   const b = (body ?? {}) as any
-  const cities = (Array.isArray(b.cities) ? b.cities : [])
+  // `{ data: [...] }` envelope (same shape normalizeShippingZones /
+  // normalizeSourcePlatforms already unwrap): previously degraded to
+  // [] — safe, but silently empty. Unwrap it like the siblings.
+  const list = Array.isArray(b.cities)
+    ? b.cities
+    : Array.isArray(b.data)
+      ? b.data
+      : []
+  const cities = list
     .map(toCity)
     .filter((c: any): c is CourierCity => c !== null)
   return {
@@ -86,7 +94,13 @@ export function normalizeCourierZones(body: unknown): CourierCity[] {
     return body.map(toCity).filter((c): c is CourierCity => c !== null)
   }
   const b = (body ?? {}) as any
-  return (Array.isArray(b.zones) ? b.zones : [])
+  // `{ data: [...] }` envelope — see normalizeCourierCities above.
+  const list = Array.isArray(b.zones)
+    ? b.zones
+    : Array.isArray(b.data)
+      ? b.data
+      : []
+  return list
     .map(toCity)
     .filter((c: any): c is CourierCity => c !== null)
 }

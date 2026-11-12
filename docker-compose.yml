@@ -89,6 +89,12 @@ services:
       # will present it to POST /api/revalidate after product/config mutations
       # (hookup pending); the storefront endpoint stays disabled until set.
       REVALIDATION_SECRET: ${REVALIDATION_SECRET:-}
+      # Cloudflare edge-cache purge for the admin "Purge all cache" button
+      # (P0 stale-bundle round, 2026-11-12). Token needs Zone:Cache Purge
+      # on this tenant's zone(s) only; empty = the Cloudflare layer reports
+      # "not configured" and the button purges everything else.
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       PORT: 4000
