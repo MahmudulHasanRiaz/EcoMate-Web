@@ -3108,40 +3108,106 @@ export class CourierManagerService {
     };
   }
 
-  async getCities() {
+  // ── Courier city/zone lists (order-create city field) ──────────────
+  // The city list comes from the LIVE courier API (Pathao, else Carrybee)
+  // — there is no local city table, and a static fallback list would be
+  // wrong: the ids are the courier's own city_ids, sent back verbatim at
+  // dispatch (`recipient_city` / `city_id`), so invented ids would corrupt
+  // consignments. Two failure modes, handled differently:
+  //  (a) NO courier account enabled → NOT an error. The endpoint returns
+  //      `{ cities: [], courierConfigured: false }` (HTTP 200) so the
+  //      admin degrades gracefully — city stays optional, no error toast.
+  //      The old code threw 400 'No supported courier … is enabled', so
+  //      every tenant without Pathao/Carrybee saw 'Failed to fetch cities'
+  //      on every order create. (Finding 2, staging 2026-11-12.)
+  //  (b) Courier enabled but its API slow/down → the throw stays a real
+  //      error so the admin can retry; the last-good list is served from
+  //      the caches below + the admin's own last-good store instead.
+  // Last-good cache: a successful list is reused for GEO_CACHE_TTL_MS so a
+  // slow/flaky courier API does not leave the city field empty on every
+  // form open. Only successful non-empty fetches are cached, keyed by the
+  // source courier — enabling/disabling a courier invalidates at once.
+  private static readonly GEO_CACHE_TTL_MS = 5 * 60_000
+  private citiesCache: {
+    at: number
+    source: 'pathao' | 'carrybee'
+    value: {
+      cities: Array<{ id: number | string; name: string }>
+      courierConfigured: boolean
+      source: 'pathao' | 'carrybee' | null
+    }
+  } | null = null
+  private zonesCache = new Map<
+    string,
+    {
+      at: number
+      source: 'pathao' | 'carrybee'
+      value: {
+        zones: Array<{ id: number | string; name: string }>
+        courierConfigured: boolean
+        source: 'pathao' | 'carrybee' | null
+      }
+    }
+  >()
+
+  /** First enabled geo-capable courier (Pathao wins over Carrybee). */
+  private async enabledGeoCourier(): Promise<
+    { courier: 'pathao' | 'carrybee'; creds: any } | { courier: null; creds: null }
+  > {
     const pathao = await this.prisma.courierCredentials.findUnique({
       where: { courier: 'pathao' },
     });
+    if (pathao?.enabled) return { courier: 'pathao', creds: pathao };
     const carrybee = await this.prisma.courierCredentials.findUnique({
       where: { courier: 'carrybee' },
     });
+    if (carrybee?.enabled) return { courier: 'carrybee', creds: carrybee };
+    return { courier: null, creds: null };
+  }
 
-    if (pathao?.enabled) {
-      return this.getPathaoCities(pathao);
-    } else if (carrybee?.enabled) {
-      return this.getCarrybeeCities(carrybee);
+  async getCities() {
+    const { courier, creds } = await this.enabledGeoCourier();
+    if (!courier) {
+      return { cities: [], courierConfigured: false, source: null };
     }
-    throw new BadRequestException(
-      'No supported courier (Pathao/Carrybee) is enabled',
-    );
+    const cached = this.citiesCache;
+    if (
+      cached &&
+      cached.source === courier &&
+      Date.now() - cached.at < CourierManagerService.GEO_CACHE_TTL_MS
+    ) {
+      return cached.value;
+    }
+    const cities =
+      courier === 'pathao'
+        ? await this.getPathaoCities(creds)
+        : await this.getCarrybeeCities(creds);
+    const value = { cities, courierConfigured: true, source: courier as 'pathao' | 'carrybee' };
+    this.citiesCache = { at: Date.now(), source: courier, value };
+    return value;
   }
 
   async getZones(cityId: string) {
-    const pathao = await this.prisma.courierCredentials.findUnique({
-      where: { courier: 'pathao' },
-    });
-    const carrybee = await this.prisma.courierCredentials.findUnique({
-      where: { courier: 'carrybee' },
-    });
-
-    if (pathao?.enabled) {
-      return this.getPathaoZones(pathao, cityId);
-    } else if (carrybee?.enabled) {
-      return this.getCarrybeeZones(carrybee, cityId);
+    const { courier, creds } = await this.enabledGeoCourier();
+    if (!courier) {
+      return { zones: [], courierConfigured: false, source: null };
     }
-    throw new BadRequestException(
-      'No supported courier (Pathao/Carrybee) is enabled',
-    );
+    const cacheKey = `${courier}:${cityId}`;
+    const cached = this.zonesCache.get(cacheKey);
+    if (
+      cached &&
+      cached.source === courier &&
+      Date.now() - cached.at < CourierManagerService.GEO_CACHE_TTL_MS
+    ) {
+      return cached.value;
+    }
+    const zones =
+      courier === 'pathao'
+        ? await this.getPathaoZones(creds, cityId)
+        : await this.getCarrybeeZones(creds, cityId);
+    const value = { zones, courierConfigured: true, source: courier as 'pathao' | 'carrybee' };
+    this.zonesCache.set(cacheKey, { at: Date.now(), source: courier, value });
+    return value;
   }
 
   private async getPathaoCities(creds: any) {

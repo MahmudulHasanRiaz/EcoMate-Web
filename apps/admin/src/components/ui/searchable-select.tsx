@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react'
-import { Check, ChevronsUpDown, Search, X } from 'lucide-react'
+import { Check, ChevronsUpDown, Loader2, Search, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +22,10 @@ interface SearchableSelectProps {
   emptyMessage?: string
   searchPlaceholder?: string
   disabled?: boolean
+  /** Options are still loading (e.g. a slow courier city fetch): show a
+   * spinner in the trigger and 'Loading…' instead of 'No options found',
+   * so the field never looks dead-empty while the fetch is in flight. */
+  loading?: boolean
   className?: string
   triggerClassName?: string
 }
@@ -34,6 +38,7 @@ export function SearchableSelect({
   emptyMessage = 'No options found',
   searchPlaceholder = 'Search...',
   disabled = false,
+  loading = false,
   className,
   triggerClassName,
 }: SearchableSelectProps) {
@@ -105,6 +110,9 @@ export function SearchableSelect({
               />
             )}
             <ChevronsUpDown className='h-3.5 w-3.5 shrink-0 text-muted-foreground' />
+            {loading && (
+              <Loader2 className='h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground' />
+            )}
           </div>
         </Button>
       </PopoverTrigger>
@@ -123,7 +131,12 @@ export function SearchableSelect({
           />
         </div>
         <div className='max-h-[250px] overflow-y-auto p-1'>
-          {filteredOptions.length === 0 ? (
+          {loading && filteredOptions.length === 0 ? (
+            <div className='py-4 text-center text-xs text-muted-foreground flex items-center justify-center gap-2'>
+              <Loader2 className='h-3.5 w-3.5 animate-spin' />
+              Loading…
+            </div>
+          ) : filteredOptions.length === 0 ? (
             <div className='py-4 text-center text-xs text-muted-foreground'>
               {emptyMessage}
             </div>

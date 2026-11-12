@@ -431,6 +431,7 @@ function waterfallPnl(netState: KpiValue['state']): OverviewData['pnl'] {
     },
     margins: { gross: 0.5, contribution: 0.4, operating: 0.3, net: 0.3 },
     bridge,
+    costNotSet: { units: 0, amount: 0, lines: 0 },
     lenses: {
       booked: line(120000),
       recognised: line(93000),
@@ -484,6 +485,22 @@ describe('PnlWaterfall', () => {
       (a.getAttribute('aria-label') ?? '').startsWith('Gateway fees'),
     )
     expect(feeBadge?.getAttribute('href')).toBe('/admin/mon/analytics/sales')
+  })
+
+  it('renders the cost-not-set bucket under COGS when manual lines lack a cost', async () => {
+    const pnl = waterfallPnl('unavailable')
+    const { getByTestId } = await renderWithClient(
+      <PnlWaterfall pnl={{ ...pnl, costNotSet: { units: 1, amount: 150, lines: 1 } }} />,
+    )
+    await expect.element(getByTestId('pnl-cost-not-set')).toHaveTextContent(/Cost not set: ৳150 across 1 manual line \(1 unit\)/)
+    await expect.element(getByTestId('pnl-cost-not-set')).toHaveTextContent(/COGS counts the full price and these lines add ৳0 profit/)
+  })
+
+  it('hides the cost-not-set note when no manual line lacks a cost', async () => {
+    const { container } = await renderWithClient(
+      <PnlWaterfall pnl={waterfallPnl('unavailable')} />,
+    )
+    expect(container.querySelector('[data-testid="pnl-cost-not-set"]')).toBeNull()
   })
 })
 

@@ -141,8 +141,29 @@ export class StockReconciliationService implements OnApplicationBootstrap {
   /**
    * Read-only drift scan for dry runs (reconcile-stock.ts --dry-run): the
    * orders healAll WOULD process, with their statuses. Never writes.
+   *
+   * `reasons` names WHY the order is drifted, per order — the finder
+   * renders them in the Q5 detail so a failing check names its cause
+   * instead of only an order id:
+   *   - 'reserved-not-deducted': a managed unit is still RESERVED on a
+   *     Delivered/Partial order (deduction never ran);
+   *   - 'managed-flags-lingering': a managed flag is still set on a
+   *     Cancelled/Returned order (restore never cleared it);
+   *   - 'active-physical-reservation': a physical reservation is still
+   *     ACTIVE on a terminal order (never fulfilled / released).
+   *
+   * `managedStockDeducted=true` on a Delivered/Partial order is NOT drift:
+   * the deduct path sets ONLY that flag (OrderStockDeductService leaves
+   * managedStockReserved set — the cancel/return restore path requires
+   * BOTH flags to restore a deducted line), so reserved+deducted is the
+   * CORRECT terminal state of a delivered managed line, and healOrder
+   * already reports it 'noop'. The pre-fix scan flagged ANY set flag, so
+   * every correctly-delivered managed order failed Q5 forever and no
+   * heal could ever clear it (2026-11-12, staging Q5=3 Delivered).
    */
-  async scanDriftedOrders(): Promise<{ id: string; statusName: string }[]> {
+  async scanDriftedOrders(): Promise<
+    { id: string; displayId: string; statusName: string; reasons: string[] }[]
+  > {
     return this.findOrdersWithActiveStock();
   }
 
@@ -535,9 +556,15 @@ export class StockReconciliationService implements OnApplicationBootstrap {
   /**
    * Orders that carry active stock state inconsistent with a terminal status.
    *
-   * Flags an order if ANY of these hold:
-   *  - a managed reservation/deduction flag is still set on an item or combo, OR
-   *  - a physical reservation still has status ACTIVE (standalone or combo).
+   * Status-aware — the two terminal families have different correct end
+   * states, so the same flag means opposite things:
+   *  - Delivered / Partial: drift iff a managed unit is RESERVED but NOT
+   *    yet deducted (deduction never ran), OR a physical reservation is
+   *    still ACTIVE (never fulfilled). A deducted unit (reserved and/or
+   *    deducted set) is the CORRECT terminal state, never drift.
+   *  - Cancelled / Returned: drift iff ANY managed flag is still set
+   *    (restore clears both flags together), OR a physical reservation is
+   *    still ACTIVE.
    *
    * The physical check is essential: physical-only products (INVENTORY_CONTROLLED,
    * or MANAGED with syncManagedStock) never touch the managed flags, so a Delivered
@@ -545,7 +572,7 @@ export class StockReconciliationService implements OnApplicationBootstrap {
    * and its `reservedQuantity` would stay stuck.
    */
   private async findOrdersWithActiveStock(): Promise<
-    { id: string; statusName: string }[]
+    { id: string; displayId: string; statusName: string; reasons: string[] }[]
   > {
     // 'Damaged' deliberately absent (owner Q7, 2026-10-23): heal never
     // touches damaged orders, so they are not drift candidates here.
@@ -558,6 +585,7 @@ export class StockReconciliationService implements OnApplicationBootstrap {
         },
         select: {
           id: true,
+          displayId: true,
           status: { select: { name: true } },
           items: {
             select: {
@@ -587,24 +615,49 @@ export class StockReconciliationService implements OnApplicationBootstrap {
     for (const r of activePhysical) physicalDirty.add(r.orderId);
     for (const r of activeCombo) physicalDirty.add(r.orderId);
 
-    const active = orders.filter((o) => {
-      // Any managed reservation/deduction flag still lingering counts as dirty.
-      const flaggedManaged = o.items.some(
-        (i) =>
-          i.managedStockReserved ||
-          i.managedStockDeducted ||
-          i.comboComponents.some(
-            (c) => c.managedStockReserved || c.managedStockDeducted,
-          ),
-      );
-      if (flaggedManaged) return true;
-      return physicalDirty.has(o.id);
-    });
-
-    return active.map((o) => ({
-      id: o.id,
-      statusName: o.status?.name || '',
-    }));
+    const drifted: { id: string; displayId: string; statusName: string; reasons: string[] }[] = [];
+    for (const o of orders) {
+      const statusName = o.status?.name || '';
+      const units: { reserved: boolean; deducted: boolean }[] = [];
+      for (const i of o.items) {
+        units.push({
+          reserved: !!i.managedStockReserved,
+          deducted: !!i.managedStockDeducted,
+        });
+        for (const c of i.comboComponents) {
+          units.push({
+            reserved: !!c.managedStockReserved,
+            deducted: !!c.managedStockDeducted,
+          });
+        }
+      }
+      const reasons: string[] = [];
+      if (statusName === 'Delivered' || statusName === 'Partial') {
+        // Deduction pending: reserved but never deducted. A deducted unit
+        // is done — its flags are history, not held stock.
+        if (units.some((u) => u.reserved && !u.deducted)) {
+          reasons.push('reserved-not-deducted');
+        }
+      } else {
+        // Cancelled / Returned: restore clears BOTH flags, so either flag
+        // still set means the restore never ran (or never completed).
+        if (units.some((u) => u.reserved || u.deducted)) {
+          reasons.push('managed-flags-lingering');
+        }
+      }
+      if (physicalDirty.has(o.id)) {
+        reasons.push('active-physical-reservation');
+      }
+      if (reasons.length > 0) {
+        drifted.push({
+          id: o.id,
+          displayId: o.displayId,
+          statusName,
+          reasons,
+        });
+      }
+    }
+    return drifted;
   }
 
   private async getOrderStatusName(orderId: string): Promise<string | null> {

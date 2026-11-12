@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Sheet,
   SheetContent,
@@ -65,6 +65,22 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
     queryFn: () => apiClient.get('/inventory/physical/reservations', { params: { productId: productDetails.id } }).then(r => r.data),
     enabled: !!productDetails?.id,
   })
+
+  // Finding 3 (2026-11-12): after a physical adjust the Locations / Lots
+  // table still showed the old quantity while the header/list showed the new
+  // one. The drawer's queries were never invalidated by the adjust flow AND
+  // the app-wide staleTime is 30s, so reopening the drawer served the
+  // still-fresh cache. The drawer stays mounted on the Stock page (only the
+  // Sheet's `open` toggles), so refetch-on-mount alone cannot fix a reopen —
+  // refetch every time it opens, whichever mutation path ran while closed.
+  // (Mutation sites additionally invalidate via
+  // utils/invalidate-inventory.ts so lists/detail stay fresh too.)
+  useEffect(() => {
+    if (!open || !productDetails?.id) return
+    void refetchPhysical()
+    void refetchLedger()
+    void refetchReservations()
+  }, [open, productDetails?.id, refetchPhysical, refetchLedger, refetchReservations])
 
   if (!productDetails) return null
 

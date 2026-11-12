@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
+import { invalidateInventoryStockQueries } from './utils/invalidate-inventory'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -188,9 +189,9 @@ export function Transfers() {
       apiClient.post('/inventory/transfer', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory-logs'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory-history-logs'] })
+      // Finding 3: a transfer moves physical stock, so the same per-product
+      // drawer/detail keys go stale as after an adjust.
+      invalidateInventoryStockQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
       setNewTransferOpen(false)
       resetForm()
@@ -240,9 +241,9 @@ export function Transfers() {
   const invalidateRequestData = () => {
     queryClient.invalidateQueries({ queryKey: ['inventory-transfer-requests'] })
     queryClient.invalidateQueries({ queryKey: ['inventory-logs'] })
-    queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
-    queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
-    queryClient.invalidateQueries({ queryKey: ['inventory-history-logs'] })
+    // Finding 3: approving a request moves physical stock — invalidate the
+    // per-product drawer/detail keys, not just the lists.
+    invalidateInventoryStockQueries(queryClient)
     queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
   }
 

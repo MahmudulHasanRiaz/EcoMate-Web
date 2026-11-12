@@ -21,6 +21,7 @@ import { AdjustStockModal } from './components/adjust-stock-modal'
 import { BulkAdjustDialog } from './components/bulk-adjust-dialog'
 import { ManagedStockAdjustmentModal } from '@/features/products/components/managed-stock-adjustment-modal'
 import { adjustDialogKindForViewMode } from './utils/adjust-dialog-routing'
+import { invalidateInventoryStockQueries } from './utils/invalidate-inventory'
 import { managedStockOverviewParams } from './utils/stock-overview-params'
 import { useInventoryManagement } from './hooks/use-inventory-management'
 import { dedupePhysicalVariants } from './utils/dedupe-physical-variants'
@@ -861,8 +862,9 @@ export function Inventory() {
           initialProductId={adjustProductId}
           initialVariantId={adjustVariantId}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
-            queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
+            // Finding 3: invalidating only the list keys left the drawer's
+            // per-product queries (and the detail page) stale.
+            invalidateInventoryStockQueries(queryClient)
           }}
         />
       ) : (
@@ -875,8 +877,9 @@ export function Inventory() {
           productName={stockRows.find(p => p.productId === adjustProductId)?.name}
           availabilityMode={adjustAvailabilityMode}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
-            queryClient.invalidateQueries({ queryKey: ['inventory-physical-list'] })
+            // Finding 3: invalidating only the list keys left the drawer's
+            // per-product queries (and the detail page) stale.
+            invalidateInventoryStockQueries(queryClient)
           }}
         />
       )}
@@ -885,7 +888,7 @@ export function Inventory() {
         open={bulkOpen}
         onOpenChange={setBulkOpen}
         onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ['inventory-stock-overview'] })
+          invalidateInventoryStockQueries(queryClient)
           queryClient.invalidateQueries({ queryKey: ['inventory', 'low-stock'] })
         }}
       />

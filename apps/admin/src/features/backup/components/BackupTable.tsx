@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { toast } from 'sonner'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
@@ -52,6 +53,7 @@ export function BackupTable({
           <TableHeader>
             <TableRow>
               <TableHead>Created</TableHead>
+              <TableHead>Backup ID</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Scope</TableHead>
               <TableHead>Status</TableHead>
@@ -62,7 +64,7 @@ export function BackupTable({
           <TableBody>
             {backups.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   No backups yet
                 </TableCell>
               </TableRow>
@@ -74,6 +76,26 @@ export function BackupTable({
                     <div className="text-muted-foreground">
                       {formatDistanceToNow(new Date(b.createdAt), { addSuffix: true })}
                     </div>
+                  </TableCell>
+                  {/* Finding 7(a): the list showed no record id, so the id
+                      Reconciliation → Apply repairs asks for could not be
+                      read off here. `id` is the stable backend identifier
+                      (Prisma cuid) already returned by the list endpoint —
+                      no new id scheme. Click copies it. */}
+                  <TableCell>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigator.clipboard
+                          .writeText(b.id)
+                          .then(() => toast.success('Backup ID copied'))
+                          .catch(() => toast.error('Could not copy backup ID'))
+                      }
+                      title="Click to copy backup ID"
+                      className="max-w-40 break-all text-left font-mono text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      {b.id}
+                    </button>
                   </TableCell>
                   <TableCell className="capitalize">{b.type}</TableCell>
                   <TableCell>{SCOPE_LABELS[b.scope] || b.scope}</TableCell>

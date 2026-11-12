@@ -949,3 +949,153 @@ describe('CourierManagerService — Steadfast return-status client (Task 5)', ()
     );
   });
 });
+
+describe('CourierManagerService — getCities/getZones (finding 2)', () => {
+  const originalFetch = global.fetch;
+  let prisma: any;
+  let tokenStore: any;
+
+  const pathaoCreds = {
+    courier: 'pathao',
+    enabled: true,
+    mode: 'production',
+    clientId: 'cid',
+    clientSecret: 'csec',
+    username: 'u',
+    password: 'pw',
+  };
+  const carrybeeCreds = {
+    courier: 'carrybee',
+    enabled: true,
+    mode: 'production',
+    clientId: 'cid',
+    clientSecret: 'csec',
+    credentials: {},
+  };
+
+  function credsFor(map: Record<string, any>) {
+    return jest
+      .fn()
+      .mockImplementation(({ where }: any) =>
+        Promise.resolve(map[where.courier] ?? null),
+      );
+  }
+
+  function service() {
+    return new CourierManagerService(prisma as any, tokenStore as any);
+  }
+
+  beforeEach(() => {
+    prisma = { courierCredentials: { findUnique: jest.fn() } };
+    tokenStore = { getAccessToken: jest.fn().mockResolvedValue('test-token') };
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('returns an empty list with courierConfigured:false when no courier is enabled — never throws', async () => {
+    prisma.courierCredentials.findUnique = credsFor({});
+    global.fetch = jest.fn();
+
+    const res = await service().getCities();
+
+    expect(res).toEqual({ cities: [], courierConfigured: false, source: null });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty zones list with courierConfigured:false when no courier is enabled', async () => {
+    prisma.courierCredentials.findUnique = credsFor({});
+    global.fetch = jest.fn();
+
+    const res = await service().getZones('1');
+
+    expect(res).toEqual({ zones: [], courierConfigured: false, source: null });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('maps the Pathao city list and reports source pathao', async () => {
+    prisma.courierCredentials.findUnique = credsFor({ pathao: pathaoCreds });
+    global.fetch = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [
+            { city_id: 1, city_name: 'Dhaka' },
+            { city_id: 2, city_name: 'Chattogram' },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const res = await service().getCities();
+
+    expect(res).toEqual({
+      cities: [
+        { id: 1, name: 'Dhaka' },
+        { id: 2, name: 'Chattogram' },
+      ],
+      courierConfigured: true,
+      source: 'pathao',
+    });
+    expect(tokenStore.getAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves the second cities call from the last-good cache without re-hitting the courier API', async () => {
+    prisma.courierCredentials.findUnique = credsFor({ pathao: pathaoCreds });
+    global.fetch = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ data: [{ city_id: 1, city_name: 'Dhaka' }] }),
+        { status: 200 },
+      ),
+    );
+    const svc = service();
+
+    await svc.getCities();
+    const res = await svc.getCities();
+
+    expect(res.cities).toEqual([{ id: 1, name: 'Dhaka' }]);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to Carrybee when Pathao is disabled', async () => {
+    prisma.courierCredentials.findUnique = credsFor({
+      pathao: { ...pathaoCreds, enabled: false },
+      carrybee: carrybeeCreds,
+    });
+    global.fetch = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: { cities: [{ city_id: 7, city_name: 'Sylhet' }] },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const res = await service().getCities();
+
+    expect(res).toEqual({
+      cities: [{ id: 7, name: 'Sylhet' }],
+      courierConfigured: true,
+      source: 'carrybee',
+    });
+  });
+
+  it('maps Pathao zones for a city', async () => {
+    prisma.courierCredentials.findUnique = credsFor({ pathao: pathaoCreds });
+    global.fetch = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ data: [{ zone_id: 5, zone_name: 'Mirpur' }] }),
+        { status: 200 },
+      ),
+    );
+
+    const res = await service().getZones('1');
+
+    expect(res).toEqual({
+      zones: [{ id: 5, name: 'Mirpur' }],
+      courierConfigured: true,
+      source: 'pathao',
+    });
+  });
+});

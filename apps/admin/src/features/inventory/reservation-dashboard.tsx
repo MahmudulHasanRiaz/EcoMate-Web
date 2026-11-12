@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { apiClient } from '@/lib/api-client'
+import { invalidateInventoryStockQueries } from './utils/invalidate-inventory'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ThemeSwitch } from '@/components/theme-switch'
@@ -66,8 +67,9 @@ export function ReservationDashboard() {
   const releaseMut = useMutation({
     mutationFn: (id: string) => apiClient.delete(`/inventory/physical/reservations/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['physical-reservations'] })
-      queryClient.invalidateQueries({ queryKey: ['physical-stock'] })
+      // Finding 3: releasing a reservation changes reserved quantities, so
+      // the drawer's per-product reservation/physical queries go stale too.
+      invalidateInventoryStockQueries(queryClient)
       toast.success('Reservation released')
       setReleaseId(null)
     },

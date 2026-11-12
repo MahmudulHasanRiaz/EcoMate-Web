@@ -11,10 +11,14 @@ export const backupApi = {
   create: (scope: 'db_only' | 'db_files') =>
     apiClient.post<{ id: string }>('/admin/backup', { scope }).then((r) => r.data),
 
+  // Returns the full response (not just the blob) so the caller can read
+  // the server's Content-Disposition filename. timeout: 0 — the apiClient
+  // default is 15s, which would cut off any large backup mid-download.
   download: (id: string) =>
-    apiClient
-      .get(`/admin/backup/${id}/download`, { responseType: 'blob' })
-      .then((r) => r.data),
+    apiClient.get<Blob>(`/admin/backup/${id}/download`, {
+      responseType: 'blob',
+      timeout: 0,
+    }),
 
   createDownloadTicket: (id: string) =>
     apiClient

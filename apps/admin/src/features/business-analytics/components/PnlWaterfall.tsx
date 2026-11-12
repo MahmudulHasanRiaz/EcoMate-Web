@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { ListOrdered } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { formatBDT, type CostCoverage, type CostState, type OverviewData } from '../types'
@@ -59,11 +60,14 @@ function RowView({ r, inSummary }: { r: LadderRow; inSummary?: boolean }) {
 export function PnlWaterfall({ pnl }: { pnl: OverviewData['pnl'] }) {
   const { lines, coverage } = pnl
   const missing = missingCount(coverage)
+  // Defensive: a response cached from before the backend exposed the bucket
+  // has no costNotSet — treat it as empty rather than crashing.
+  const costNotSet = pnl.costNotSet ?? { units: 0, amount: 0, lines: 0 }
 
   const cost = (k: { state: string }): CostState =>
     k.state === 'ok' || k.state === 'zero' ? 'actual' : (k.state as CostState)
 
-  const groups: { result: LadderRow; rows: LadderRow[] }[] = [
+  const groups: { result: LadderRow; rows: LadderRow[]; foot?: ReactNode }[] = [
     {
       result: { label: '= Net Sales', kpi: lines.netSales, state: 'actual', result: true },
       rows: [
@@ -76,6 +80,18 @@ export function PnlWaterfall({ pnl }: { pnl: OverviewData['pnl'] }) {
     {
       result: { label: '= Gross Profit', kpi: lines.grossProfit, state: cost(lines.grossProfit), result: true },
       rows: [{ label: '− COGS', kpi: lines.cogs, state: cost(lines.cogs), indent: true }],
+      // Cost-not-set bucket (Workstream C): manual lines whose cost was left
+      // blank. Their COGS is already inside COGS at full price (profit 0),
+      // so this is a flag, not a second charge — shown only when non-empty.
+      foot:
+        costNotSet.lines > 0 ? (
+          <p className="py-1.5 pl-4 text-xs text-muted-foreground" data-testid="pnl-cost-not-set">
+            Cost not set: {formatBDT(costNotSet.amount)} across {costNotSet.lines} manual line
+            {costNotSet.lines === 1 ? '' : 's'} ({costNotSet.units} unit
+            {costNotSet.units === 1 ? '' : 's'}) — the cost was left blank, so COGS counts the
+            full price and these lines add ৳0 profit. Enter a cost on the order to fix it.
+          </p>
+        ) : undefined,
     },
     {
       result: {
@@ -172,6 +188,7 @@ export function PnlWaterfall({ pnl }: { pnl: OverviewData['pnl'] }) {
                 {g.rows.map((r) => (
                   <RowView key={r.label} r={r} />
                 ))}
+                {g.foot}
               </div>
             </details>
           ))}

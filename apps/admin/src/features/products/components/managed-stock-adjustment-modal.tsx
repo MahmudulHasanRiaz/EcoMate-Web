@@ -31,6 +31,12 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
   const [variantId, setVariantId] = useState('')
   const [loadingVariants, setLoadingVariants] = useState(false)
   const [selectedProductAvailability, setSelectedProductAvailability] = useState<string | null>(null)
+  // On-hand managed stock of the SELECTED unit (the simple product row, or
+  // the selected variant for variable products). Loaded with the product
+  // detail fetch; null until it lands (or when the payload carries none) —
+  // null means "unknown", never 0, so pre-validation never blocks on a
+  // missing number.
+  const [productManagedStock, setProductManagedStock] = useState<number | null>(null)
 
   const [quantity, setQuantity] = useState('0')
   const [reason, setReason] = useState('')
@@ -56,6 +62,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
       // MANAGED_STOCK from the previous product must never green-light an
       // adjustment for a pre-filled non-managed product.
       setSelectedProductAvailability(null)
+      setProductManagedStock(null)
       setVariants([])
       setVariantId(initialVariantId || '')
     } else {
@@ -69,6 +76,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
       setProductType(null)
       setProductImage('')
       setSelectedProductAvailability(null)
+      setProductManagedStock(null)
       setVariants([])
       setVariantId('')
     }
@@ -96,7 +104,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
 
   // Fetch product details when productId changes (for variant selection)
   useEffect(() => {
-    if (!productId) { setVariants([]); setVariantId(''); setSelectedProductAvailability(null); return }
+    if (!productId) { setVariants([]); setVariantId(''); setSelectedProductAvailability(null); setProductManagedStock(null); return }
     setLoadingVariants(true)
     apiClient.get(`/products/${productId}`).then(r => {
       const p = r.data as any
@@ -107,6 +115,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
       }
       setVariants(p?.variants || [])
       setSelectedProductAvailability(p?.availabilityMode || null)
+      setProductManagedStock(typeof p?.managedStockQuantity === 'number' ? p.managedStockQuantity : null)
       if (p?.variants?.length > 0) {
         // Keep a pre-filled variant (initialVariantId from the Products list
         // / Stock page) when it belongs to this product; otherwise default
@@ -115,7 +124,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
           prev && p.variants.some((v: any) => v.id === prev) ? prev : p.variants[0].id,
         )
       }
-    }).catch(() => { setVariants([]); setSelectedProductAvailability(null) }).finally(() => setLoadingVariants(false))
+    }).catch(() => { setVariants([]); setSelectedProductAvailability(null); setProductManagedStock(null) }).finally(() => setLoadingVariants(false))
   }, [productId, productType, productName])
 
   const adjustMut = useMutation({
@@ -142,7 +151,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
     }
     setProductSearch(''); setSearchResults([])
     setVariants([]); setVariantId('')
-    setQuantity('0'); setReason(''); setSelectedProductAvailability(null); setConfirmDestructive(false)
+    setQuantity('0'); setReason(''); setSelectedProductAvailability(null); setProductManagedStock(null); setConfirmDestructive(false)
     setDestructivePending(null); lastPayloadRef.current = null
   }
 
@@ -156,6 +165,33 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
   const qtyNum = parseInt(quantity)
   const showAdjustBtn = canApplyManagedAdjustment({ productId, quantity, isVariable: isVar, variantId, availabilityMode: selectedProductAvailability })
 
+  // Available managed stock for the unit being adjusted: the selected
+  // variant's on-hand for variable products, the product row's on-hand for
+  // simple products. Null while the detail fetch is pending (or when the
+  // payload carries no figure) — unknown, never treated as 0.
+  const availableManagedStock = useMemo(() => {
+    if (isVar) {
+      const selected = variants.find((v: any) => v.id === variantId)
+      return typeof selected?.managedStockQuantity === 'number' ? selected.managedStockQuantity : null
+    }
+    return productManagedStock
+  }, [isVar, variants, variantId, productManagedStock])
+
+  // OWNER DECISION 2026-11-12 (locked): managed stock NEVER goes below
+  // zero and the server block stays — confirmation does NOT authorise a
+  // below-zero deduction. The server's "Insufficient stock" check runs
+  // before, and independent of, the destructive-confirmation guard, so a
+  // ticked checkbox cannot rescue a doomed request. This client check
+  // mirrors that hard block on the ON-HAND figure (the server's
+  // below-zero check is on-hand only, not on-hand minus reserved), so a
+  // deduction larger than available stock is refused inline with no
+  // server round-trip. Future pre-order will NOT be negative stock: it
+  // will be a per-product oversell/backorder flag, with orders beyond
+  // available stock creating a backordered/reserved state while managed
+  // quantity stays >= 0.
+  const insufficientManaged =
+    qtyNum < 0 && availableManagedStock !== null && Math.abs(qtyNum) > availableManagedStock
+
   const handleAdjust = () => {
     // Hard gate (not just a disabled button): the loaded mode must be
     // MANAGED_STOCK for THIS product. `null` (detail fetch still pending
@@ -167,6 +203,13 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
     }
     const qty = parseInt(quantity)
     if (isNaN(qty) || qty === 0) return
+    // Hard client gate mirroring the server's below-zero block (see the
+    // owner-decision comment at `insufficientManaged`): no round-trip for
+    // a request the server must reject, confirmed or not.
+    if (insufficientManaged) {
+      toast.error(`Insufficient stock — only ${availableManagedStock} available. Managed stock can never go below zero.`)
+      return
+    }
     if (!reason.trim()) { toast.error('Please provide a reason for the adjustment'); return }
     if (!productId) return
     if (isVar && !variantId) { toast.error('Please select a variant'); return }
@@ -317,8 +360,19 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
 
           {/* Destructive-adjustment acknowledgement: the server refuses a
               deduction that would remove (nearly) all available stock unless
-              it is explicitly confirmed here. */}
-          {qtyNum < 0 && (
+              it is explicitly confirmed here. Confirmation covers ONLY a
+              large deduction WITHIN available stock — it never allows stock
+              to go below zero (the server's below-zero check rejects that
+              outright, confirmed or not), so a deduction larger than
+              available stock shows the insufficient-stock error instead of
+              this box. */}
+          {insufficientManaged ? (
+            <div role='alert' className='rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive leading-snug'>
+              <strong>Insufficient stock</strong> — only {availableManagedStock} available.
+              Managed stock can never go below zero, so this deduction is
+              rejected with or without confirmation.
+            </div>
+          ) : qtyNum < 0 ? (
             <label className='flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 cursor-pointer'>
               <Checkbox
                 checked={confirmDestructive}
@@ -326,13 +380,15 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
                 className='mt-0.5'
               />
               <span className='text-xs text-destructive leading-snug'>
-                This is a stock <strong>deduction</strong>. If it removes most of
-                this item&apos;s available stock, the server will reject it unless
-                you confirm here — tick to confirm the quantity is intentional
-                (for example a damage or loss write-off).
+                This is a stock <strong>deduction</strong>. Tick to confirm the quantity is
+                intentional (for example a damage or loss write-off).
+                Confirmation only covers a large deduction within the available
+                stock — it never allows stock to go below zero: a deduction
+                larger than the available stock is always rejected, with or
+                without confirmation.
               </span>
             </label>
-          )}
+          ) : null}
 
           <div className='space-y-2'>
             <Label className='text-sm font-semibold'>Reason</Label>
@@ -351,7 +407,7 @@ export function ManagedStockAdjustmentModal({ open, onOpenChange, initialProduct
             <Input value={reason} onChange={e => setReason(e.target.value)} placeholder='Or type custom reason...' />
           </div>
 
-          <Button className='w-full' disabled={!showAdjustBtn || adjustMut.isPending} onClick={handleAdjust}>
+          <Button className='w-full' disabled={!showAdjustBtn || insufficientManaged || adjustMut.isPending} onClick={handleAdjust}>
             {adjustMut.isPending && <Loader2 className='h-4 w-4 mr-1 animate-spin' />}
             Apply Adjustment
           </Button>

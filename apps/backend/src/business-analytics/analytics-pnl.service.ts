@@ -821,6 +821,14 @@ export interface PnlResponse {
   data: {
     lines: PnlLineEnvelopes;
     margins: PnlResult['margins'];
+    /**
+     * Manual lines whose cost was never set (Workstream C): their COGS is
+     * already inside lines.cogs at full price (profit contribution 0);
+     * this bucket surfaces them so the missing cost stays visible at P&L
+     * level instead of reading as a real cost. Dropped from the envelope
+     * before 2026-11-12, so the admin UI had nothing to render.
+     */
+    costNotSet: PnlResult['costNotSet'];
     bridge: PnlResult['bridge'] & { state: KpiValue['state'] };
     lenses: {
       booked: KpiValue;
@@ -838,6 +846,52 @@ export interface PnlResponse {
     };
   };
   meta: AnalyticsMeta;
+}
+
+/**
+ * Names the missing/estimated ladder inputs for the profit-line reasons
+ * (§2.5): a bare "ladder inputs incomplete" tells staff nothing
+ * actionable — which input is missing decides what to fix (enter the
+ * shipping cost on the order, the fee on the payment, the cost on the
+ * line, the spendDate on the consumption). Built from the same coverage
+ * counts the waterfall badges render, so reason and badges never disagree.
+ * Only ladder inputs are named (COGS / fulfillment / fees / marketing);
+ * COD settlement is a bridge input, not a ladder input.
+ */
+export function ladderGapReason(result: PnlResult, ladder: CostState): string {
+  const cov = result.coverage;
+  const gaps: string[] = [];
+  if (cov.cogs.unavailableUnits > 0) {
+    gaps.push(
+      `cost missing on ${cov.cogs.unavailableUnits} unit(s) in ${cov.cogs.unavailableItems} line(s)`,
+    );
+  } else if (result.cogs.state === 'estimated') {
+    gaps.push('some line costs are estimated, not actual');
+  }
+  if (cov.shipping.unavailableOrders > 0) {
+    gaps.push(
+      `shipping cost missing on ${cov.shipping.unavailableOrders} recognised order(s)`,
+    );
+  } else if (result.fulfillmentCost.state === 'estimated') {
+    gaps.push(
+      `shipping cost estimated on ${cov.shipping.estimatedOrders} order(s)`,
+    );
+  }
+  if (cov.fees.withoutFee > 0) {
+    gaps.push(`gateway fee missing on ${cov.fees.withoutFee} paid payment(s)`);
+  }
+  if (cov.marketing.undatedRows > 0) {
+    gaps.push(
+      `${cov.marketing.undatedRows} marketing consumption(s) missing spendDate`,
+    );
+  }
+  if (gaps.length === 0) {
+    return ladder === 'estimated'
+      ? 'estimated — see coverage'
+      : 'ladder inputs incomplete — see coverage';
+  }
+  // No state prefix: the card/badge already says Unavailable/Estimated.
+  return gaps.join('; ');
 }
 
 @Injectable()
@@ -1152,6 +1206,12 @@ export class AnalyticsPnlService {
       'actual',
       OTHER_COSTS_STATE,
     ]);
+    // One specific reason for every ladder-derived profit line, naming the
+    // missing input(s) — the generic "ladder inputs incomplete" hid which
+    // cost was actually missing (staging 2026-11-12: shipping cost missing
+    // on the single recognised manual order; the cost data was genuinely
+    // absent, not a code error).
+    const ladderReason = ladderGapReason(result, ladder);
     return {
       data: {
         lines: {
@@ -1165,23 +1225,24 @@ export class AnalyticsPnlService {
             : kpiZero('no reversal refunds in range'),
           netSales: money(result.netSales.amount, 'actual', 'Delivered transition'),
           cogs: money(result.cogs.amount, result.cogs.state, 'Delivered transition', 'costSnapshot coverage'),
-          grossProfit: money(result.grossProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition', 'ladder inputs incomplete — see coverage'),
+          grossProfit: money(result.grossProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition', ladderReason),
           fulfillmentCost: money(result.fulfillmentCost.amount, result.fulfillmentCost.state, 'recognised order cohort', 'shippingCost source coverage'),
           paymentFees: money(result.paymentFees.amount, result.paymentFees.state, 'recognised order cohort', 'feeAmount coverage'),
           marketingCost: result.marketingCost.state === 'unavailable'
             ? { value: result.marketingCost.amount, state: 'unavailable', reason: `${result.coverage.marketing.undatedRows} consumption(s) missing spendDate (৳${result.coverage.marketing.undatedAmount})`, dateBasis: 'spendDate only' }
             : money(result.marketingCost.amount, 'actual', 'spendDate only'),
-          contributionProfit: money(result.contributionProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition', 'ladder inputs incomplete — see coverage'),
+          contributionProfit: money(result.contributionProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition', ladderReason),
           operatingExpenses: money(result.operatingExpenses.amount, 'actual', 'expenseDate'),
-          operatingProfit: money(result.operatingProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition', 'ladder inputs incomplete — see coverage'),
+          operatingProfit: money(result.operatingProfit.amount, ladder === 'actual' ? 'actual' : ladder === 'estimated' ? 'estimated' : 'unavailable', 'Delivered transition', ladderReason),
           otherCosts: kpiNotApplicable('no data source exists'),
           netProfit: empty
             ? kpiNoData('no recognised orders in range')
             : ladder === 'actual'
               ? kpiOk(result.netProfit.amount, { dateBasis: 'Delivered transition' })
-              : { value: result.netProfit.amount, state: ladder, reason: ladder === 'estimated' ? 'estimated — see coverage' : `partial — inputs missing`, dateBasis: 'Delivered transition' },
+              : { value: result.netProfit.amount, state: ladder, reason: ladderReason, dateBasis: 'Delivered transition' },
         },
         margins: result.margins,
+        costNotSet: result.costNotSet,
         bridge: {
           ...result.bridge,
           state: result.bridge.deliveryChargeRetainedState === 'unavailable' || ladder === 'unavailable'
