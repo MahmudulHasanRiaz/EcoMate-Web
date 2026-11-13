@@ -129,5 +129,5 @@ ALTER TABLE "CmsPage" ADD COLUMN "version" INTEGER NOT NULL DEFAULT 1;
 
 INSERT INTO "SystemSetting" ("key", "value")
 SELECT 'search_engine_indexing', 'true'
-WHERE EXISTS (SELECT 1 FROM "UserProfile" LIMIT 1)
+WHERE EXISTS (SELECT 1 FROM "User" LIMIT 1)
   AND NOT EXISTS (SELECT 1 FROM "SystemSetting" WHERE "key" = 'search_engine_indexing');

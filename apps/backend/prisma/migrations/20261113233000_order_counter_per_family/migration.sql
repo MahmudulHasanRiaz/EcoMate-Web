@@ -22,11 +22,11 @@
 -- row is never UPDATE-d or DELETE-d) and the failure is logged with
 -- RAISE NOTICE. ON CONFLICT DO NOTHING makes the seed idempotent (a
 -- re-run, or a row a concurrent deploy already seeded, is a no-op).
--- A final verification block NOTICEs the per-family row counts (the probe
--- for this change: the codebase has no probe_ddl table — see
--- 20261113160000/20261113170000 migration headers — so the counts + the
--- per-row NOTICE log are the probe evidence; a human or the
--- counter-reconciliation spec asserts the identity from them).
+-- A final verification block NOTICEs the per-family row counts. The
+-- automated probe for this change is probe_ddl() in
+-- apps/backend/scripts/resolve-failed-migrations.sh (family column +
+-- widened PK + all six families per shared date); the NOTICE log is
+-- human-readable evidence alongside it.
 -- Rollback: DROP the seeded family rows (family <> 'ORD') and restore the
 -- single-column PK — the ORD rows and all displayIds are untouched by
 -- either direction.
