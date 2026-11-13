@@ -10,9 +10,10 @@ import { StatusBadge, orderStatusTone } from '@/components/ui/dashboard'
 import { WidgetShell } from '../components/WidgetShell'
 import { dashboardApi } from '../api'
 import { formatCurrency, formatDate } from '../utils'
+import { PERIOD_LABELS } from './OperationalKpiStrip'
 import type { WidgetProps } from '../types'
 
-export function RecentOrders({ dateRange, view = 'activity' }: WidgetProps) {
+export function RecentOrders({ dateRange, preset, view = 'activity' }: WidgetProps) {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard-recent-orders-list', dateRange.start.toISOString(), dateRange.end.toISOString()],
     queryFn: () => dashboardApi.getStats(dateRange.start.toISOString(), dateRange.end.toISOString()),
@@ -34,6 +35,9 @@ export function RecentOrders({ dateRange, view = 'activity' }: WidgetProps) {
   const orders = data?.data?.recentOrders || []
   const visibleOrders = orders.slice(0, limit)
   const hasMore = orders.length > limit
+  // G3: this list is period-filtered (backend `take: 20`), never
+  // all-time — the copy must say which period it covers.
+  const periodLabel = PERIOD_LABELS[preset] ?? PERIOD_LABELS.last_30_days
 
   const handleLoadMore = () => {
     setLimit(prev => Math.min(prev + 5, orders.length))
@@ -45,7 +49,7 @@ export function RecentOrders({ dateRange, view = 'activity' }: WidgetProps) {
       description={
         view === 'pipeline'
           ? 'Cohort orders with their current status'
-          : 'Latest orders across the store'
+          : `Latest orders created · ${periodLabel}`
       }
       isLoading={isLoading}
       error={error ?? undefined}

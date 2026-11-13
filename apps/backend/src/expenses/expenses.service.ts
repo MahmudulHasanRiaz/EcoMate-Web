@@ -442,13 +442,14 @@ export class ExpensesService {
       return null;
     }
 
-    // Generate entry number — stamped with the Dhaka calendar day of the expense
+    // Generate entry number — stamped with the Dhaka calendar day of the expense.
+    // 'EXP-JE' family of OrderCounter: expense journals never consume order numbers.
     const { year, month, day } = dhakaDateParts(expenseDate);
     const dateStr = `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
     const counter = await tx.orderCounter.upsert({
-      where: { date: dateStr },
+      where: { date_family: { date: dateStr, family: 'EXP-JE' } },
       update: { seq: { increment: 1 } },
-      create: { date: dateStr, seq: 1 },
+      create: { date: dateStr, family: 'EXP-JE', seq: 1 },
     });
     const entryNo = `EXP-JE-${counter.date}-${String(counter.seq).padStart(4, '0')}`;
 

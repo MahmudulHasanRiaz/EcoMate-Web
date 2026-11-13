@@ -11,6 +11,7 @@ import { TrackingSettingsService } from '../../tracking/tracking-settings.servic
 import { CommissionsService } from '../../commissions/commissions.service';
 import { CustomerAddressService } from '../../customers/customer-address.service';
 import { SalesChannelService } from '../../sales-channel/sales-channel.service';
+import { dhakaDateParts } from '../../common/utils/dhaka-time';
 
 describe('PosOrdersService', () => {
   let service: PosOrdersService;
@@ -1023,6 +1024,22 @@ describe('PosOrdersService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('displayId minting (counter split P1.4)', () => {
+    it("mints POS numbers from the 'POS' family, never the shared order sequence", async () => {
+      const { year, month, day } = dhakaDateParts();
+      const dateStr = `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
+
+      const id = await (service as any).generateDisplayId();
+
+      expect(prisma.orderCounter.upsert).toHaveBeenCalledWith({
+        where: { date_family: { date: dateStr, family: 'POS' } },
+        create: { date: dateStr, family: 'POS', seq: 1 },
+        update: { seq: { increment: 1 } },
+      });
+      expect(id).toBe(`POS-${dateStr}-0001`);
     });
   });
 });

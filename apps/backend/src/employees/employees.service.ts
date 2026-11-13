@@ -17,7 +17,7 @@ import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { CreateBankAccountDto } from './dto/create-bank-account.dto';
 import { UpdateBankAccountDto } from './dto/update-bank-account.dto';
-import { toDhakaDateOnly } from '../common/utils/dhaka-time';
+import { toDhakaDateOnly, dhakaDateParts } from '../common/utils/dhaka-time';
 import { assertNoEscalation } from '../common/permissions/no-escalation';
 import { sanitizePermissions } from '../common/permissions/effective-permissions';
 
@@ -356,8 +356,8 @@ export class EmployeesService {
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date: this.dateStr() },
-        create: { date: this.dateStr(), seq: 1 },
+        where: { date_family: { date: this.dateStr(), family: 'EMP' } },
+        create: { date: this.dateStr(), family: 'EMP', seq: 1 },
         update: { seq: { increment: 1 } },
       });
 
@@ -1310,10 +1310,12 @@ export class EmployeesService {
   }
 
   private dateStr() {
-    const d = new Date();
-    const yy = d.getFullYear().toString().slice(2);
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
+    // Dhaka calendar day (dashboard-counts audit §1c/§6 P1.6): server-local
+    // getters keyed 00:00–05:59 Dhaka hires to the previous Dhaka day.
+    const { year, month, day } = dhakaDateParts();
+    const yy = String(year).slice(2);
+    const mm = String(month).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
     return `${yy}${mm}${dd}`;
   }
 }

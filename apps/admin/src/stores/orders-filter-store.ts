@@ -2,6 +2,8 @@ import { create } from 'zustand'
 
 const FILTERS_KEY = 'ecomate_orders_filters_session'
 
+export type OrderKindFilter = 'all' | 'SALE' | 'RETURN' | 'EXCHANGE'
+
 export interface OrdersFilters {
   search: string
   statusFilter: string
@@ -10,6 +12,10 @@ export interface OrdersFilters {
   sort: string
   order: 'asc' | 'desc'
   perPage: number
+  /** All/Sales/Returns/Exchanges chips — lives in the store (not local
+   *  useState) so resetFilters() clears it and the empty-state copy can
+   *  tell a filtered-empty list from a truly empty workspace. */
+  kindFilter: OrderKindFilter
 }
 
 export interface OrdersFilterStore extends OrdersFilters {
@@ -20,6 +26,7 @@ export interface OrdersFilterStore extends OrdersFilters {
   setSort: (v: string) => void
   setOrder: (v: 'asc' | 'desc') => void
   setPerPage: (v: number) => void
+  setKindFilter: (v: OrderKindFilter) => void
   resetFilters: () => void
 }
 
@@ -31,6 +38,7 @@ export const ORDER_FILTER_DEFAULTS: OrdersFilters = {
   sort: 'createdAt',
   order: 'desc',
   perPage: 10,
+  kindFilter: 'all',
 }
 
 function loadFilters(): OrdersFilters {
@@ -46,6 +54,8 @@ function loadFilters(): OrdersFilters {
           if (typeof value === 'number' && Number.isFinite(value) && value > 0) out.perPage = Math.floor(value)
         } else if (key === 'order') {
           if (value === 'asc' || value === 'desc') out.order = value
+        } else if (key === 'kindFilter') {
+          if (value === 'all' || value === 'SALE' || value === 'RETURN' || value === 'EXCHANGE') out.kindFilter = value
         } else if (typeof value === 'string') {
           ;(out as unknown as Record<string, string>)[key] = value
         }
@@ -72,5 +82,6 @@ export const useOrdersFilterStore = create<OrdersFilterStore>((set, get) => ({
   setSort: (sort) => { set({ sort }); saveFilters(get()) },
   setOrder: (order) => { set({ order }); saveFilters(get()) },
   setPerPage: (perPage) => { set({ perPage }); saveFilters(get()) },
+  setKindFilter: (kindFilter) => { set({ kindFilter }); saveFilters(get()) },
   resetFilters: () => { set(ORDER_FILTER_DEFAULTS); saveFilters(get()) },
 }))

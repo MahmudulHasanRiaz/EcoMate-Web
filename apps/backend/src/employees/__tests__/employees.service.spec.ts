@@ -21,6 +21,7 @@ import { EmployeesService } from '../employees.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEmployeeDto } from '../dto/create-employee.dto';
 import { baPrisma } from '../../better-auth/prisma';
+import { dhakaDateParts } from '../../common/utils/dhaka-time';
 
 describe('EmployeesService', () => {
   let service: EmployeesService;
@@ -231,6 +232,30 @@ describe('EmployeesService', () => {
         salaryStructures: [],
       });
       expect(prisma.employee.create).toHaveBeenCalled();
+    });
+
+    // ── Counter split + Dhaka day key (dashboard-counts audit §1c/§6 P1.4+P1.6) ──
+    it("mints EMP numbers from the 'EMP' family keyed by the Dhaka day", async () => {
+      const dto: CreateEmployeeDto = {
+        betterAuthUserId: 'ba-user-test',
+        joiningDate: '2025-01-15',
+        departmentId: 'dept-1',
+        designationId: 'desig-1',
+        employmentType: 'full_time',
+      };
+      const { year, month, day } = dhakaDateParts();
+      const dateStr = `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
+
+      await service.create(dto);
+
+      expect(prisma.orderCounter.upsert).toHaveBeenCalledWith({
+        where: { date_family: { date: dateStr, family: 'EMP' } },
+        create: { date: dateStr, family: 'EMP', seq: 1 },
+        update: { seq: { increment: 1 } },
+      });
+      const data = (prisma.employee.create as jest.Mock).mock.calls[0][0]
+        .data;
+      expect(data.employeeId).toBe(`EMP-${dateStr}-0001`);
     });
 
     it('should throw if department not found', async () => {

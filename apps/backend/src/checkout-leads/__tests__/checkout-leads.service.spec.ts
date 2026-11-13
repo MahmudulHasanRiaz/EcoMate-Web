@@ -8,6 +8,7 @@ import { TrackingSettingsService } from '../../tracking/tracking-settings.servic
 import { CustomerAddressService } from '../../customers/customer-address.service';
 import { SalesChannelService } from '../../sales-channel/sales-channel.service';
 import { OrdersService } from '../../orders/orders.service';
+import { dhakaDateParts } from '../../common/utils/dhaka-time';
 
 const configSnapshotMock = {
   enabledProviders: ['meta'],
@@ -707,6 +708,43 @@ describe('CheckoutLeadsService', () => {
       expect(summary.notConverted).toBe(6);
       expect(summary.deleted).toBe(1);
       expect(summary.total).toBe(3 + 4 + 5 + 6 + 1);
+    });
+  });
+
+  describe('displayId minting (counter split P1.4)', () => {
+    const dhakaToday = () => {
+      const { year, month, day } = dhakaDateParts();
+      return `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
+    };
+
+    beforeEach(() => {
+      (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) =>
+        cb(prisma),
+      );
+    });
+
+    it("mints lead-converted orders from the shared 'ORD' family", async () => {
+      const id = await (service as any).generateOrderDisplayId();
+
+      expect(prisma.orderCounter.upsert).toHaveBeenCalledWith({
+        where: { date_family: { date: dhakaToday(), family: 'ORD' } },
+        create: { date: dhakaToday(), family: 'ORD', seq: 1 },
+        update: { seq: { increment: 1 } },
+      });
+      expect(id).toBe(`ORD-${dhakaToday()}-0001`);
+    });
+
+    it('keeps LEAD numbers on their already-namespaced date key', async () => {
+      const id = await (service as any).leadDisplayId();
+
+      expect(prisma.orderCounter.upsert).toHaveBeenCalledWith({
+        where: {
+          date_family: { date: `LEAD-${dhakaToday()}`, family: 'ORD' },
+        },
+        create: { date: `LEAD-${dhakaToday()}`, family: 'ORD', seq: 1 },
+        update: { seq: { increment: 1 } },
+      });
+      expect(id).toBe(`LEAD-${dhakaToday()}-0001`);
     });
   });
 });

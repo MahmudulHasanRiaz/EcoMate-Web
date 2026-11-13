@@ -25,6 +25,7 @@ import { CommissionsService } from '../commissions/commissions.service';
 import { DiscountsService } from '../discounts/discounts.service';
 import { TrackingEligibilityGate } from '../tracking/tracking-eligibility-gate';
 import { CacheService } from '../cache/cache.service';
+import { dhakaDateParts } from '../common/utils/dhaka-time';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -693,6 +694,58 @@ describe('OrdersService', () => {
       expect(args.include.exchangeOfOrder).toEqual(
         expect.objectContaining({ select: expect.anything() }),
       );
+    });
+
+    // ── Trash view (dashboard-counts round, Scope 3) ───────────────────
+    it('trashedOnly returns ONLY trashed orders (contract: includeTrashed + trashedOnly)', async () => {
+      const trashed = { ...mockOrder, trashedAt: new Date('2026-11-13') };
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([trashed]);
+      (prisma.order.count as jest.Mock).mockResolvedValue(1);
+
+      const result = await service.findAll({
+        includeTrashed: true,
+        trashedOnly: true,
+      });
+
+      const where = (prisma.order.findMany as jest.Mock).mock.calls[0][0]
+        .where;
+      expect(where.trashedAt).toEqual({ not: null });
+      expect((prisma.order.count as jest.Mock).mock.calls[0][0].where).toEqual(
+        expect.objectContaining({ trashedAt: { not: null } }),
+      );
+      expect(result.data).toHaveLength(1);
+      expect(result.meta.total).toBe(1);
+      // Same shape as the normal list: data + meta{total,page,perPage,totalPages,statusCounts}.
+      expect(result.meta).toEqual({
+        total: 1,
+        page: 1,
+        perPage: 10,
+        totalPages: 1,
+        statusCounts: {},
+      });
+    });
+
+    it('trashedOnly wins even without includeTrashed (never falls back to the live list)', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.order.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ trashedOnly: true });
+
+      const where = (prisma.order.findMany as jest.Mock).mock.calls[0][0]
+        .where;
+      expect(where.trashedAt).toEqual({ not: null });
+    });
+
+    it('trashedOnly composes with the kind filter', async () => {
+      (prisma.order.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.order.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ includeTrashed: true, trashedOnly: true, kind: 'SALE' });
+
+      const where = (prisma.order.findMany as jest.Mock).mock.calls[0][0]
+        .where;
+      expect(where.trashedAt).toEqual({ not: null });
+      expect(where.kind).toBe('SALE');
     });
   });
 
@@ -1401,6 +1454,118 @@ describe('OrdersService', () => {
       });
       expect(prisma.order.create).toHaveBeenCalled();
       expect(result).toEqual(mockOrder);
+    });
+
+    // ── DisplayId minting: per-family counter + mint-after-validation ──
+    // (dashboard-counts audit §1c/§6 P1.4+P1.5)
+    describe('displayId minting (counter split + mint-after-validation)', () => {
+      const dhakaToday = () => {
+        const { year, month, day } = dhakaDateParts();
+        return `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
+      };
+
+      it('mints from the ORD family inside the create transaction', async () => {
+        const txUpsert = jest
+          .fn()
+          .mockResolvedValue({ date: dhakaToday(), seq: 1 });
+        (prisma.$transaction as jest.Mock).mockImplementation(
+          async (cb: (tx: any) => Promise<any>) =>
+            cb({ ...prisma, orderCounter: { upsert: txUpsert } }),
+        );
+        (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+          mockInitialStatus,
+        );
+        (prisma.order.create as jest.Mock).mockResolvedValue(mockOrder);
+
+        await service.create(createOrderDto);
+
+        // The mint shares the order's transaction (one $transaction call
+        // total — the old code ran a second, separately-committed one for
+        // the mint, which burned a number on every later failure).
+        expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+        expect(txUpsert).toHaveBeenCalledWith({
+          where: {
+            date_family: { date: dhakaToday(), family: 'ORD' },
+          },
+          create: { date: dhakaToday(), family: 'ORD', seq: 1 },
+          update: { seq: { increment: 1 } },
+        });
+        const data = (prisma.order.create as jest.Mock).mock.calls[0][0]
+          .data;
+        expect(data.displayId).toBe(`ORD-${dhakaToday()}-0001`);
+      });
+
+      it('does not mint when validation fails before the transaction', async () => {
+        const txUpsert = jest.fn();
+        (prisma.$transaction as jest.Mock).mockImplementation(
+          async (cb: (tx: any) => Promise<any>) =>
+            cb({ ...prisma, orderCounter: { upsert: txUpsert } }),
+        );
+        (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(null);
+
+        await expect(service.create(createOrderDto)).rejects.toThrow(
+          BadRequestException,
+        );
+
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(txUpsert).not.toHaveBeenCalled();
+        expect(prisma.orderCounter.upsert).not.toHaveBeenCalled();
+      });
+
+      it('a failure inside the transaction rolls the mint back with it (same tx client)', async () => {
+        const txUpsert = jest
+          .fn()
+          .mockResolvedValue({ date: dhakaToday(), seq: 7 });
+        (prisma.$transaction as jest.Mock).mockImplementation(
+          async (cb: (tx: any) => Promise<any>) =>
+            cb({ ...prisma, orderCounter: { upsert: txUpsert } }),
+        );
+        (prisma.orderStatus.findFirst as jest.Mock).mockResolvedValue(
+          mockInitialStatus,
+        );
+        (prisma.order.create as jest.Mock).mockRejectedValue(
+          new Error('order row write failed'),
+        );
+
+        await expect(service.create(createOrderDto)).rejects.toThrow(
+          'order row write failed',
+        );
+
+        // Minted exactly once, on the transaction client — never on the
+        // top-level client and never in a second transaction. With the
+        // real Prisma client this upsert rolls back with the tx, so the
+        // number is not burned.
+        expect(txUpsert).toHaveBeenCalledTimes(1);
+        expect(prisma.orderCounter.upsert).not.toHaveBeenCalled();
+        expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      });
+
+      it('generateDisplayIdInTx increments the ORD family sequence', async () => {
+        const store = new Map<string, number>();
+        const tx: any = {
+          orderCounter: {
+            upsert: jest.fn(async ({ where, create }: any) => {
+              const key = `${where.date_family.date}|${where.date_family.family}`;
+              const seq = (store.get(key) ?? 0) + 1;
+              store.set(key, seq);
+              return { date: create.date, seq };
+            }),
+          },
+        };
+
+        const first = await (service as any).generateDisplayIdInTx(tx);
+        const second = await (service as any).generateDisplayIdInTx(tx);
+
+        expect(first).toBe(`ORD-${dhakaToday()}-0001`);
+        expect(second).toBe(`ORD-${dhakaToday()}-0002`);
+        expect(tx.orderCounter.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              date_family: { date: dhakaToday(), family: 'ORD' },
+            },
+          }),
+        );
+      });
     });
 
     it('records the creator in the order timeline (staff email, or Customer for guests)', async () => {

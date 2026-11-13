@@ -854,7 +854,19 @@ export class OrdersService {
     return transformed;
   }
 
-  private async generateDisplayId(): Promise<string> {
+  /**
+   * Mint ORD-YYMMDD-NNNN from the ORD family of OrderCounter (one sequence
+   * per (date, family) — dashboard-counts audit 2026-11-13 §1c/§6 P1.4).
+   *
+   * MUST run inside the caller's transaction (see create()): the upsert
+   * then shares the order's fate — a validation failure or rollback inside
+   * the create transaction rolls the counter increment back too, so failed
+   * creates never burn numbers. Minting in its own committed transaction
+   * (the old generateDisplayId) burned one number per failed attempt.
+   */
+  private async generateDisplayIdInTx(
+    tx: Prisma.TransactionClient,
+  ): Promise<string> {
     const { year, month, day } = dhakaDateParts();
     const yy = String(year).slice(2);
     const mm = String(month).padStart(2, '0');
@@ -862,14 +874,12 @@ export class OrdersService {
     const dateStr = `${yy}${mm}${dd}`;
     const prefix = `ORD-${dateStr}`;
 
-    return this.prisma.$transaction(async (tx) => {
-      const counter = await tx.orderCounter.upsert({
-        where: { date: dateStr },
-        create: { date: dateStr, seq: 1 },
-        update: { seq: { increment: 1 } },
-      });
-      return `${prefix}-${String(counter.seq).padStart(4, '0')}`;
+    const counter = await tx.orderCounter.upsert({
+      where: { date_family: { date: dateStr, family: 'ORD' } },
+      create: { date: dateStr, family: 'ORD', seq: 1 },
+      update: { seq: { increment: 1 } },
     });
+    return `${prefix}-${String(counter.seq).padStart(4, '0')}`;
   }
 
   recalculate(
@@ -945,6 +955,14 @@ export class OrdersService {
     sort?: string;
     order?: string;
     includeTrashed?: boolean;
+    /**
+     * Trash view (dashboard-counts round §Scope 3): when true, return ONLY
+     * trashed orders. Honored together with `includeTrashed=true`
+     * (`GET /orders?includeTrashed=true&trashedOnly=true`); it also wins
+     * on its own so a trashed-only request can never silently fall back
+     * to the live list. Same pagination/response shape as the normal list.
+     */
+    trashedOnly?: boolean;
     kind?: 'SALE' | 'RETURN' | 'EXCHANGE';
     /** Exchange scope filter — only honored with kind=EXCHANGE. */
     type?: string;
@@ -960,7 +978,8 @@ export class OrdersService {
       ? Math.min(Math.floor(rawPerPage), 1000)
       : 10;
     const where: any = {};
-    if (!query.includeTrashed) where.trashedAt = null;
+    if (query.trashedOnly) where.trashedAt = { not: null };
+    else if (!query.includeTrashed) where.trashedAt = null;
     // RTN return orders are excluded from the sales list unless explicitly
     // requested — they are operations records, not sales. Task 7: the unified
     // Returns menu owns return visibility, so a kind-less list shows SALE +
@@ -1571,7 +1590,12 @@ export class OrdersService {
     const userId = user?.userId;
     const isCustomer = Boolean(user && user.role === 'customer');
 
-    const displayId = await this.generateDisplayId();
+    // NOTE: no displayId is minted here. It is minted inside the create
+    // transaction below (generateDisplayIdInTx), AFTER every validation
+    // that can reject the order — so a failed/double-submitted create never
+    // burns a number (dashboard-counts audit §1c/§6 P1.5; POS already
+    // idempotency-checks before minting, web/admin now matches by
+    // mint-after-validation).
     const initialStatus = await this.prisma.orderStatus.findFirst({
       where: { isInitial: true },
     });
@@ -2653,6 +2677,12 @@ export class OrdersService {
         sessionStartedAt: sessionFallback?.startedAt ?? null,
         attributionWindowDays: attributionWindowDays,
       });
+
+      // Mint LAST, inside this transaction, immediately before the order
+      // row is written: every validation above (prices, stock gates,
+      // coupon, attribution) has already passed, and if anything below
+      // still fails the rollback undoes the mint too — no burned numbers.
+      const displayId = await this.generateDisplayIdInTx(tx);
 
       const created = await tx.order.create({
         data: {

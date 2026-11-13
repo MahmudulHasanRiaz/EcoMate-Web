@@ -137,19 +137,30 @@ function OrderRowSkeleton() {
   )
 }
 
-function EmptyState({ search, statusFilter, onClear }: { search: string; statusFilter: string; onClear: () => void }) {
+/**
+ * The empty copy is driven by an explicit `hasActiveFilters` boolean, never
+ * re-inferred from individual filters here: a filter the caller forgets to
+ * pass (the kind chips were local useState until 2026-11-13) made an empty
+ * filtered list claim "No orders have been placed yet in this workspace"
+ * with no way to clear the filter that caused it.
+ */
+export function EmptyState({ hasActiveFilters, showTrashed, onClear }: { hasActiveFilters: boolean; showTrashed?: boolean; onClear: () => void }) {
   return (
     <div className='flex flex-col items-center justify-center py-20 px-4 text-center'>
       <div className='h-14 w-14 rounded-2xl bg-surface-raised border border-border/70 flex items-center justify-center mb-3.5 shadow-2xs text-muted-foreground'>
         <Inbox className='h-7 w-7' />
       </div>
-      <h3 className='text-base font-semibold mb-1 text-foreground'>No orders found</h3>
+      <h3 className='text-base font-semibold mb-1 text-foreground'>{showTrashed ? 'No trashed orders' : 'No orders found'}</h3>
       <p className='text-xs text-muted-foreground max-w-sm leading-relaxed'>
-        {(search || statusFilter !== 'all')
-          ? 'No orders match your current filters. Try adjusting your search term or clearing filters.'
-          : 'No orders have been placed yet in this workspace.'}
+        {showTrashed
+          ? (hasActiveFilters
+            ? 'No trashed orders match your current search. Try a different search term.'
+            : 'No orders have been moved to trash yet.')
+          : (hasActiveFilters
+            ? 'No orders match your current filters. Try adjusting your search term or clearing filters.'
+            : 'No orders have been placed yet in this workspace.')}
       </p>
-      {(search || statusFilter !== 'all') && (
+      {hasActiveFilters && (
         <Button variant='outline' size='sm' className='mt-4 h-8 text-xs rounded-lg gap-1.5 shadow-2xs' onClick={onClear}>
           <X className='h-3.5 w-3.5 mr-1' /> Clear filters
         </Button>
@@ -335,6 +346,8 @@ function OrdersStatusFilterBar({
   setStatusFilter,
   kindFilter,
   setKindFilter,
+  showTrashed,
+  setShowTrashed,
   setPage,
 }: {
   statusList: any[]
@@ -344,10 +357,14 @@ function OrdersStatusFilterBar({
   setStatusFilter: (s: string) => void
   kindFilter: 'all' | 'SALE' | 'RETURN' | 'EXCHANGE'
   setKindFilter: (k: 'all' | 'SALE' | 'RETURN' | 'EXCHANGE') => void
+  /** Trash is a view mode, not a kind: the trash query ignores kind/status
+   *  filters, so those chips are hidden while it is on. */
+  showTrashed: boolean
+  setShowTrashed: (v: boolean) => void
   setPage: (p: number) => void
 }) {
   const visible = statusList.filter((s: any) => (statusCountMap[s.id] || 0) > 0)
-  if (visible.length === 0 && totalOrders === 0) return null
+  if (visible.length === 0 && totalOrders === 0 && !showTrashed) return null
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
@@ -473,7 +490,7 @@ function OrdersStatusFilterBar({
     </button>
   )
 
-  const allActive = statusFilter === 'all'
+  const allActive = statusFilter === 'all' && !showTrashed
 
   return (
     <div className="relative group/status-bar flex items-center w-full min-w-0" aria-label="Filter orders by status">
@@ -506,7 +523,10 @@ function OrdersStatusFilterBar({
         className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 w-full min-w-0 cursor-grab active:cursor-grabbing select-none scroll-smooth px-0.5"
       >
         {renderChip('all', 'All', totalOrders, 'var(--primary)', allActive, () => {
-          if (!allActive) {
+          if (showTrashed) {
+            setShowTrashed(false)
+            setPage(1)
+          } else if (!allActive) {
             setStatusFilter('all')
             setPage(1)
           }
@@ -514,7 +534,7 @@ function OrdersStatusFilterBar({
 
         <div className="h-4.5 w-px bg-border/70 shrink-0 mx-1" />
 
-        {([
+        {!showTrashed && ([
           ['SALE', 'Sales', 'var(--primary)'],
           ['RETURN', 'Returns', '#EC4899'],
           ['EXCHANGE', 'Exchanges', '#8B5CF6'],
@@ -561,9 +581,40 @@ function OrdersStatusFilterBar({
           )
         })}
 
-        {visible.length > 0 && <div className="h-4.5 w-px bg-border/70 shrink-0 mx-1" />}
+        <div className="h-4.5 w-px bg-border/70 shrink-0 mx-1" />
 
-        {visible.map((s: any) => {
+        <button
+          type="button"
+          aria-pressed={showTrashed}
+          title="Trashed orders"
+          onClick={() => {
+            if (!hasDraggedRef.current) {
+              setShowTrashed(!showTrashed)
+              setPage(1)
+            }
+          }}
+          className={`group relative inline-flex h-8 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-medium whitespace-nowrap transition-all duration-200 select-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+            showTrashed
+              ? 'font-semibold shadow-xs ring-1 ring-border/20'
+              : 'border-border/60 bg-card/80 text-muted-foreground hover:text-foreground hover:bg-card hover:border-border/90 hover:shadow-2xs active:scale-[0.98]'
+          }`}
+          style={
+            showTrashed
+              ? {
+                  borderColor: 'color-mix(in srgb, var(--danger) 55%, transparent)',
+                  backgroundColor: 'color-mix(in srgb, var(--danger) 12%, transparent)',
+                  color: 'var(--danger)',
+                }
+              : undefined
+          }
+        >
+          <Trash2 className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate max-w-36 tracking-tight">Trash</span>
+        </button>
+
+        {!showTrashed && visible.length > 0 && <div className="h-4.5 w-px bg-border/70 shrink-0 mx-1" />}
+
+        {!showTrashed && visible.map((s: any) => {
           const color = getStatusColor(s.name, s.color)
           const active = statusFilter === s.id
           return renderChip(
@@ -629,7 +680,12 @@ export function Orders() {
   const setOrder = useOrdersFilterStore(s => s.setOrder)
   const perPage = useOrdersFilterStore(s => s.perPage)
   const setPerPage = useOrdersFilterStore(s => s.setPerPage)
+  const kindFilter = useOrdersFilterStore(s => s.kindFilter)
+  const setKindFilter = useOrdersFilterStore(s => s.setKindFilter)
   const resetFilters = useOrdersFilterStore(s => s.resetFilters)
+  // Trash is a view mode (local state): the trash query ignores kind/status/
+  // courier/assignee filters, so those chips are hidden while it is on.
+  const [showTrashed, setShowTrashed] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -653,11 +709,13 @@ export function Orders() {
   const { data: staffList } = useQuery({ queryKey: ['staff-list'], queryFn: () => apiClient.get('/orders/staff/list').then(r => r.data as any[]) })
   const staff = (Array.isArray(staffList) ? staffList : []) as any[]
 
-  const [kindFilter, setKindFilter] = useState<'all' | 'SALE' | 'RETURN' | 'EXCHANGE'>('all')
-
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['orders', page, perPage, debouncedSearch, statusFilter, courierFilter, assigneeFilter, sort, order, kindFilter],
-    queryFn: () => ordersApi.list({ page, perPage, search: debouncedSearch || undefined, statusId: statusFilter !== 'all' ? statusFilter : undefined, courier: courierFilter !== 'all' ? courierFilter : undefined, assignedToId: assigneeFilter !== 'all' ? assigneeFilter : undefined, sort, order, kind: kindFilter !== 'all' ? kindFilter : undefined }).then(r => r.data),
+    queryKey: showTrashed
+      ? ['orders', 'trashed', page, perPage, debouncedSearch]
+      : ['orders', page, perPage, debouncedSearch, statusFilter, courierFilter, assigneeFilter, sort, order, kindFilter],
+    queryFn: () => showTrashed
+      ? ordersApi.list({ page, perPage, search: debouncedSearch || undefined, includeTrashed: true, trashedOnly: true }).then(r => r.data)
+      : ordersApi.list({ page, perPage, search: debouncedSearch || undefined, statusId: statusFilter !== 'all' ? statusFilter : undefined, courier: courierFilter !== 'all' ? courierFilter : undefined, assignedToId: assigneeFilter !== 'all' ? assigneeFilter : undefined, sort, order, kind: kindFilter !== 'all' ? kindFilter : undefined }).then(r => r.data),
   })
 
   const statusMut = useMutation({
@@ -753,6 +811,27 @@ export function Orders() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to trash order'),
   })
 
+  // Trash view: restore is the ONLY way back — there is deliberately no
+  // permanent-delete control anywhere in this feature (no backend route
+  // exists for it either). Invalidating ['orders'] refreshes both the
+  // normal list and the trash view (prefix match).
+  const restoreOrderMut = useMutation({
+    mutationFn: (id: string) => ordersApi.restore(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      toast.success('Order restored')
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to restore order'),
+  })
+
+  // Entering/leaving the trash view drops any selection: bulk actions
+  // (status change, dispatch, assign) must never run against trashed rows.
+  const toggleShowTrashed = (v: boolean) => {
+    setSelected([])
+    setShowTrashed(v)
+    setPage(1)
+  }
+
   const toggleAll = () => { const ids = data?.data?.map((o: OrderResponse) => o.id) || []; setSelected(selected.length === ids.length ? [] : ids) }
   const selectedPhones = useMemo(() => {
     const rows = (data?.data || []) as OrderResponse[]
@@ -766,7 +845,13 @@ export function Orders() {
   const toggleExpand = useCallback((id: string) => setExpandedRows(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next }), [])
 
   const clearAllFilters = () => { resetFilters(); setPage(1) }
-  const hasActiveFilters = search || statusFilter !== 'all' || courierFilter !== 'all' || assigneeFilter !== 'all'
+  // One source of truth for "is anything filtering the list": the kind
+  // chips were local useState until 2026-11-13, so Reset cleared the search
+  // but left kind=EXCHANGE — 0 rows with the "no orders placed yet" copy
+  // and no Reset button. In trash mode only search filters the list.
+  const hasActiveFilters = showTrashed
+    ? !!search
+    : !!(search || statusFilter !== 'all' || courierFilter !== 'all' || assigneeFilter !== 'all' || kindFilter !== 'all')
 
   const statusCountMap = useMemo(() => {
     return data?.meta?.statusCounts || {} as Record<string, number>
@@ -805,7 +890,7 @@ export function Orders() {
               )}
             </div>
             <p className='text-muted-foreground text-xs mt-0.5'>
-              <span className='font-semibold text-foreground'>{totalOrders}</span> orders found{data?.data ? ` · ৳${fmt(totalRevenue)} total` : ''}
+              <span className='font-semibold text-foreground'>{totalOrders}</span> {showTrashed ? 'trashed orders' : 'orders'} found{data?.data ? ` · ৳${fmt(totalRevenue)} total` : ''}
               {selected.length > 0 && <span className='text-primary font-semibold ml-2'>({selected.length} selected)</span>}
             </p>
           </div>
@@ -836,6 +921,8 @@ export function Orders() {
           setStatusFilter={setStatusFilter}
           kindFilter={kindFilter}
           setKindFilter={setKindFilter}
+          showTrashed={showTrashed}
+          setShowTrashed={toggleShowTrashed}
           setPage={setPage}
         />
 
@@ -867,37 +954,41 @@ export function Orders() {
               )}
             </div>
 
-            <div className='w-[135px]'>
-              <Select value={courierFilter} onValueChange={v => { setCourierFilter(v); setPage(1) }}>
-                <SelectTrigger className='h-8.5 text-xs bg-background/80 focus:bg-background border-border/60 shadow-2xs rounded-lg'>
-                  <div className='flex items-center gap-1.5 truncate'>
-                    <Truck className='h-3.5 w-3.5 text-muted-foreground/70 shrink-0' />
-                    <SelectValue placeholder='Courier' />
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value='all' className='text-xs font-medium'>All Couriers</SelectItem>
-                  {['steadfast','pathao','redx','carrybee'].map(c => (
-                    <SelectItem key={c} value={c} className='capitalize text-xs font-medium'>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {!showTrashed && (
+              <div className='w-[135px]'>
+                <Select value={courierFilter} onValueChange={v => { setCourierFilter(v); setPage(1) }}>
+                  <SelectTrigger className='h-8.5 text-xs bg-background/80 focus:bg-background border-border/60 shadow-2xs rounded-lg'>
+                    <div className='flex items-center gap-1.5 truncate'>
+                      <Truck className='h-3.5 w-3.5 text-muted-foreground/70 shrink-0' />
+                      <SelectValue placeholder='Courier' />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='all' className='text-xs font-medium'>All Couriers</SelectItem>
+                    {['steadfast','pathao','redx','carrybee'].map(c => (
+                      <SelectItem key={c} value={c} className='capitalize text-xs font-medium'>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
-            <div className='w-[165px]'>
-              <SearchableSelect
-                options={[
-                  { id: 'all', label: 'All Staff' },
-                  { id: 'unassigned', label: 'Unassigned' },
-                  ...staff.map((s: any) => ({ id: s.id, label: `${s.firstName} ${s.lastName}`.trim() }))
-                ]}
-                value={assigneeFilter}
-                onChange={(v) => { setAssigneeFilter(v); setPage(1) }}
-                placeholder='Staff'
-                searchPlaceholder='Search staff...'
-                triggerClassName='h-8.5 text-xs bg-background/80 focus:bg-background border-border/60 shadow-2xs rounded-lg'
-              />
-            </div>
+            {!showTrashed && (
+              <div className='w-[165px]'>
+                <SearchableSelect
+                  options={[
+                    { id: 'all', label: 'All Staff' },
+                    { id: 'unassigned', label: 'Unassigned' },
+                    ...staff.map((s: any) => ({ id: s.id, label: `${s.firstName} ${s.lastName}`.trim() }))
+                  ]}
+                  value={assigneeFilter}
+                  onChange={(v) => { setAssigneeFilter(v); setPage(1) }}
+                  placeholder='Staff'
+                  searchPlaceholder='Search staff...'
+                  triggerClassName='h-8.5 text-xs bg-background/80 focus:bg-background border-border/60 shadow-2xs rounded-lg'
+                />
+              </div>
+            )}
 
             <div className='w-[90px]'>
               <Select value={String(perPage)} onValueChange={v => { if (v === 'custom') { setShowCustomRows(true) } else { setPerPage(parseInt(v)); setPage(1) } }}>
@@ -931,14 +1022,25 @@ export function Orders() {
           {hasActiveFilters && (
             <div className='flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-border/50'>
               <span className='text-[10px] font-semibold text-muted-foreground/80 uppercase tracking-wider mr-1'>Active:</span>
-              {courierFilter !== 'all' && (
+              {!showTrashed && kindFilter !== 'all' && (
+                <button
+                  type="button"
+                  aria-label={`Clear kind filter: ${kindFilter === 'SALE' ? 'Sales' : kindFilter === 'RETURN' ? 'Returns' : 'Exchanges'}`}
+                  onClick={() => { setKindFilter('all'); setPage(1) }}
+                  className='inline-flex items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-0.5 text-[11px] font-medium border border-border/70 shadow-2xs hover:bg-surface-raised transition-colors'
+                >
+                  <span>{kindFilter === 'SALE' ? 'Sales' : kindFilter === 'RETURN' ? 'Returns' : 'Exchanges'}</span>
+                  <X className='h-3 w-3 ml-0.5 text-muted-foreground' />
+                </button>
+              )}
+              {!showTrashed && courierFilter !== 'all' && (
                 <button onClick={() => { setCourierFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-0.5 text-[11px] font-medium border border-border/70 shadow-2xs hover:bg-surface-raised transition-colors'>
                   <Truck className='h-3 w-3 text-muted-foreground' />
                   <span className='capitalize'>{courierFilter}</span>
                   <X className='h-3 w-3 ml-0.5 text-muted-foreground' />
                 </button>
               )}
-              {assigneeFilter !== 'all' && (() => {
+              {!showTrashed && assigneeFilter !== 'all' && (() => {
                 const person = assigneeFilter === 'unassigned' ? null : staff.find((s: any) => s.id === assigneeFilter)
                 return (
                   <button onClick={() => { setAssigneeFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-0.5 text-[11px] font-medium border border-border/70 shadow-2xs hover:bg-surface-raised transition-colors'>
@@ -966,7 +1068,7 @@ export function Orders() {
                 <TableHeader className='bg-muted/40 dark:bg-muted/20 sticky top-0 z-10 border-b border-border/70 backdrop-blur-xs'>
                   <TableRow className='hover:bg-transparent border-b border-border/70'>
                     <TableHead className='w-10 pl-3'>
-                      <Checkbox checked={(data?.data?.length ?? 0) > 0 && selected.length === (data?.data?.length ?? 0)} onCheckedChange={toggleAll} />
+                      {!showTrashed && <Checkbox checked={(data?.data?.length ?? 0) > 0 && selected.length === (data?.data?.length ?? 0)} onCheckedChange={toggleAll} />}
                     </TableHead>
                     <TableHead className='w-7 px-1'></TableHead>
                     <TableHead className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>Order</TableHead>
@@ -1006,7 +1108,7 @@ export function Orders() {
                         style={{ borderLeftWidth: 3, borderLeftColor: accentColor }}
                       >
                         <TableCell onClick={e => e.stopPropagation()} className='pl-3'>
-                          <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(o.id)} />
+                          {!showTrashed && <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(o.id)} />}
                         </TableCell>
                         <TableCell className='px-1'>
                           <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>
@@ -1077,6 +1179,11 @@ export function Orders() {
                               {new Date(o.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
                               <span className='text-muted-foreground/60 ml-1'>{relativeTime(o.createdAt)}</span>
                             </span>
+                            {showTrashed && o.trashedAt && (
+                              <span className='text-[11px] text-muted-foreground' title={new Date(o.trashedAt).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}>
+                                · Trashed {new Date(o.trashedAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })} ({relativeTime(o.trashedAt)})
+                              </span>
+                            )}
                             <CanonicalAttributionBadges
                               channel={o.channel}
                               channelEntity={o.channelEntity}
@@ -1111,7 +1218,19 @@ export function Orders() {
                           </div>
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
-                          {o.kind !== 'RETURN' && (
+                          {showTrashed ? (
+                            <span
+                              className='inline-flex h-6.5 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium shadow-2xs'
+                              style={{
+                                backgroundColor: `color-mix(in srgb, ${accentColor} 14%, transparent)`,
+                                color: accentColor,
+                                borderColor: `color-mix(in srgb, ${accentColor} 30%, transparent)`,
+                              }}
+                            >
+                              <span className='size-1.5 rounded-full shrink-0' style={{ backgroundColor: accentColor }} />
+                              {o.status.name}
+                            </span>
+                          ) : o.kind !== 'RETURN' && (
                             <Select
                               value={o.status.id}
                               onValueChange={v => {
@@ -1191,6 +1310,17 @@ export function Orders() {
                         </TableCell>
                         <TableCell className='text-right text-xs text-muted-foreground pr-4 font-mono'>{o.items.length}</TableCell>
                         <TableCell onClick={e => e.stopPropagation()} className='pr-3'>
+                          {showTrashed ? (
+                            <Button
+                              variant='outline'
+                              size='sm'
+                              className='h-7 text-xs rounded-md gap-1.5 shadow-2xs'
+                              disabled={restoreOrderMut.isPending}
+                              onClick={() => restoreOrderMut.mutate(o.id)}
+                            >
+                              <RotateCcw className='h-3.5 w-3.5' /> Restore
+                            </Button>
+                          ) : (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant='ghost' size='icon' className='h-7 w-7 rounded-md hover:bg-surface-raised'>
@@ -1217,6 +1347,7 @@ export function Orders() {
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
+                          )}
                         </TableCell>
                       </TableRow>,
                       isExpanded && (
@@ -1394,7 +1525,7 @@ export function Orders() {
                       )
                     ].filter(Boolean)
                   }) : (
-                    <TableRow><TableCell colSpan={10} className='p-0 border-0'><EmptyState search={search} statusFilter={statusFilter} onClear={clearAllFilters} /></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} className='p-0 border-0'><EmptyState hasActiveFilters={hasActiveFilters} showTrashed={showTrashed} onClear={clearAllFilters} /></TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -1405,7 +1536,7 @@ export function Orders() {
         {totalPages > 1 && (
           <div className='flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-1'>
             <span className='text-xs text-muted-foreground'>
-              Page <span className='font-semibold text-foreground'>{page}</span> of <span className='font-semibold text-foreground'>{totalPages}</span> ({totalOrders} orders)
+              Page <span className='font-semibold text-foreground'>{page}</span> of <span className='font-semibold text-foreground'>{totalPages}</span> ({totalOrders} {showTrashed ? 'trashed orders' : 'orders'})
             </span>
             <div className='flex items-center gap-1'>
               <Button variant='outline' size='sm' className='h-8 w-8 p-0 rounded-lg shadow-2xs' disabled={page <= 1} onClick={() => setPage(p => p - 1)}>

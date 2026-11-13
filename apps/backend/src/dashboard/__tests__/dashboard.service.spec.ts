@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { InternalServerErrorException } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import { DashboardService } from '../dashboard.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -159,8 +161,20 @@ describe('DashboardService', () => {
 
       await service.getOperationalKpis(start.toISOString(), end.toISOString());
 
+      // dhakaDayRange expands ISO datetimes to the full Dhaka day
+      // containing each instant (audit §1c P0.3 — no more single-instant
+      // passthrough): 00:00Z Jun 1 = 06:00 Dhaka Jun 1 → day starts
+      // 2025-05-31T18:00Z; 23:59:59.999Z Jun 15 = 05:59:59.999 Dhaka
+      // Jun 16 → day ends 2025-06-16T17:59:59.999Z.
       expect(prisma.order.count).toHaveBeenCalledWith({
-        where: { createdAt: { gte: start, lte: end }, trashedAt: null, kind: 'SALE' },
+        where: {
+          createdAt: {
+            gte: new Date('2025-05-31T18:00:00.000Z'),
+            lte: new Date('2025-06-16T17:59:59.999Z'),
+          },
+          trashedAt: null,
+          kind: 'SALE',
+        },
       });
     });
 
@@ -191,8 +205,12 @@ describe('DashboardService', () => {
 
       await service.getOperationalKpis(start.toISOString(), end.toISOString());
 
+      // ISO datetimes expand to their containing Dhaka days (see above).
       const params = prisma.$queryRawUnsafe.mock.calls[0].slice(1);
-      expect(params).toEqual([start, end]);
+      expect(params).toEqual([
+        new Date('2025-05-31T18:00:00.000Z'),
+        new Date('2025-06-16T17:59:59.999Z'),
+      ]);
     });
 
     it('lifecycle query deduplicates orders across sources and repeated transitions', async () => {
@@ -351,11 +369,15 @@ describe('DashboardService', () => {
 
       await service.getOperationalKpis(start.toISOString(), end.toISOString());
 
+      // ISO datetimes expand to their containing Dhaka days (see above).
       expect(prisma.payment.aggregate).toHaveBeenCalledWith({
         _sum: { amount: true },
         where: {
           status: 'PAID',
-          createdAt: { gte: start, lte: end },
+          createdAt: {
+            gte: new Date('2025-05-31T18:00:00.000Z'),
+            lte: new Date('2025-06-16T17:59:59.999Z'),
+          },
         },
       });
     });
@@ -626,6 +648,183 @@ describe('DashboardService', () => {
       await expect(
         service.getOperationalPipelineKpis('2025-06-01', '2025-06-15'),
       ).rejects.toThrow(InternalServerErrorException);
+    });
+  });
+
+  describe('P2 invariants I1–I6 (dashboard-counts audit §6, seeded day)', () => {
+    /**
+     * Seeded Dhaka day 2026-11-13 — adapted from audit §6. (The audit's
+     * own §6 pattern does not reconcile: 30+2+3+2+4+2+1+1(WC) = 45, not
+     * 46, and a WC order consumes NO counter. This seed is defined to
+     * reconcile exactly, and the counter half lives in
+     * counter-reconciliation.spec.ts.)
+     *
+     * Orders created that day: 30 web SALE (5 still Pending, 25 across
+     * Confirmed/Packed/Shipping/Delivered/Cancelled) + 3 POS SALE
+     * (Confirmed) + 1 imported WC SALE (Confirmed) + 2 trashed SALE +
+     * 2 exchange children (kind EXCHANGE). Failed web creates: 4 (burned
+     * ORD numbers — counter half). JE 2, EXP-JE 1, EMP 1 (counter half).
+     *
+     * Therefore: Activity New = Pipeline Total = 30 + 3 + 1 = 34
+     * (POS and WC orders ARE kind SALE and count — audit §1c), Pipeline
+     * Pending = 5, Pipeline tiles sum to 34.
+     */
+    const DAY_START = new Date('2026-11-12T18:00:00.000Z'); // 00:00 Dhaka 11-13
+    const DAY_END = new Date('2026-11-13T17:59:59.999Z'); // 23:59:59.999 Dhaka
+    const PIPELINE_STATUSES = [
+      { id: 'st-pending', name: 'Pending', color: '#F59E0B', sortOrder: 0 },
+      { id: 'st-confirmed', name: 'Confirmed', color: '#3B82F6', sortOrder: 1 },
+      { id: 'st-packed', name: 'Packed', color: '#059669', sortOrder: 2 },
+      { id: 'st-shipping', name: 'Shipping', color: '#06B6D4', sortOrder: 3 },
+      { id: 'st-delivered', name: 'Delivered', color: '#10B981', sortOrder: 4 },
+      { id: 'st-cancelled', name: 'Cancelled', color: '#EF4444', sortOrder: 5 },
+    ];
+    // Current-status distribution of the 34-order cohort: 5+13+3+6+5+2 = 34.
+    const COHORT_GROUPS = [
+      { statusId: 'st-pending', _count: 5 },
+      { statusId: 'st-confirmed', _count: 13 },
+      { statusId: 'st-packed', _count: 3 },
+      { statusId: 'st-shipping', _count: 6 },
+      { statusId: 'st-delivered', _count: 5 },
+      { statusId: 'st-cancelled', _count: 2 },
+    ];
+
+    function mockSeededDay() {
+      prisma.order.count.mockResolvedValue(34);
+      prisma.$queryRawUnsafe.mockResolvedValue([
+        { status: 'Confirmed', orders: 12 },
+        { status: 'Packed', orders: 3 },
+        { status: 'Shipping', orders: 6 },
+        { status: 'Delivered', orders: 5 },
+      ]);
+      prisma.order.groupBy.mockResolvedValue(COHORT_GROUPS);
+      prisma.orderStatus.findMany.mockResolvedValue(PIPELINE_STATUSES);
+      prisma.payment.count.mockResolvedValue(0);
+      prisma.refund.count.mockResolvedValue(0);
+      prisma.payment.aggregate.mockResolvedValue({ _sum: { amount: 0 } });
+    }
+
+    it('I1 — Activity New == count(SALE created in day, not trashed)', async () => {
+      mockSeededDay();
+
+      const result = await service.getOperationalKpis(
+        '2026-11-13',
+        '2026-11-13',
+      );
+
+      expect(result.newOrders).toBe(34);
+      expect(prisma.order.count).toHaveBeenCalledWith({
+        where: {
+          createdAt: { gte: DAY_START, lte: DAY_END },
+          trashedAt: null,
+          kind: 'SALE',
+        },
+      });
+      // The query never reads the timeline: the 2 trashed SALE orders and
+      // the 2 EXCHANGE children are excluded by trashedAt/kind, not by
+      // any event — so a SALE order created in a non-Pending initial
+      // status, or later Cancelled, still counts.
+    });
+
+    it('I2 — Pipeline tiles sum to Pipeline Total (each cohort order once)', async () => {
+      mockSeededDay();
+
+      const result = await service.getOperationalPipelineKpis(
+        '2026-11-13',
+        '2026-11-13',
+      );
+
+      expect(result.newOrders).toBe(34);
+      const tileSum = result.statusCounts.reduce((s, t) => s + t.count, 0);
+      expect(tileSum).toBe(result.newOrders);
+      expect(prisma.order.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          by: ['statusId'],
+          where: {
+            createdAt: { gte: DAY_START, lte: DAY_END },
+            trashedAt: null,
+            kind: 'SALE',
+          },
+        }),
+      );
+    });
+
+    it('I3 — Pipeline Pending <= Activity New and == period-created currently-Pending', async () => {
+      mockSeededDay();
+
+      const activity = await service.getOperationalKpis(
+        '2026-11-13',
+        '2026-11-13',
+      );
+      const pipeline = await service.getOperationalPipelineKpis(
+        '2026-11-13',
+        '2026-11-13',
+      );
+
+      const pendingTile = pipeline.statusCounts.find(
+        (t) => t.name === 'Pending',
+      );
+      expect(pendingTile?.count).toBe(5);
+      expect(pendingTile!.count).toBeLessThanOrEqual(activity.newOrders);
+      // The two "New Orders" numbers are DIFFERENT facts: Activity counts
+      // creations (34), Pipeline counts the cohort still Pending (5).
+      expect(activity.newOrders).not.toBe(pendingTile!.count);
+    });
+
+    it('I5 — no double-count: Delivered via timeline AND dispatch counts once', async () => {
+      mockSeededDay();
+
+      const result = await service.getOperationalKpis(
+        '2026-11-13',
+        '2026-11-13',
+      );
+
+      // One order holding BOTH a timeline Delivered event and a dispatch
+      // deliveredAt still contributes exactly one Delivered event row
+      // (the SQL dedupes with COUNT(DISTINCT order_id) before GROUP BY).
+      const sql: string = prisma.$queryRawUnsafe.mock.calls[0][0];
+      expect(sql).toContain('COUNT(DISTINCT order_id)');
+      expect(sql).toMatch(/GROUP BY status/);
+      expect(result.delivered).toBe(5);
+    });
+
+    it('I6 — Activity and Pipeline are distinct endpoints with distinct semantics', async () => {
+      mockSeededDay();
+
+      const activity = await service.getOperationalKpis(
+        '2026-11-13',
+        '2026-11-13',
+      );
+      const pipeline = await service.getOperationalPipelineKpis(
+        '2026-11-13',
+        '2026-11-13',
+      );
+
+      // Same period, same cohort — but the Pending tile differs by design:
+      // Activity Pending is the creation count (34), Pipeline Pending is
+      // the cohort's current state (5). A UI placing them side by side
+      // must label which is which (per-tile basis strings are the admin
+      // agent's part of I6; the backend locks the semantic split here).
+      const activityPending = activity.statusCounts.find(
+        (t) => t.name === 'Pending',
+      );
+      const pipelinePending = pipeline.statusCounts.find(
+        (t) => t.name === 'Pending',
+      );
+      expect(activityPending?.count).toBe(34);
+      expect(pipelinePending?.count).toBe(5);
+    });
+
+    it('locks the 8 counting principles as the service doc comment', async () => {
+      const src = fs.readFileSync(
+        path.resolve(__dirname, '..', 'dashboard.service.ts'),
+        'utf8',
+      );
+      expect(src).toContain('COUNTING PRINCIPLES');
+      for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) {
+        expect(src).toContain(` ${n}. `);
+      }
+      expect(src).toContain('Sequence numbers are document numbers');
     });
   });
 

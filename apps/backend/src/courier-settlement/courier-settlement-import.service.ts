@@ -1174,8 +1174,11 @@ export class CourierSettlementImportService {
     const dateStr = `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date: `CS${dateStr}` },
-        create: { date: `CS${dateStr}`, seq: 1 },
+        // CSYYMMDD is already a namespaced date key (never the shared order
+        // row); family 'ORD' is the default — the compound PK (date, family)
+        // requires the full key in `where`.
+        where: { date_family: { date: `CS${dateStr}`, family: 'ORD' } },
+        create: { date: `CS${dateStr}`, family: 'ORD', seq: 1 },
         update: { seq: { increment: 1 } },
       });
       return `${INVOICE_DISPLAY_PREFIX}-${dateStr}-${String(counter.seq).padStart(4, '0')}`;
