@@ -646,6 +646,69 @@ probe_ddl() {
       fi
       ;;
 
+    20261113160000_storefront_fully_dynamic)
+      # DDL: JobPosting/JobApplication/StoreLocation/SupportEnquiry tables +
+      # CmsPage.metaDescription/ogImage/effectiveDate/version columns.
+      # The SystemSetting backfill is conditional on existing User rows, so
+      # it is not part of the probe.
+      tbl_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_tables WHERE schemaname='public'
+           AND tablename IN ('JobPosting','JobApplication','StoreLocation','SupportEnquiry');"
+      )"
+      col_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM information_schema.columns
+           WHERE table_name = 'CmsPage'
+             AND column_name IN ('metaDescription','ogImage','effectiveDate','version');"
+      )"
+      if [ "$tbl_count" = "4" ] && [ "$col_count" = "4" ]; then
+        echo "APPLIED"
+      elif [ "$tbl_count" = "0" ] && [ "$col_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20261113233000_order_counter_per_family)
+      # DDL: OrderCounter.family column + PK widened (date) -> (date, family);
+      # seed fans each shared YYMMDD date out to all six families.
+      # NOTE: the fan-out check references the "family" column, so it may
+      # only run once the column exists — otherwise psql errors and the
+      # probe cannot classify (fail safe -> UNKNOWN).
+      fam_col="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM information_schema.columns
+           WHERE table_name = 'OrderCounter' AND column_name = 'family';"
+      )"
+      pk_cols="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM information_schema.key_column_usage
+           WHERE table_schema = 'public' AND table_name = 'OrderCounter'
+             AND constraint_name = 'OrderCounter_pkey';"
+      )"
+      if [ "$fam_col" = "0" ]; then
+        echo "NOT_APPLIED"
+      elif [ "$fam_col" = "1" ] && [ "$pk_cols" = "2" ]; then
+        bad_dates="$(
+          psql "$DATABASE_URL" -tAc \
+            "SELECT count(*) AS missing_families FROM (
+               SELECT \"date\" FROM \"OrderCounter\"
+               WHERE \"family\" = 'ORD' AND \"date\" ~ '^[0-9]{6}$'
+               GROUP BY \"date\" HAVING count(*) < 6
+             ) AS bad;"
+        )"
+        if [ "$bad_dates" = "0" ]; then
+          echo "APPLIED"
+        else
+          echo "UNKNOWN"
+        fi
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
     *)
       echo "UNKNOWN"
       ;;

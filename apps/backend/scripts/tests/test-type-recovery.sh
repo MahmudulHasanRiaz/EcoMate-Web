@@ -26,6 +26,9 @@ nope() {
 #   MOCK_DEPENDENTS (count, default 0), MOCK_TABLES (space list, default empty),
 #   MOCK_ROWS (row count for quoted-table counts, default 0),
 #   MOCK_MIG_TABLES (migration-table presence, default 0),
+#   MOCK_COLS (information_schema.columns count, default 0),
+#   MOCK_PK_COLS (key_column_usage count, default 0),
+#   MOCK_BAD_DATES (missing-families date count, default 0),
 #   MOCK_TYPE_EXISTS (default 1), DROP_RC (DROP exit code, default 0).
 # Every DROP TYPE statement is appended to DROP_LOG.
 DROP_LOG="$(mktemp)"
@@ -52,6 +55,9 @@ psql() {
   case "$sql" in
     *SELECT\ DISTINCT\ c.relname*) printf '%s' "${MOCK_TABLES:-}" ; return 0 ;;
     *FROM\ pg_attribute*) printf '%s' "${MOCK_DEPENDENTS:-0}" ; return 0 ;;
+    *key_column_usage*) printf '%s' "${MOCK_PK_COLS:-0}" ; return 0 ;;
+    *information_schema.columns*) printf '%s' "${MOCK_COLS:-0}" ; return 0 ;;
+    *missing_families*) printf '%s' "${MOCK_BAD_DATES:-0}" ; return 0 ;;
     *SELECT\ count\(\*\)\ FROM\ \"*) printf '%s' "${MOCK_ROWS:-0}" ; return 0 ;;
     *FROM\ pg_tables*) printf '%s' "${MOCK_MIG_TABLES:-0}" ; return 0 ;;
     *FROM\ pg_type\ WHERE\ typname*) printf '%s' "${MOCK_TYPE_EXISTS:-1}" ; return 0 ;;
@@ -70,6 +76,9 @@ reset_mocks() {
   MOCK_TABLES=""
   MOCK_ROWS=0
   MOCK_MIG_TABLES=0
+  MOCK_COLS=0
+  MOCK_PK_COLS=0
+  MOCK_BAD_DATES=0
   MOCK_TYPE_EXISTS=1
   DROP_RC=0
   : > "$DROP_LOG"
@@ -180,6 +189,45 @@ if recover_type_conflict 20260827000000_add_hr_leave; then
 else
   nope "absent-type path failed"
 fi
+
+echo "[11] probe_ddl 20261113160000_storefront_fully_dynamic (tables + columns)"
+reset_mocks
+MOCK_MIG_TABLES=4; MOCK_COLS=4
+state="$(probe_ddl 20261113160000_storefront_fully_dynamic)"
+[ "$state" = "APPLIED" ] && ok "4 tables + 4 columns -> APPLIED" || nope "APPLIED case gave '$state'"
+reset_mocks
+state="$(probe_ddl 20261113160000_storefront_fully_dynamic)"
+[ "$state" = "NOT_APPLIED" ] && ok "nothing present -> NOT_APPLIED" || nope "NOT_APPLIED case gave '$state'"
+reset_mocks
+MOCK_MIG_TABLES=4; MOCK_COLS=0
+state="$(probe_ddl 20261113160000_storefront_fully_dynamic)"
+[ "$state" = "UNKNOWN" ] && ok "tables without columns -> UNKNOWN" || nope "tables-only case gave '$state'"
+reset_mocks
+MOCK_MIG_TABLES=2; MOCK_COLS=4
+state="$(probe_ddl 20261113160000_storefront_fully_dynamic)"
+[ "$state" = "UNKNOWN" ] && ok "partial tables -> UNKNOWN" || nope "partial-tables case gave '$state'"
+
+echo "[12] probe_ddl 20261113233000_order_counter_per_family (column + PK + fan-out)"
+reset_mocks
+MOCK_COLS=1; MOCK_PK_COLS=2; MOCK_BAD_DATES=0
+state="$(probe_ddl 20261113233000_order_counter_per_family)"
+[ "$state" = "APPLIED" ] && ok "column + 2-col PK + 0 bad dates -> APPLIED" || nope "APPLIED case gave '$state'"
+reset_mocks
+state="$(probe_ddl 20261113233000_order_counter_per_family)"
+[ "$state" = "NOT_APPLIED" ] && ok "no family column -> NOT_APPLIED" || nope "NOT_APPLIED case gave '$state'"
+reset_mocks
+MOCK_COLS=1; MOCK_PK_COLS=1; MOCK_BAD_DATES=0
+state="$(probe_ddl 20261113233000_order_counter_per_family)"
+[ "$state" = "UNKNOWN" ] && ok "column without widened PK -> UNKNOWN" || nope "narrow-PK case gave '$state'"
+reset_mocks
+MOCK_COLS=1; MOCK_PK_COLS=2; MOCK_BAD_DATES=3
+state="$(probe_ddl 20261113233000_order_counter_per_family)"
+[ "$state" = "UNKNOWN" ] && ok "dates missing families -> UNKNOWN" || nope "partial-seed case gave '$state'"
+
+echo "[13] probe_ddl 20261113170000_cms_fake_defaults_cleanup deliberately has no entry"
+reset_mocks
+state="$(probe_ddl 20261113170000_cms_fake_defaults_cleanup)"
+[ "$state" = "UNKNOWN" ] && ok "data-only conditional migration -> UNKNOWN (manual resolution)" || nope "170000 case gave '$state'"
 
 rm -f "$DROP_LOG"
 echo "----"

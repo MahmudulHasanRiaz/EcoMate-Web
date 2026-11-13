@@ -15,9 +15,14 @@
 -- error the row is left exactly as it was (preserve-verbatim fallback) and
 -- the failure is logged with RAISE NOTICE. A missing row (page not seeded
 -- yet) is skipped: ensureTemplatePages() seeds it empty on the next boot.
--- The codebase has no probe_ddl convention (see 20261113160000 migration
--- header); the per-row exception guard above is the safety mechanism for
--- this change.
+-- probe_ddl: this migration is data-only and conditional — only rows whose
+-- config still equals a known fake snapshot change, and a database with no
+-- such rows is indistinguishable before/after — so no sound APPLIED /
+-- NOT_APPLIED probe exists. probe_ddl() in
+-- apps/backend/scripts/resolve-failed-migrations.sh therefore deliberately
+-- has no entry for it and the script fails safe (UNKNOWN -> manual
+-- resolution). The per-row exception guard above is the safety mechanism
+-- for this change.
 -- Rollback: restore the affected rows from backup — this migration only
 -- overwrites rows whose config still equals a known fake snapshot, listed
 -- in the NOTICE output.
