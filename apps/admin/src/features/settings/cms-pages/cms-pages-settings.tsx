@@ -6,6 +6,7 @@ import { TemplatePageForm } from './template-page-form'
 import { templatePageSchemas } from './template-schemas'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -41,6 +42,9 @@ const emptyForm: CreateCmsPageInput = {
   showInFooter: false,
   sortOrder: 0,
   type: 'content',
+  metaDescription: '',
+  ogImage: '',
+  effectiveDate: '',
 }
 
 function slugify(input: string): string {
@@ -71,6 +75,7 @@ export function CmsPagesSettings() {
 
   const [templateEditing, setTemplateEditing] = useState<CmsPage | null>(null)
   const [templateConfig, setTemplateConfig] = useState<Record<string, any>>({})
+  const [templateSeo, setTemplateSeo] = useState({ metaDescription: '', ogImage: '', effectiveDate: '' })
   const [templateOpen, setTemplateOpen] = useState(false)
 
   const createMut = useMutation({
@@ -112,12 +117,25 @@ export function CmsPagesSettings() {
   const openTemplate = (page: CmsPage) => {
     setTemplateEditing(page)
     setTemplateConfig(page.config || {})
+    setTemplateSeo({
+      metaDescription: page.metaDescription || '',
+      ogImage: page.ogImage || '',
+      effectiveDate: page.effectiveDate ? page.effectiveDate.slice(0, 10) : '',
+    })
     setTemplateOpen(true)
   }
 
   const saveTemplate = () => {
     if (!templateEditing) return
-    updateMut.mutate({ id: templateEditing.id, data: { config: templateConfig } })
+    updateMut.mutate({
+      id: templateEditing.id,
+      data: {
+        config: templateConfig,
+        metaDescription: templateSeo.metaDescription.trim() || null,
+        ogImage: templateSeo.ogImage.trim() || null,
+        effectiveDate: templateSeo.effectiveDate || null,
+      },
+    })
   }
 
   const openCreate = () => {
@@ -137,6 +155,9 @@ export function CmsPagesSettings() {
       showInFooter: page.showInFooter,
       sortOrder: page.sortOrder,
       type: 'content',
+      metaDescription: page.metaDescription || '',
+      ogImage: page.ogImage || '',
+      effectiveDate: page.effectiveDate ? page.effectiveDate.slice(0, 10) : '',
     })
     setAutoSlug(false)
     setDrawerOpen(true)
@@ -147,10 +168,16 @@ export function CmsPagesSettings() {
       toast.error('Slug, title, and content are required')
       return
     }
+    // Empty SEO fields clear the stored value on update, and are omitted on create.
+    const seo = {
+      metaDescription: form.metaDescription?.trim() ? form.metaDescription.trim() : (editingId ? null : undefined),
+      ogImage: form.ogImage?.trim() ? form.ogImage.trim() : (editingId ? null : undefined),
+      effectiveDate: form.effectiveDate ? form.effectiveDate : (editingId ? null : undefined),
+    }
     if (editingId) {
-      updateMut.mutate({ id: editingId, data: form })
+      updateMut.mutate({ id: editingId, data: { ...form, ...seo } })
     } else {
-      createMut.mutate(form)
+      createMut.mutate({ ...form, ...seo })
     }
   }
 
@@ -364,6 +391,50 @@ export function CmsPagesSettings() {
                 placeholder='<h2>Terms & Conditions</h2><p>Your content here...</p>'
               />
             </div>
+            <div className='space-y-4 border rounded-lg p-4'>
+              <div>
+                <Label className='text-sm font-medium'>SEO & Version</Label>
+                <p className='text-xs text-muted-foreground'>Used for search results and the "Last updated" line on the public page.</p>
+              </div>
+              <div className='space-y-2'>
+                <Label htmlFor='page-meta'>Meta Description</Label>
+                <Textarea
+                  id='page-meta'
+                  value={form.metaDescription || ''}
+                  onChange={e => setForm(f => ({ ...f, metaDescription: e.target.value }))}
+                  rows={2}
+                  placeholder='Short summary shown in search results. Leave empty to use the page title.'
+                />
+              </div>
+              <div className='grid gap-4 md:grid-cols-2'>
+                <div className='space-y-2'>
+                  <Label htmlFor='page-og'>OG Image URL</Label>
+                  <Input
+                    id='page-og'
+                    value={form.ogImage || ''}
+                    onChange={e => setForm(f => ({ ...f, ogImage: e.target.value }))}
+                    placeholder='Media path or URL'
+                  />
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='page-effective'>Effective Date</Label>
+                  <Input
+                    id='page-effective'
+                    type='date'
+                    value={form.effectiveDate || ''}
+                    onChange={e => setForm(f => ({ ...f, effectiveDate: e.target.value }))}
+                  />
+                </div>
+              </div>
+              {editingId && (
+                <p className='text-xs text-muted-foreground'>
+                  Version {pages.find(p => p.id === editingId)?.version ?? 1} · Last updated{' '}
+                  {pages.find(p => p.id === editingId)?.updatedAt
+                    ? new Date(pages.find(p => p.id === editingId)!.updatedAt).toLocaleDateString()
+                    : '—'}
+                </p>
+              )}
+            </div>
             <div className='grid gap-4 md:grid-cols-3'>
               <div className='flex items-center justify-between p-3 border rounded-lg'>
                 <div>
@@ -415,11 +486,55 @@ export function CmsPagesSettings() {
             </DialogDescription>
           </DialogHeader>
           {templateEditing && templatePageSchemas[templateEditing.templateKey || ''] && (
-            <TemplatePageForm
-              schema={templatePageSchemas[templateEditing.templateKey || '']}
-              config={templateConfig}
-              onChange={setTemplateConfig}
-            />
+            <>
+              <TemplatePageForm
+                schema={templatePageSchemas[templateEditing.templateKey || '']}
+                config={templateConfig}
+                onChange={setTemplateConfig}
+              />
+              <div className='space-y-4 border rounded-lg p-4'>
+                <div>
+                  <Label className='text-sm font-medium'>SEO & Version</Label>
+                  <p className='text-xs text-muted-foreground'>Used for search results and the "Last updated" line on the public page.</p>
+                </div>
+                <div className='space-y-2'>
+                  <Label htmlFor='tpl-meta'>Meta Description</Label>
+                  <Textarea
+                    id='tpl-meta'
+                    value={templateSeo.metaDescription}
+                    onChange={e => setTemplateSeo(s => ({ ...s, metaDescription: e.target.value }))}
+                    rows={2}
+                    placeholder='Short summary shown in search results. Leave empty to use the page title.'
+                  />
+                </div>
+                <div className='grid gap-4 md:grid-cols-2'>
+                  <div className='space-y-2'>
+                    <Label htmlFor='tpl-og'>OG Image URL</Label>
+                    <Input
+                      id='tpl-og'
+                      value={templateSeo.ogImage}
+                      onChange={e => setTemplateSeo(s => ({ ...s, ogImage: e.target.value }))}
+                      placeholder='Media path or URL'
+                    />
+                  </div>
+                  <div className='space-y-2'>
+                    <Label htmlFor='tpl-effective'>Effective Date</Label>
+                    <Input
+                      id='tpl-effective'
+                      type='date'
+                      value={templateSeo.effectiveDate}
+                      onChange={e => setTemplateSeo(s => ({ ...s, effectiveDate: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <p className='text-xs text-muted-foreground'>
+                  Version {templateEditing.version ?? 1}
+                  {templateEditing.updatedAt
+                    ? ` · Last updated ${new Date(templateEditing.updatedAt).toLocaleDateString()}`
+                    : ''}
+                </p>
+              </div>
+            </>
           )}
           <DialogFooter>
             <Button variant='outline' onClick={() => setTemplateOpen(false)}>Cancel</Button>

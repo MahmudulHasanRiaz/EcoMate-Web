@@ -114,6 +114,9 @@ export const CATALOGUE_MODULES: CatalogueModule[] = [
   { key: 'hr_settings', label: 'HR Settings', group: 'HR', feature: 'admin_hr', crud: false },
   { key: 'hr_ledgers', label: 'HR Ledgers', group: 'HR', feature: 'admin_hr', crud: false,
     extras: [{ verb: 'view', label: 'View HR Ledgers' }] },
+  // Careers (storefront dynamic-pages round 2026-11-13, Option B split gate):
+  // HR-panel job postings + applications. CRUD keys view/create/edit/delete_careers.
+  { key: 'careers', label: 'Careers', group: 'HR', feature: 'admin_hr_careers', crud: true },
 
   // ── Inventory & products ───────────────────────────────────────────────
   { key: 'products', label: 'Products', group: 'INVENTORY', feature: 'admin_products', crud: true,

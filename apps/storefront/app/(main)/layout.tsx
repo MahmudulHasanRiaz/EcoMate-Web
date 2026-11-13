@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import BottomNav from "@/components/BottomNav";
@@ -9,6 +10,17 @@ import {
 import HideOnCheckout from "@/components/HideOnCheckout";
 import FlyCartLayer from "@/components/FlyCartLayer";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
+
+/**
+ * D7 — when search-engine indexing is OFF, every page under (main)
+ * carries `noindex, nofollow`. Private segments (account, checkout, …)
+ * keep their own explicit noindex regardless of the flag.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const config = await getStorefrontConfigServer().catch(() => null);
+  if (config?.searchIndexingEnabled === true) return {};
+  return { robots: { index: false, follow: false } };
+}
 
 export default async function MainLayout({
   children,

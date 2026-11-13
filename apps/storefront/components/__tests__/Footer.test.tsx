@@ -11,6 +11,15 @@ vi.mock('../EcoMateAttribution', () => ({
   default: () => <span>attribution</span>,
 }));
 
+// The footer renders CMS "Show in Footer" pages through an async server
+// component (CmsFooterLinks), which client-side jsdom rendering cannot
+// resolve — it would suspend the whole tree and the client island's effects
+// would never run. Stub it to nothing here; its own suite
+// (CmsFooterLinks.test.tsx) covers the link rendering via prerender.
+vi.mock('../CmsFooterLinks', () => ({
+  default: () => null,
+}));
+
 const CONFIG = {
   store: { name: 'Test Store', phone: '01700000000' },
   social: {},

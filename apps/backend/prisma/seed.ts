@@ -955,6 +955,12 @@ async function main() {
     { key: 'currency_symbol', value: '৳' },
     { key: 'delivery_charge', value: '60' },
     { key: 'free_delivery_min', value: '1000' },
+    // Search-engine indexing (D7): fresh tenants are NOT indexed by
+    // default — the client turns it on themselves when their data is
+    // production-ready. Create-only like the rest, so a reseed never
+    // flips a tenant that already switched it on. Existing tenants were
+    // backfilled 'true' by migration 20261113160000.
+    { key: 'search_engine_indexing', value: 'false' },
     { key: 'meta_pixel_enabled', value: 'false' },
     { key: 'tiktok_pixel_enabled', value: 'false' },
     { key: 'tracking_refund_enabled', value: 'true' },

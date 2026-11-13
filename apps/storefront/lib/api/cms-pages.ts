@@ -4,6 +4,8 @@ export interface CmsPageSummary {
   id: string;
   slug: string;
   title: string;
+  /** 'template' pages live at /<slug>; 'content' pages at /pages/<slug>. */
+  type?: string;
 }
 
 export interface CmsPage {
@@ -17,6 +19,11 @@ export interface CmsPage {
   type?: string;
   templateKey?: string | null;
   config?: Record<string, any> | null;
+  // SEO + document versioning (storefront dynamic-pages round).
+  metaDescription?: string | null;
+  ogImage?: string | null;
+  effectiveDate?: string | null;
+  version?: number;
   createdAt: string;
   updatedAt: string;
 }

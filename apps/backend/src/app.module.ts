@@ -44,11 +44,13 @@ import { CourierManagerModule } from './courier-manager/courier-manager.module';
 import { CombosModule } from './combos/combos.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { CheckoutLeadsModule } from './checkout-leads/checkout-leads.module';
+import { SupportEnquiriesModule } from './support-enquiries/support-enquiries.module';
 import { DeliveryAreasModule } from './delivery-areas/delivery-areas.module';
 import { ShippingModule } from './shipping/shipping.module';
 import { ImportModule } from './import/import.module';
 import { SizeChartsModule } from './size-charts/size-charts.module';
 import { CmsPagesModule } from './cms-pages/cms-pages.module';
+import { StoreLocationsModule } from './store-locations/store-locations.module';
 import { TagsModule } from './tags/tags.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { ImagesModule } from './images/images.module';
@@ -90,6 +92,8 @@ import { HrPaymentsModule } from './hr-payments/hr-payments.module';
 import { CommissionsModule } from './commissions/commissions.module';
 import { HrSelfServiceModule } from './hr-self-service/hr-self-service.module';
 import { HrAttendanceModule } from './hr-attendance/hr-attendance.module';
+import { JobPostingsModule } from './job-postings/job-postings.module';
+import { JobApplicationsModule } from './job-applications/job-applications.module';
 import { AttendanceDevicesModule } from './attendance-devices/attendance-devices.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { PayrollModule } from './payroll/payroll.module';
@@ -154,11 +158,13 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     CombosModule,
     TrackingModule,
     CheckoutLeadsModule,
+    SupportEnquiriesModule,
     DeliveryAreasModule,
     ShippingModule,
     ImportModule,
     SizeChartsModule,
     CmsPagesModule,
+    StoreLocationsModule,
     TagsModule,
     ReviewsModule,
     ImagesModule,
@@ -196,6 +202,8 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     CommissionsModule,
     HrSelfServiceModule,
     HrAttendanceModule,
+    JobPostingsModule,
+    JobApplicationsModule,
     AttendanceDevicesModule,
     FinancialPeriodsModule,
     OpeningBalancesModule,

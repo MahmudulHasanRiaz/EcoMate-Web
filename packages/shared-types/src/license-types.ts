@@ -96,6 +96,13 @@ export const FEATURES: Record<string, FeatureFlag> = {
   admin_employees: { key: 'admin_employees', enabled: true },
   admin_tasks: { key: 'admin_tasks', enabled: true },
   admin_hr: { key: 'admin_hr', enabled: true },
+  // Careers (storefront dynamic-pages round 2026-11-13, Option B split gate):
+  // gates ONLY the HR-panel side (job postings + application management).
+  // The storefront /careers page stays ungated; only its apply affordance
+  // is conditional. Dependency is documentation only — the FeatureGuard
+  // ignores dependencies, so the parent is enforced explicitly in code
+  // (see careers-feature.ts in the backend job-postings module).
+  admin_hr_careers: { key: 'admin_hr_careers', enabled: true, dependencies: ['admin_hr'] },
 
   // ── J: Marketing & Content (6) ──
   admin_email_campaigns: { key: 'admin_email_campaigns', enabled: true, dependencies: ['admin_customers'] },
@@ -155,6 +162,7 @@ export const FEATURES: Record<string, FeatureFlag> = {
 export const FEATURE_KEYS = Object.keys(FEATURES);
 
 export const DEPENDENCY_MAP: Record<string, string[]> = {
+  admin_hr_careers: ['admin_hr'],
   admin_warehouses: ['admin_inventory'],
   admin_inventory_valuation: ['admin_inventory'],
   admin_purchases: ['admin_suppliers', 'admin_inventory'],

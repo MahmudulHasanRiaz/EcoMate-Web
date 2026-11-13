@@ -42,6 +42,8 @@ import { Route as AuthenticatedOpMyProfileRouteImport } from './routes/_authenti
 import { Route as AuthenticatedOpOverviewRouteImport } from './routes/_authenticated/op/overview'
 import { Route as AuthenticatedOpPrintRouteRouteImport } from './routes/_authenticated/op/print/route'
 import { Route as AuthenticatedOpSettingsRouteRouteImport } from './routes/_authenticated/op/settings/route'
+import { Route as AuthenticatedHrCareersIndexRouteImport } from './routes/_authenticated/hr/careers/index'
+import { Route as AuthenticatedHrCareersApplicationsRouteImport } from './routes/_authenticated/hr/careers/applications'
 import { Route as AuthenticatedHrEmployeesIndexRouteImport } from './routes/_authenticated/hr/employees/index'
 import { Route as AuthenticatedHrEmployeesIdRouteImport } from './routes/_authenticated/hr/employees/$id'
 import { Route as AuthenticatedHrEmployeesCreateRouteImport } from './routes/_authenticated/hr/employees/create'
@@ -137,6 +139,8 @@ import { Route as AuthenticatedOpScannerIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedOpShipmentsIndexRouteImport } from './routes/_authenticated/op/shipments/index'
 import { Route as AuthenticatedOpSizeChartsIndexRouteImport } from './routes/_authenticated/op/size-charts/index'
 import { Route as AuthenticatedOpSuppliersIndexRouteImport } from './routes/_authenticated/op/suppliers/index'
+import { Route as AuthenticatedOpSupportEnquiriesIndexRouteImport } from './routes/_authenticated/op/support-enquiries/index'
+import { Route as AuthenticatedOpSupportEnquiriesIdRouteImport } from './routes/_authenticated/op/support-enquiries/$id'
 import { Route as AuthenticatedOpTagsIndexRouteImport } from './routes/_authenticated/op/tags/index'
 import { Route as AuthenticatedOpTasksIndexRouteImport } from './routes/_authenticated/op/tasks/index'
 import { Route as AuthenticatedOpTransactionsIndexRouteImport } from './routes/_authenticated/op/transactions/index'
@@ -158,6 +162,7 @@ import { Route as AuthenticatedMonSettingsPriceLabelIndexRouteImport } from './r
 import { Route as AuthenticatedMonSettingsShippingIndexRouteImport } from './routes/_authenticated/mon/settings/shipping/index'
 import { Route as AuthenticatedMonSettingsSmtpIndexRouteImport } from './routes/_authenticated/mon/settings/smtp/index'
 import { Route as AuthenticatedMonSettingsStorageIndexRouteImport } from './routes/_authenticated/mon/settings/storage/index'
+import { Route as AuthenticatedMonSettingsStoreLocationsIndexRouteImport } from './routes/_authenticated/mon/settings/store-locations/index'
 import { Route as AuthenticatedMonSettingsStorefrontIndexRouteImport } from './routes/_authenticated/mon/settings/storefront/index'
 import { Route as AuthenticatedMonSettingsSystemIndexRouteImport } from './routes/_authenticated/mon/settings/system/index'
 import { Route as AuthenticatedMonSettingsTrackingIndexRouteImport } from './routes/_authenticated/mon/settings/tracking/index'
@@ -359,6 +364,18 @@ const AuthenticatedOpSettingsRouteRoute =
   AuthenticatedOpSettingsRouteRouteImport.update({
     id: '/op/settings',
     path: '/op/settings',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedHrCareersIndexRoute =
+  AuthenticatedHrCareersIndexRouteImport.update({
+    id: '/hr/careers/',
+    path: '/hr/careers/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedHrCareersApplicationsRoute =
+  AuthenticatedHrCareersApplicationsRouteImport.update({
+    id: '/hr/careers/applications',
+    path: '/hr/careers/applications',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedHrEmployeesIndexRoute =
@@ -928,6 +945,18 @@ const AuthenticatedOpSuppliersIndexRoute =
     path: '/op/suppliers/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOpSupportEnquiriesIndexRoute =
+  AuthenticatedOpSupportEnquiriesIndexRouteImport.update({
+    id: '/op/support-enquiries/',
+    path: '/op/support-enquiries/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOpSupportEnquiriesIdRoute =
+  AuthenticatedOpSupportEnquiriesIdRouteImport.update({
+    id: '/op/support-enquiries/$id',
+    path: '/op/support-enquiries/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOpTagsIndexRoute =
   AuthenticatedOpTagsIndexRouteImport.update({
     id: '/op/tags/',
@@ -1052,6 +1081,12 @@ const AuthenticatedMonSettingsStorageIndexRoute =
   AuthenticatedMonSettingsStorageIndexRouteImport.update({
     id: '/storage/',
     path: '/storage/',
+    getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
+  } as any)
+const AuthenticatedMonSettingsStoreLocationsIndexRoute =
+  AuthenticatedMonSettingsStoreLocationsIndexRouteImport.update({
+    id: '/store-locations/',
+    path: '/store-locations/',
     getParentRoute: () => AuthenticatedMonSettingsRouteRoute,
   } as any)
 const AuthenticatedMonSettingsStorefrontIndexRoute =
@@ -1256,6 +1291,7 @@ export interface FileRoutesByFullPath {
   '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon/': typeof AuthenticatedMonIndexRoute
   '/op/': typeof AuthenticatedOpIndexRoute
+  '/hr/careers/applications': typeof AuthenticatedHrCareersApplicationsRoute
   '/hr/employees/$id': typeof AuthenticatedHrEmployeesIdRoute
   '/hr/employees/create': typeof AuthenticatedHrEmployeesCreateRoute
   '/hr/employees/departments': typeof AuthenticatedHrEmployeesDepartmentsRoute
@@ -1302,6 +1338,8 @@ export interface FileRoutesByFullPath {
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/op/products/$id': typeof AuthenticatedOpProductsIdRoute
   '/op/returns/$id': typeof AuthenticatedOpReturnsIdRoute
+  '/op/support-enquiries/$id': typeof AuthenticatedOpSupportEnquiriesIdRoute
+  '/hr/careers/': typeof AuthenticatedHrCareersIndexRoute
   '/hr/employees/': typeof AuthenticatedHrEmployeesIndexRoute
   '/hr/payroll/': typeof AuthenticatedHrPayrollIndexRoute
   '/hr/users/': typeof AuthenticatedHrUsersIndexRoute
@@ -1351,6 +1389,7 @@ export interface FileRoutesByFullPath {
   '/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
   '/op/size-charts/': typeof AuthenticatedOpSizeChartsIndexRoute
   '/op/suppliers/': typeof AuthenticatedOpSuppliersIndexRoute
+  '/op/support-enquiries/': typeof AuthenticatedOpSupportEnquiriesIndexRoute
   '/op/tags/': typeof AuthenticatedOpTagsIndexRoute
   '/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
@@ -1380,6 +1419,7 @@ export interface FileRoutesByFullPath {
   '/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/mon/settings/store-locations/': typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   '/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
@@ -1434,6 +1474,7 @@ export interface FileRoutesByTo {
   '/op/overview': typeof AuthenticatedOpOverviewRoute
   '/mon': typeof AuthenticatedMonIndexRoute
   '/op': typeof AuthenticatedOpIndexRoute
+  '/hr/careers/applications': typeof AuthenticatedHrCareersApplicationsRoute
   '/hr/employees/$id': typeof AuthenticatedHrEmployeesIdRoute
   '/hr/employees/create': typeof AuthenticatedHrEmployeesCreateRoute
   '/hr/employees/departments': typeof AuthenticatedHrEmployeesDepartmentsRoute
@@ -1480,6 +1521,8 @@ export interface FileRoutesByTo {
   '/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/op/products/$id': typeof AuthenticatedOpProductsIdRoute
   '/op/returns/$id': typeof AuthenticatedOpReturnsIdRoute
+  '/op/support-enquiries/$id': typeof AuthenticatedOpSupportEnquiriesIdRoute
+  '/hr/careers': typeof AuthenticatedHrCareersIndexRoute
   '/hr/employees': typeof AuthenticatedHrEmployeesIndexRoute
   '/hr/payroll': typeof AuthenticatedHrPayrollIndexRoute
   '/hr/users': typeof AuthenticatedHrUsersIndexRoute
@@ -1529,6 +1572,7 @@ export interface FileRoutesByTo {
   '/op/shipments': typeof AuthenticatedOpShipmentsIndexRoute
   '/op/size-charts': typeof AuthenticatedOpSizeChartsIndexRoute
   '/op/suppliers': typeof AuthenticatedOpSuppliersIndexRoute
+  '/op/support-enquiries': typeof AuthenticatedOpSupportEnquiriesIndexRoute
   '/op/tags': typeof AuthenticatedOpTagsIndexRoute
   '/op/tasks': typeof AuthenticatedOpTasksIndexRoute
   '/op/transactions': typeof AuthenticatedOpTransactionsIndexRoute
@@ -1558,6 +1602,7 @@ export interface FileRoutesByTo {
   '/mon/settings/shipping': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/mon/settings/smtp': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/mon/settings/storage': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/mon/settings/store-locations': typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   '/mon/settings/storefront': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/mon/settings/system': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/mon/settings/tracking': typeof AuthenticatedMonSettingsTrackingIndexRoute
@@ -1614,6 +1659,7 @@ export interface FileRoutesById {
   '/_authenticated/op/overview': typeof AuthenticatedOpOverviewRoute
   '/_authenticated/mon/': typeof AuthenticatedMonIndexRoute
   '/_authenticated/op/': typeof AuthenticatedOpIndexRoute
+  '/_authenticated/hr/careers/applications': typeof AuthenticatedHrCareersApplicationsRoute
   '/_authenticated/hr/employees/$id': typeof AuthenticatedHrEmployeesIdRoute
   '/_authenticated/hr/employees/create': typeof AuthenticatedHrEmployeesCreateRoute
   '/_authenticated/hr/employees/departments': typeof AuthenticatedHrEmployeesDepartmentsRoute
@@ -1660,6 +1706,8 @@ export interface FileRoutesById {
   '/_authenticated/op/orders/create': typeof AuthenticatedOpOrdersCreateRoute
   '/_authenticated/op/products/$id': typeof AuthenticatedOpProductsIdRoute
   '/_authenticated/op/returns/$id': typeof AuthenticatedOpReturnsIdRoute
+  '/_authenticated/op/support-enquiries/$id': typeof AuthenticatedOpSupportEnquiriesIdRoute
+  '/_authenticated/hr/careers/': typeof AuthenticatedHrCareersIndexRoute
   '/_authenticated/hr/employees/': typeof AuthenticatedHrEmployeesIndexRoute
   '/_authenticated/hr/payroll/': typeof AuthenticatedHrPayrollIndexRoute
   '/_authenticated/hr/users/': typeof AuthenticatedHrUsersIndexRoute
@@ -1709,6 +1757,7 @@ export interface FileRoutesById {
   '/_authenticated/op/shipments/': typeof AuthenticatedOpShipmentsIndexRoute
   '/_authenticated/op/size-charts/': typeof AuthenticatedOpSizeChartsIndexRoute
   '/_authenticated/op/suppliers/': typeof AuthenticatedOpSuppliersIndexRoute
+  '/_authenticated/op/support-enquiries/': typeof AuthenticatedOpSupportEnquiriesIndexRoute
   '/_authenticated/op/tags/': typeof AuthenticatedOpTagsIndexRoute
   '/_authenticated/op/tasks/': typeof AuthenticatedOpTasksIndexRoute
   '/_authenticated/op/transactions/': typeof AuthenticatedOpTransactionsIndexRoute
@@ -1738,6 +1787,7 @@ export interface FileRoutesById {
   '/_authenticated/mon/settings/shipping/': typeof AuthenticatedMonSettingsShippingIndexRoute
   '/_authenticated/mon/settings/smtp/': typeof AuthenticatedMonSettingsSmtpIndexRoute
   '/_authenticated/mon/settings/storage/': typeof AuthenticatedMonSettingsStorageIndexRoute
+  '/_authenticated/mon/settings/store-locations/': typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   '/_authenticated/mon/settings/storefront/': typeof AuthenticatedMonSettingsStorefrontIndexRoute
   '/_authenticated/mon/settings/system/': typeof AuthenticatedMonSettingsSystemIndexRoute
   '/_authenticated/mon/settings/tracking/': typeof AuthenticatedMonSettingsTrackingIndexRoute
@@ -1794,6 +1844,7 @@ export interface FileRouteTypes {
     | '/op/overview'
     | '/mon/'
     | '/op/'
+    | '/hr/careers/applications'
     | '/hr/employees/$id'
     | '/hr/employees/create'
     | '/hr/employees/departments'
@@ -1840,6 +1891,8 @@ export interface FileRouteTypes {
     | '/op/orders/create'
     | '/op/products/$id'
     | '/op/returns/$id'
+    | '/op/support-enquiries/$id'
+    | '/hr/careers/'
     | '/hr/employees/'
     | '/hr/payroll/'
     | '/hr/users/'
@@ -1889,6 +1942,7 @@ export interface FileRouteTypes {
     | '/op/shipments/'
     | '/op/size-charts/'
     | '/op/suppliers/'
+    | '/op/support-enquiries/'
     | '/op/tags/'
     | '/op/tasks/'
     | '/op/transactions/'
@@ -1918,6 +1972,7 @@ export interface FileRouteTypes {
     | '/mon/settings/shipping/'
     | '/mon/settings/smtp/'
     | '/mon/settings/storage/'
+    | '/mon/settings/store-locations/'
     | '/mon/settings/storefront/'
     | '/mon/settings/system/'
     | '/mon/settings/tracking/'
@@ -1972,6 +2027,7 @@ export interface FileRouteTypes {
     | '/op/overview'
     | '/mon'
     | '/op'
+    | '/hr/careers/applications'
     | '/hr/employees/$id'
     | '/hr/employees/create'
     | '/hr/employees/departments'
@@ -2018,6 +2074,8 @@ export interface FileRouteTypes {
     | '/op/orders/create'
     | '/op/products/$id'
     | '/op/returns/$id'
+    | '/op/support-enquiries/$id'
+    | '/hr/careers'
     | '/hr/employees'
     | '/hr/payroll'
     | '/hr/users'
@@ -2067,6 +2125,7 @@ export interface FileRouteTypes {
     | '/op/shipments'
     | '/op/size-charts'
     | '/op/suppliers'
+    | '/op/support-enquiries'
     | '/op/tags'
     | '/op/tasks'
     | '/op/transactions'
@@ -2096,6 +2155,7 @@ export interface FileRouteTypes {
     | '/mon/settings/shipping'
     | '/mon/settings/smtp'
     | '/mon/settings/storage'
+    | '/mon/settings/store-locations'
     | '/mon/settings/storefront'
     | '/mon/settings/system'
     | '/mon/settings/tracking'
@@ -2151,6 +2211,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/overview'
     | '/_authenticated/mon/'
     | '/_authenticated/op/'
+    | '/_authenticated/hr/careers/applications'
     | '/_authenticated/hr/employees/$id'
     | '/_authenticated/hr/employees/create'
     | '/_authenticated/hr/employees/departments'
@@ -2197,6 +2258,8 @@ export interface FileRouteTypes {
     | '/_authenticated/op/orders/create'
     | '/_authenticated/op/products/$id'
     | '/_authenticated/op/returns/$id'
+    | '/_authenticated/op/support-enquiries/$id'
+    | '/_authenticated/hr/careers/'
     | '/_authenticated/hr/employees/'
     | '/_authenticated/hr/payroll/'
     | '/_authenticated/hr/users/'
@@ -2246,6 +2309,7 @@ export interface FileRouteTypes {
     | '/_authenticated/op/shipments/'
     | '/_authenticated/op/size-charts/'
     | '/_authenticated/op/suppliers/'
+    | '/_authenticated/op/support-enquiries/'
     | '/_authenticated/op/tags/'
     | '/_authenticated/op/tasks/'
     | '/_authenticated/op/transactions/'
@@ -2275,6 +2339,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mon/settings/shipping/'
     | '/_authenticated/mon/settings/smtp/'
     | '/_authenticated/mon/settings/storage/'
+    | '/_authenticated/mon/settings/store-locations/'
     | '/_authenticated/mon/settings/storefront/'
     | '/_authenticated/mon/settings/system/'
     | '/_authenticated/mon/settings/tracking/'
@@ -2544,6 +2609,20 @@ declare module '@tanstack/react-router' {
       path: '/op/settings'
       fullPath: '/op/settings'
       preLoaderRoute: typeof AuthenticatedOpSettingsRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/careers/': {
+      id: '/_authenticated/hr/careers/'
+      path: '/hr/careers'
+      fullPath: '/hr/careers/'
+      preLoaderRoute: typeof AuthenticatedHrCareersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/hr/careers/applications': {
+      id: '/_authenticated/hr/careers/applications'
+      path: '/hr/careers/applications'
+      fullPath: '/hr/careers/applications'
+      preLoaderRoute: typeof AuthenticatedHrCareersApplicationsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/hr/employees/': {
@@ -3211,6 +3290,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOpSuppliersIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/op/support-enquiries/': {
+      id: '/_authenticated/op/support-enquiries/'
+      path: '/op/support-enquiries'
+      fullPath: '/op/support-enquiries/'
+      preLoaderRoute: typeof AuthenticatedOpSupportEnquiriesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/op/support-enquiries/$id': {
+      id: '/_authenticated/op/support-enquiries/$id'
+      path: '/op/support-enquiries/$id'
+      fullPath: '/op/support-enquiries/$id'
+      preLoaderRoute: typeof AuthenticatedOpSupportEnquiriesIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/op/tags/': {
       id: '/_authenticated/op/tags/'
       path: '/op/tags'
@@ -3356,6 +3449,13 @@ declare module '@tanstack/react-router' {
       path: '/storage'
       fullPath: '/mon/settings/storage/'
       preLoaderRoute: typeof AuthenticatedMonSettingsStorageIndexRouteImport
+      parentRoute: typeof AuthenticatedMonSettingsRouteRoute
+    }
+    '/_authenticated/mon/settings/store-locations/': {
+      id: '/_authenticated/mon/settings/store-locations/'
+      path: '/store-locations'
+      fullPath: '/mon/settings/store-locations/'
+      preLoaderRoute: typeof AuthenticatedMonSettingsStoreLocationsIndexRouteImport
       parentRoute: typeof AuthenticatedMonSettingsRouteRoute
     }
     '/_authenticated/mon/settings/storefront/': {
@@ -3574,6 +3674,7 @@ interface AuthenticatedMonSettingsRouteRouteChildren {
   AuthenticatedMonSettingsShippingIndexRoute: typeof AuthenticatedMonSettingsShippingIndexRoute
   AuthenticatedMonSettingsSmtpIndexRoute: typeof AuthenticatedMonSettingsSmtpIndexRoute
   AuthenticatedMonSettingsStorageIndexRoute: typeof AuthenticatedMonSettingsStorageIndexRoute
+  AuthenticatedMonSettingsStoreLocationsIndexRoute: typeof AuthenticatedMonSettingsStoreLocationsIndexRoute
   AuthenticatedMonSettingsStorefrontIndexRoute: typeof AuthenticatedMonSettingsStorefrontIndexRoute
   AuthenticatedMonSettingsSystemIndexRoute: typeof AuthenticatedMonSettingsSystemIndexRoute
   AuthenticatedMonSettingsTrackingIndexRoute: typeof AuthenticatedMonSettingsTrackingIndexRoute
@@ -3613,6 +3714,8 @@ const AuthenticatedMonSettingsRouteRouteChildren: AuthenticatedMonSettingsRouteR
       AuthenticatedMonSettingsSmtpIndexRoute,
     AuthenticatedMonSettingsStorageIndexRoute:
       AuthenticatedMonSettingsStorageIndexRoute,
+    AuthenticatedMonSettingsStoreLocationsIndexRoute:
+      AuthenticatedMonSettingsStoreLocationsIndexRoute,
     AuthenticatedMonSettingsStorefrontIndexRoute:
       AuthenticatedMonSettingsStorefrontIndexRoute,
     AuthenticatedMonSettingsSystemIndexRoute:
@@ -3698,6 +3801,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpOverviewRoute: typeof AuthenticatedOpOverviewRoute
   AuthenticatedMonIndexRoute: typeof AuthenticatedMonIndexRoute
   AuthenticatedOpIndexRoute: typeof AuthenticatedOpIndexRoute
+  AuthenticatedHrCareersApplicationsRoute: typeof AuthenticatedHrCareersApplicationsRoute
   AuthenticatedHrEmployeesIdRoute: typeof AuthenticatedHrEmployeesIdRoute
   AuthenticatedHrEmployeesCreateRoute: typeof AuthenticatedHrEmployeesCreateRoute
   AuthenticatedHrEmployeesDepartmentsRoute: typeof AuthenticatedHrEmployeesDepartmentsRoute
@@ -3744,6 +3848,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpOrdersCreateRoute: typeof AuthenticatedOpOrdersCreateRoute
   AuthenticatedOpProductsIdRoute: typeof AuthenticatedOpProductsIdRoute
   AuthenticatedOpReturnsIdRoute: typeof AuthenticatedOpReturnsIdRoute
+  AuthenticatedOpSupportEnquiriesIdRoute: typeof AuthenticatedOpSupportEnquiriesIdRoute
+  AuthenticatedHrCareersIndexRoute: typeof AuthenticatedHrCareersIndexRoute
   AuthenticatedHrEmployeesIndexRoute: typeof AuthenticatedHrEmployeesIndexRoute
   AuthenticatedHrPayrollIndexRoute: typeof AuthenticatedHrPayrollIndexRoute
   AuthenticatedHrUsersIndexRoute: typeof AuthenticatedHrUsersIndexRoute
@@ -3793,6 +3899,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOpShipmentsIndexRoute: typeof AuthenticatedOpShipmentsIndexRoute
   AuthenticatedOpSizeChartsIndexRoute: typeof AuthenticatedOpSizeChartsIndexRoute
   AuthenticatedOpSuppliersIndexRoute: typeof AuthenticatedOpSuppliersIndexRoute
+  AuthenticatedOpSupportEnquiriesIndexRoute: typeof AuthenticatedOpSupportEnquiriesIndexRoute
   AuthenticatedOpTagsIndexRoute: typeof AuthenticatedOpTagsIndexRoute
   AuthenticatedOpTasksIndexRoute: typeof AuthenticatedOpTasksIndexRoute
   AuthenticatedOpTransactionsIndexRoute: typeof AuthenticatedOpTransactionsIndexRoute
@@ -3842,6 +3949,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpOverviewRoute: AuthenticatedOpOverviewRoute,
   AuthenticatedMonIndexRoute: AuthenticatedMonIndexRoute,
   AuthenticatedOpIndexRoute: AuthenticatedOpIndexRoute,
+  AuthenticatedHrCareersApplicationsRoute:
+    AuthenticatedHrCareersApplicationsRoute,
   AuthenticatedHrEmployeesIdRoute: AuthenticatedHrEmployeesIdRoute,
   AuthenticatedHrEmployeesCreateRoute: AuthenticatedHrEmployeesCreateRoute,
   AuthenticatedHrEmployeesDepartmentsRoute:
@@ -3909,6 +4018,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpOrdersCreateRoute: AuthenticatedOpOrdersCreateRoute,
   AuthenticatedOpProductsIdRoute: AuthenticatedOpProductsIdRoute,
   AuthenticatedOpReturnsIdRoute: AuthenticatedOpReturnsIdRoute,
+  AuthenticatedOpSupportEnquiriesIdRoute:
+    AuthenticatedOpSupportEnquiriesIdRoute,
+  AuthenticatedHrCareersIndexRoute: AuthenticatedHrCareersIndexRoute,
   AuthenticatedHrEmployeesIndexRoute: AuthenticatedHrEmployeesIndexRoute,
   AuthenticatedHrPayrollIndexRoute: AuthenticatedHrPayrollIndexRoute,
   AuthenticatedHrUsersIndexRoute: AuthenticatedHrUsersIndexRoute,
@@ -3963,6 +4075,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOpShipmentsIndexRoute: AuthenticatedOpShipmentsIndexRoute,
   AuthenticatedOpSizeChartsIndexRoute: AuthenticatedOpSizeChartsIndexRoute,
   AuthenticatedOpSuppliersIndexRoute: AuthenticatedOpSuppliersIndexRoute,
+  AuthenticatedOpSupportEnquiriesIndexRoute:
+    AuthenticatedOpSupportEnquiriesIndexRoute,
   AuthenticatedOpTagsIndexRoute: AuthenticatedOpTagsIndexRoute,
   AuthenticatedOpTasksIndexRoute: AuthenticatedOpTasksIndexRoute,
   AuthenticatedOpTransactionsIndexRoute: AuthenticatedOpTransactionsIndexRoute,

@@ -1,6 +1,6 @@
 // Field schemas that drive the "System Pages" settings form in the CMS Pages UI.
 
-export type SimpleFieldType = 'text' | 'textarea' | 'number' | 'boolean' | 'image' | 'richText'
+export type SimpleFieldType = 'text' | 'textarea' | 'number' | 'boolean' | 'image' | 'richText' | 'select'
 
 export interface SimpleFieldDef {
   key: string
@@ -8,6 +8,8 @@ export interface SimpleFieldDef {
   type: SimpleFieldType
   placeholder?: string
   help?: string
+  /** Options for 'select' fields — values are selected, never typed. */
+  options?: { value: string; label: string }[]
 }
 
 export interface ObjectArrayFieldDef {
@@ -49,16 +51,29 @@ const heroFields: SimpleFieldDef[] = [
   { key: 'image', label: 'Hero Image', type: 'image' },
 ]
 
-const sectionsField: ObjectArrayFieldDef = {
-  key: 'sections',
-  label: 'Content Sections',
-  itemLabel: 'Section',
-  type: 'array',
-  fields: [
-    { key: 'heading', label: 'Heading', type: 'text' },
-    { key: 'body', label: 'Body', type: 'textarea' },
-  ],
+/**
+ * Policy content sections. Bodies are rich text (not plain textareas) so a
+ * policy can carry real formatted prose. `id` is the section's stable
+ * identifier — the storefront keys icons/anchor links off it, so renaming a
+ * heading never silently changes the icon or breaks a link. `extra` holds
+ * per-page semantic controls (exchange `kind`, terms `highlight`).
+ */
+function policySectionsField(extraFields: TemplateFieldDef[] = []): ObjectArrayFieldDef {
+  return {
+    key: 'sections',
+    label: 'Content Sections',
+    itemLabel: 'Section',
+    type: 'array',
+    fields: [
+      { key: 'id', label: 'Section ID', type: 'text', placeholder: 'e.g. data-collection', help: 'Stable identifier for the section icon and anchor link. Set once; renaming the heading keeps the icon and link working.' },
+      { key: 'heading', label: 'Heading', type: 'text' },
+      { key: 'body', label: 'Body', type: 'richText' },
+      ...extraFields,
+    ],
+  }
 }
+
+const sectionsField = policySectionsField()
 
 export const templatePageSchemas: Record<string, TemplatePageSchema> = {
   careers: {
@@ -68,20 +83,9 @@ export const templatePageSchemas: Record<string, TemplatePageSchema> = {
     description: 'Job openings, benefits, and how to apply.',
     fields: [
       { key: 'hero', label: 'Hero', type: 'object', fields: heroFields },
-      {
-        key: 'jobs',
-        label: 'Open Positions',
-        itemLabel: 'Job',
-        type: 'array',
-        fields: [
-          { key: 'title', label: 'Job Title', type: 'text' },
-          { key: 'department', label: 'Department', type: 'text' },
-          { key: 'location', label: 'Location', type: 'text' },
-          { key: 'type', label: 'Employment Type', type: 'text' },
-          { key: 'salary', label: 'Salary', type: 'text' },
-          { key: 'description', label: 'Description', type: 'textarea' },
-        ],
-      },
+      // NOTE: the old `jobs[]` array is dropped — job postings are managed
+      // in the HR panel (JobPosting model) and listed from the API. Do not
+      // re-add a jobs array here; the 4 fake seed jobs are not migrated.
       { key: 'benefits', label: 'Benefits', itemLabel: 'Benefit', type: 'stringArray', placeholder: 'e.g. Health Insurance' },
       { key: 'application', label: 'Application', type: 'object', fields: [
         { key: 'email', label: 'Apply Email', type: 'text' },
@@ -96,6 +100,7 @@ export const templatePageSchemas: Record<string, TemplatePageSchema> = {
     description: 'Our story, values, and mission.',
     fields: [
       { key: 'story', label: 'Story', type: 'textarea', help: 'Separate paragraphs with a blank line.' },
+      { key: 'tagline', label: 'Hero Tagline', type: 'textarea', help: 'Shown under the store name in the hero. Leave empty to hide it.' },
       {
         key: 'values',
         label: 'Core Values',
@@ -121,6 +126,7 @@ export const templatePageSchemas: Record<string, TemplatePageSchema> = {
       { key: 'teamSize', label: 'Team Size', type: 'text' },
       { key: 'ceoName', label: 'CEO / Founder', type: 'text' },
       { key: 'established', label: 'Established Year', type: 'text' },
+      { key: 'tagline', label: 'Hero Tagline', type: 'textarea', help: 'Shown in the hero panel. Leave empty to hide it.' },
       { key: 'philosophy', label: 'Philosophy', type: 'textarea' },
       { key: 'vision', label: 'Vision', type: 'textarea' },
       { key: 'impact', label: 'Impact', type: 'textarea' },
@@ -141,6 +147,7 @@ export const templatePageSchemas: Record<string, TemplatePageSchema> = {
         fields: [
           { key: 'question', label: 'Question', type: 'textarea' },
           { key: 'answer', label: 'Answer', type: 'textarea' },
+          { key: 'category', label: 'Category', type: 'text', placeholder: 'e.g. Orders', help: 'Groups questions under the category filter on the storefront.' },
         ],
       },
     ],
@@ -209,28 +216,53 @@ export const templatePageSchemas: Record<string, TemplatePageSchema> = {
     slug: 'terms-conditions',
     title: 'Terms & Conditions',
     description: 'Terms of service document.',
-    fields: [sectionsField],
+    fields: [
+      { key: 'intro', label: 'Introduction', type: 'textarea', help: 'Shown under the page title. Leave empty to hide it.' },
+      policySectionsField([
+        { key: 'highlight', label: 'Highlight as callout', type: 'boolean', help: 'Show this section in the highlighted callout card instead of the main list.' },
+      ]),
+    ],
   },
   'privacy-policy': {
     key: 'privacy-policy',
     slug: 'privacy-policy',
     title: 'Privacy Policy',
     description: 'Privacy and data handling policy.',
-    fields: [sectionsField],
+    fields: [
+      { key: 'intro', label: 'Introduction', type: 'textarea', help: 'Shown under the page title. Leave empty to hide it.' },
+      sectionsField,
+    ],
   },
   'refund-policy': {
     key: 'refund-policy',
     slug: 'refund-policy',
     title: 'Refund Policy',
     description: 'Returns, refunds, and eligibility.',
-    fields: [sectionsField, { key: 'contactEmail', label: 'Contact Email', type: 'text' }],
+    fields: [
+      { key: 'intro', label: 'Introduction', type: 'textarea', help: 'Shown under the page title. Leave empty to hide it.' },
+      sectionsField,
+      { key: 'notice', label: 'Important Notice', type: 'object', fields: [
+        { key: 'title', label: 'Notice Title', type: 'text' },
+        { key: 'body', label: 'Notice Text', type: 'textarea', help: 'Shown in the amber notice box. Leave empty to hide the box entirely.' },
+      ] },
+      { key: 'contactEmail', label: 'Contact Email', type: 'text' },
+    ],
   },
   'exchange-policy': {
     key: 'exchange-policy',
     slug: 'exchange-policy',
     title: 'Exchange Policy',
     description: 'Product exchange conditions.',
-    fields: [sectionsField],
+    fields: [
+      { key: 'intro', label: 'Introduction', type: 'textarea', help: 'Shown under the page title. Leave empty to hide it.' },
+      { key: 'quote', label: 'Quote', type: 'textarea', help: 'Shown in the quote card. Leave empty to hide the card.' },
+      policySectionsField([
+        { key: 'kind', label: 'Role', type: 'select', options: [
+          { value: 'step', label: 'Step — shown as a step card' },
+          { value: 'condition', label: 'Condition — shown in the conditions list' },
+        ], help: 'How this section is presented on the page.' },
+      ]),
+    ],
   },
   'shipping-policy': {
     key: 'shipping-policy',
@@ -238,6 +270,7 @@ export const templatePageSchemas: Record<string, TemplatePageSchema> = {
     title: 'Shipping Policy',
     description: 'Shipping times, charges, and delivery information.',
     fields: [
+      { key: 'intro', label: 'Introduction', type: 'textarea', help: 'Shown under the page title. Leave empty to hide it.' },
       sectionsField,
       { key: 'deliveryCharge', label: 'Inside Dhaka Delivery Charge', type: 'number' },
       { key: 'freeDeliveryMin', label: 'Free Delivery Minimum', type: 'number' },
@@ -255,6 +288,9 @@ export const templatePageSchemas: Record<string, TemplatePageSchema> = {
       { key: 'description', label: 'Description', type: 'textarea' },
       { key: 'image', label: 'App Image', type: 'image' },
       { key: 'features', label: 'Feature Highlights', itemLabel: 'Feature', type: 'stringArray' },
+      { key: 'qrCodeUrl', label: 'QR Code Image URL', type: 'image', help: 'QR code shown on the download page. Leave empty to hide it.' },
+      { key: 'version', label: 'App Version', type: 'text', placeholder: 'e.g. 1.4.0' },
+      { key: 'apkUrl', label: 'Direct APK Download URL', type: 'text', help: 'Shown only when set.' },
     ],
   },
 }

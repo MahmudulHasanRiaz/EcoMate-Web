@@ -1,5 +1,13 @@
 import type { MetadataRoute } from 'next';
 import { publicMediaUrl, siteUrl } from '@/lib/site-url';
+import {
+  preFormattedPages,
+  templateHasRealContent,
+} from '@/lib/templates/registry';
+import {
+  TEMPLATE_PAGE_ROUTES,
+  hasRealShippingConfig,
+} from '@/lib/template-content';
 
 // Crawler hits must not regenerate on every request: cache for an hour.
 // Product/stock freshness lives on the PDP (short TTL), not here.
@@ -10,17 +18,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const staticPages: MetadataRoute.Sitemap = [
     { url: baseUrl, lastModified: new Date(), changeFrequency: 'daily' as const, priority: 1 },
-    { url: `${baseUrl}/about`, lastModified: new Date(), changeFrequency: 'monthly' as const, priority: 0.5 },
-    { url: `${baseUrl}/faq`, lastModified: new Date(), changeFrequency: 'monthly' as const, priority: 0.5 },
-    { url: `${baseUrl}/privacy-policy`, lastModified: new Date(), changeFrequency: 'yearly' as const, priority: 0.3 },
-    { url: `${baseUrl}/terms-conditions`, lastModified: new Date(), changeFrequency: 'yearly' as const, priority: 0.3 },
-    { url: `${baseUrl}/shipping-policy`, lastModified: new Date(), changeFrequency: 'yearly' as const, priority: 0.3 },
-    { url: `${baseUrl}/refund-policy`, lastModified: new Date(), changeFrequency: 'yearly' as const, priority: 0.3 },
-    { url: `${baseUrl}/exchange-policy`, lastModified: new Date(), changeFrequency: 'yearly' as const, priority: 0.3 },
-    { url: `${baseUrl}/delivery-areas`, lastModified: new Date(), changeFrequency: 'monthly' as const, priority: 0.4 },
-    { url: `${baseUrl}/stores`, lastModified: new Date(), changeFrequency: 'monthly' as const, priority: 0.4 },
-    { url: `${baseUrl}/support`, lastModified: new Date(), changeFrequency: 'monthly' as const, priority: 0.4 },
-    { url: `${baseUrl}/careers`, lastModified: new Date(), changeFrequency: 'monthly' as const, priority: 0.4 },
     { url: `${baseUrl}/combos`, lastModified: new Date(), changeFrequency: 'daily' as const, priority: 0.8 },
   ];
 
@@ -47,6 +44,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Throw instead so nothing is cached and the next hit retries; a
   // successful-but-empty catalog response is NOT a failure.
   let dynamicOk = false;
+
+  // Build-time prerender is exempt: `next build` generates /sitemap.xml
+  // inside the Docker builder, where no backend exists by design — the
+  // baked static-only result is only a placeholder until the first
+  // runtime revalidation replaces it. Throwing there fails the build
+  // (seen in Build #880). At runtime the throw stands.
+  const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
+
+  // D7 — search-engine indexing flag. ONE flag drives robots + sitemap +
+  // layout meta in lockstep: OFF → an empty sitemap, no entries at all.
+  // Only an explicit `false` turns it off; a missing key (pre-toggle
+  // backend) keeps the historic ON behaviour. A failed config fetch at
+  // runtime throws via the outage guard (same as any other dynamic
+  // fetch); at build time there is no backend by design, so ON is the
+  // placeholder until the first runtime revalidation.
+  // The payload is kept: the delivery-areas inclusion rule below also
+  // needs the live shipping config.
+  let storefrontCfg: any = null;
+  try {
+    const cfgRes = await fetch(`${apiUrl}/system-settings/storefront`);
+    const cfg = await cfgRes.json();
+    storefrontCfg = cfg;
+    if (cfg?.searchIndexingEnabled === false) return [];
+  } catch {
+    if (!isBuildPhase) {
+      throw new Error('sitemap: backend unreachable — refusing to cache a degenerate sitemap');
+    }
+  }
 
   // Fetch categories for dynamic category pages
   let categoryPages: MetadataRoute.Sitemap = [];
@@ -113,10 +138,59 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   } catch {}
 
-  // Fetch CMS pages
+  // Template pages (about, company, download, policies, …) — D8: a page
+  // enters the sitemap only when its stored CMS row is active AND carries
+  // real configured content (Part A's `templateHasRealContent`, called
+  // with the MERGED config per its contract). A slug fetch that fails
+  // (or a content-less row) omits that page for this regen; it never
+  // fails the whole sitemap, and the hourly revalidation retries it.
+  // Delivery-areas is special: its content now comes from the live
+  // shipping config, so it is also included when that config has zones /
+  // charges even with an empty CMS row.
+  let templatePages: MetadataRoute.Sitemap = [];
+  try {
+    const checks = await Promise.all(
+      TEMPLATE_PAGE_ROUTES.map(
+        async (t): Promise<MetadataRoute.Sitemap[number] | null> => {
+          try {
+            const res = await fetch(`${apiUrl}/cms-pages/slug/${t.slug}`);
+            dynamicOk = true;
+            if (!res.ok) return null;
+            const page = await res.json();
+            if (!page?.isActive) return null;
+            const def = preFormattedPages[t.key];
+            const merged = def
+              ? { ...def.defaultConfig, ...(page?.config || {}) }
+              : page?.config;
+            const hasContent =
+              templateHasRealContent(t.key, merged) ||
+              (t.key === 'delivery-areas' && hasRealShippingConfig(storefrontCfg));
+            if (!hasContent) return null;
+            return {
+              url: `${baseUrl}${t.path}`,
+              lastModified: page.updatedAt ? new Date(page.updatedAt) : new Date(),
+              changeFrequency: t.changeFrequency,
+              priority: t.priority,
+            };
+          } catch {
+            return null;
+          }
+        },
+      ),
+    );
+    templatePages = checks.filter(
+      (c): c is MetadataRoute.Sitemap[number] => c !== null,
+    );
+  } catch {}
+
+  // Fetch CMS content pages. The old code fetched the role-guarded list
+  // endpoint (`GET /cms-pages`) without auth and always got `[]` — no
+  // `/pages/*` URL ever entered the sitemap. The public footer endpoint
+  // (`GET /cms-pages/footer`, active + showInFooter) is the correct
+  // source and needs no auth.
   let cmsPages: MetadataRoute.Sitemap = [];
   try {
-    const res = await fetch(`${apiUrl}/cms-pages`);
+    const res = await fetch(`${apiUrl}/cms-pages/footer`);
     const data = await res.json();
     dynamicOk = true;
     const pages = Array.isArray(data) ? data : data.data || [];
@@ -130,15 +204,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   } catch {}
 
-  // Build-time prerender is exempt: `next build` generates /sitemap.xml
-  // inside the Docker builder, where no backend exists by design — the
-  // baked static-only result is only a placeholder until the first
-  // runtime revalidation replaces it. Throwing there fails the build
-  // (seen in Build #880). At runtime the throw stands.
-  const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
   if (!dynamicOk && !isBuildPhase) {
     throw new Error('sitemap: backend unreachable — refusing to cache a degenerate sitemap');
   }
 
-  return [...staticPages, ...categoryPages, ...productPages, ...comboPages, ...cmsPages];
+  return [...staticPages, ...templatePages, ...categoryPages, ...productPages, ...comboPages, ...cmsPages];
 }
