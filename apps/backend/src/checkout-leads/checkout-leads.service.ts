@@ -1024,8 +1024,11 @@ private async resolveCanonicalLead(
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date: `LEAD-${dateStr}` },
-        create: { date: `LEAD-${dateStr}`, seq: 1 },
+        // LEAD-YYMMDD is already a namespaced date key (never the shared
+        // order row); family 'ORD' is the default — the compound PK
+        // (date, family) requires the full key in `where`.
+        where: { date_family: { date: `LEAD-${dateStr}`, family: 'ORD' } },
+        create: { date: `LEAD-${dateStr}`, family: 'ORD', seq: 1 },
         update: { seq: { increment: 1 } },
       });
       return `${prefix}-${String(counter.seq).padStart(4, '0')}`;
@@ -1042,8 +1045,8 @@ private async resolveCanonicalLead(
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date: dateStr },
-        create: { date: dateStr, seq: 1 },
+        where: { date_family: { date: dateStr, family: 'ORD' } },
+        create: { date: dateStr, family: 'ORD', seq: 1 },
         update: { seq: { increment: 1 } },
       });
       return `${prefix}-${String(counter.seq).padStart(4, '0')}`;

@@ -63,6 +63,7 @@ export class OrdersController {
     @Query('sort') sort?: string,
     @Query('order') order?: string,
     @Query('includeTrashed') includeTrashed?: string,
+    @Query('trashedOnly') trashedOnly?: string,
     @Query('kind') kind?: 'SALE' | 'RETURN' | 'EXCHANGE',
     @Query('type') type?: string,
   ) {
@@ -79,6 +80,7 @@ export class OrdersController {
       sort,
       order,
       includeTrashed: includeTrashed === 'true',
+      trashedOnly: trashedOnly === 'true',
       kind: kind === 'SALE' || kind === 'RETURN' || kind === 'EXCHANGE' ? kind : undefined,
       type,
     });

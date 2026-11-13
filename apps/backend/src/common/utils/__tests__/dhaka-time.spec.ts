@@ -91,11 +91,44 @@ describe('dhaka-time (Asia/Dhaka, UTC+6, no DST)', () => {
       expect(dhakaDayRange('')).toEqual({ start: null, end: null });
     });
 
-    it('passes full ISO instants through unchanged', () => {
-      const iso = '2026-08-18T07:00:00.000Z';
-      const r = dhakaDayRange(iso);
-      expect(r.start!.toISOString()).toBe(iso);
-      expect(r.end!.toISOString()).toBe(iso);
+    // REGRESSION (dashboard-counts audit §1c/§6 P0.3): a full ISO datetime
+    // used to pass through as a single instant (start === end), collapsing
+    // any range built from it. It now resolves to the FULL Dhaka calendar
+    // day containing that instant — never a one-instant range.
+    it('expands a full ISO datetime to the whole Dhaka day containing it', () => {
+      const r = dhakaDayRange('2026-08-18T07:00:00.000Z');
+      // 07:00Z = 13:00 Dhaka 2026-08-18 → the whole Dhaka day 2026-08-18.
+      expect(r.start!.toISOString()).toBe('2026-08-17T18:00:00.000Z');
+      expect(r.end!.toISOString()).toBe('2026-08-18T17:59:59.999Z');
+      expect(r.end!.getTime() - r.start!.getTime()).toBe(
+        24 * 60 * 60 * 1000 - 1,
+      );
+    });
+
+    it('a datetime after Dhaka midnight belongs to the NEXT Dhaka day', () => {
+      // 2026-08-18T23:30:00Z = 2026-08-19 05:30 Dhaka — the date part says
+      // 08-18 but the instant lives in the Dhaka day 08-19.
+      const r = dhakaDayRange('2026-08-18T23:30:00.000Z');
+      expect(r.start!.toISOString()).toBe('2026-08-18T18:00:00.000Z');
+      expect(r.end!.toISOString()).toBe('2026-08-19T17:59:59.999Z');
+    });
+
+    it('a single datetime as startDate no longer collapses the range', () => {
+      const { start, end } = dhakaDayRange('2026-08-18T07:00:00.000Z');
+      expect(end!.getTime()).toBeGreaterThan(start!.getTime());
+      expect(end!.getTime() - start!.getTime()).toBe(
+        24 * 60 * 60 * 1000 - 1,
+      );
+    });
+
+    it('day-boundary instants keep their exact range (getTodayKpi shape)', () => {
+      // startOf/endOfDhakaDay passed as ISO strings must be unaffected.
+      const s = dhakaDayRange('2026-08-17T18:00:00.000Z');
+      expect(s.start!.toISOString()).toBe('2026-08-17T18:00:00.000Z');
+      expect(s.end!.toISOString()).toBe('2026-08-18T17:59:59.999Z');
+      const e = dhakaDayRange('2026-08-18T17:59:59.999Z');
+      expect(e.start!.toISOString()).toBe('2026-08-17T18:00:00.000Z');
+      expect(e.end!.toISOString()).toBe('2026-08-18T17:59:59.999Z');
     });
 
     it('tolerates month boundaries', () => {

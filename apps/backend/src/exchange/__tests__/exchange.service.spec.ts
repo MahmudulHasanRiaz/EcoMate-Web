@@ -6,6 +6,7 @@ import { OrdersService } from '../../orders/orders.service';
 import { OrdersEventService } from '../../orders/orders-event.service';
 import { CacheService } from '../../cache/cache.service';
 import { ReturnsService } from '../../returns/returns.service';
+import { dhakaDateParts } from '../../common/utils/dhaka-time';
 
 const actor = { userId: 'u1', email: 'staff@ecomate.com' };
 
@@ -490,5 +491,35 @@ describe('ExchangeService — lifecycle (§5, §6)', () => {
     );
     expect(store.orders).toHaveLength(1);
     expect(res.mode).toBe('PARTIAL');
+  });
+});
+describe('ExchangeService — displayId minting (counter split P1.4)', () => {
+  it("mints exchange numbers from the 'Ex' family, never the shared order sequence", async () => {
+    const upsert = jest.fn(async ({ create }: any) => ({
+      date: create.date,
+      seq: create.seq,
+    }));
+    const prisma: any = {
+      $transaction: async (cb: any) =>
+        cb({ orderCounter: { upsert } }),
+    };
+    const service = new ExchangeService(
+      prisma,
+      {} as any,
+      { emit: jest.fn() } as any,
+      { invalidateByPrefix: jest.fn() } as any,
+      {} as any,
+    );
+
+    const id = await (service as any).deriveExchangeDisplayId();
+
+    const { year, month, day } = dhakaDateParts();
+    const dateStr = `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
+    expect(upsert).toHaveBeenCalledWith({
+      where: { date_family: { date: dateStr, family: 'Ex' } },
+      create: { date: dateStr, family: 'Ex', seq: 1 },
+      update: { seq: { increment: 1 } },
+    });
+    expect(id).toBe(`Ex-${dateStr}-0001`);
   });
 });

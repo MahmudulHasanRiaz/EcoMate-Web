@@ -2146,8 +2146,19 @@ model ManagedStockLedger {
 }
 
 model OrderCounter {
-  date String @id // YYMMDD
-  seq  Int
+  date   String // YYMMDD
+  // Document family sharing this date row: 'ORD' | 'POS' | 'Ex' | 'JE' |
+  // 'EXP-JE' | 'EMP'. One sequence per (date, family) — a journal entry or
+  // employee hire can never consume an order number again (dashboard-counts
+  // audit 2026-11-13 §1c/§6 P1.4). Legacy rows (pre-split) carry family
+  // 'ORD': the shared seq they hold is the seed every family starts from
+  // (migration 20261113233000 copies it per family), so a mid-day deploy
+  // can never re-mint an existing displayId. LEAD-/CS- prefixed date keys
+  // were already namespaced rows and are untouched by the split.
+  family String @default("ORD")
+  seq    Int
+
+  @@id([date, family])
 }
 
 // Task 6 (Fix 13): RTN-YYMMDD-NNNN sequence counter. Separate from

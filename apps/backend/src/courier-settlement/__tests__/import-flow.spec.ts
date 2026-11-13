@@ -36,8 +36,9 @@ function makePrisma() {
   const tx: any = {
     orderCounter: {
       upsert: async ({ where }: any) => ({
-        date: where.date,
-        seq: (counters[where.date] = (counters[where.date] ?? 0) + 1),
+        date: where.date_family.date,
+        seq: (counters[where.date_family.date] =
+          (counters[where.date_family.date] ?? 0) + 1),
       }),
     },
     courierSettlementRow: {

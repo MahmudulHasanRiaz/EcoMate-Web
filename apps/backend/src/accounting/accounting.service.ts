@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { dhakaDateParts } from '../common/utils/dhaka-time';
 import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
 
 @Injectable()
@@ -73,13 +74,18 @@ export class AccountingService {
       );
     }
 
-    const dateStr = `${String(date.getFullYear()).slice(2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+    // Entry number keys off the DHAKA calendar day of the user-supplied
+    // entryDate (dashboard-counts audit §1c/§6 P1.6): server-local getters
+    // keyed 00:00–05:59 Dhaka entries to the previous Dhaka day. The 'JE'
+    // family of OrderCounter keeps journal numbers off the order sequence.
+    const { year, month, day } = dhakaDateParts(date);
+    const dateStr = `${String(year).slice(2)}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date: dateStr },
+        where: { date_family: { date: dateStr, family: 'JE' } },
         update: { seq: { increment: 1 } },
-        create: { date: dateStr, seq: 1 },
+        create: { date: dateStr, family: 'JE', seq: 1 },
       });
 
       const entryNo = `JE-${counter.date}-${String(counter.seq).padStart(4, '0')}`;

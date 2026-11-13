@@ -51,8 +51,16 @@ export function dhakaDateParts(d: Date = new Date()): {
 
 /**
  * Interpret a date-only string ("YYYY-MM-DD") as a Dhaka calendar day and
- * return the absolute UTC instants [start, end) of that day. Strings with a
- * time component ('T') pass through as an exact instant.
+ * return the absolute UTC instants [start, end) of that day.
+ *
+ * A string carrying a time component ('T', i.e. a full ISO datetime) is
+ * NO LONGER passed through as a single instant (start === end) — that
+ * collapsed any range built from it to one instant (dashboard-counts audit
+ * 2026-11-13 §1c/§6 P0.3). It now resolves to the FULL Dhaka calendar day
+ * containing that instant (startOfDhakaDay / endOfDhakaDay of the instant),
+ * consistent with every other helper in this file: an instant belongs to
+ * its Dhaka day. Day-boundary instants (00:00 / 23:59:59.999 Dhaka, as
+ * passed by getTodayKpi) resolve to the identical range as before.
  */
 export function dhakaDayRange(
   dateStr: string,
@@ -60,7 +68,8 @@ export function dhakaDayRange(
   if (!dateStr) return { start: null, end: null };
   if (dateStr.includes('T')) {
     const d = new Date(dateStr);
-    return { start: d, end: d };
+    if (Number.isNaN(d.getTime())) return { start: d, end: d };
+    return { start: startOfDhakaDay(d), end: endOfDhakaDay(d) };
   }
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if (!match) {

@@ -932,7 +932,9 @@ export class ExchangeService {
   }
 
   /**
-   * Ex-YYMMDD-NNNN from the same counter as ORD-, so numbers stay unique.
+   * Ex-YYMMDD-NNNN from the 'Ex' family of OrderCounter (one sequence per
+   * (date, family) — dashboard-counts audit 2026-11-13 §1c/§6 P1.4), so
+   * exchange numbers stay unique without consuming order numbers.
    * Sheet Rule 20 is literal: the exchange displayId is `Ex-XXXX`, NOT
    * `ORD-XXXX` (and not `EX-` — conformance 2026-10-23).
    */
@@ -946,8 +948,8 @@ export class ExchangeService {
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date: dateStr },
-        create: { date: dateStr, seq: 1 },
+        where: { date_family: { date: dateStr, family: 'Ex' } },
+        create: { date: dateStr, family: 'Ex', seq: 1 },
         update: { seq: { increment: 1 } },
       });
       return `${prefix}-${String(counter.seq).padStart(4, '0')}`;

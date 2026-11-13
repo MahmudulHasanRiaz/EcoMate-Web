@@ -127,8 +127,8 @@ export class PosOrdersService {
 
     return this.prisma.$transaction(async (tx) => {
       const counter = await tx.orderCounter.upsert({
-        where: { date: dateStr },
-        create: { date: dateStr, seq: 1 },
+        where: { date_family: { date: dateStr, family: 'POS' } },
+        create: { date: dateStr, family: 'POS', seq: 1 },
         update: { seq: { increment: 1 } },
       });
       return `${prefix}-${String(counter.seq).padStart(4, '0')}`;

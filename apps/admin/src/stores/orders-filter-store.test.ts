@@ -23,6 +23,7 @@ describe('useOrdersFilterStore', () => {
     expect(s.sort).toBe('createdAt')
     expect(s.order).toBe('desc')
     expect(s.perPage).toBe(10)
+    expect(s.kindFilter).toBe('all')
     expect(JSON.stringify(ORDER_FILTER_DEFAULTS)).toBe(JSON.stringify(ORDER_FILTER_DEFAULTS))
   })
 
@@ -35,6 +36,7 @@ describe('useOrdersFilterStore', () => {
     useOrdersFilterStore.getState().setSort('total')
     useOrdersFilterStore.getState().setOrder('asc')
     useOrdersFilterStore.getState().setPerPage(50)
+    useOrdersFilterStore.getState().setKindFilter('EXCHANGE')
 
     const raw = sessionStorage.getItem(FILTERS_KEY)
     expect(raw).toBeTruthy()
@@ -49,6 +51,17 @@ describe('useOrdersFilterStore', () => {
     expect(s.sort).toBe('total')
     expect(s.order).toBe('asc')
     expect(s.perPage).toBe(50)
+    expect(s.kindFilter).toBe('EXCHANGE')
+  })
+
+  it('resetFilters clears the kind filter back to all', async () => {
+    const { useOrdersFilterStore } = await importFilterStore()
+    useOrdersFilterStore.getState().setKindFilter('RETURN')
+    useOrdersFilterStore.getState().setSearch('261113')
+    useOrdersFilterStore.getState().resetFilters()
+    const s = useOrdersFilterStore.getState()
+    expect(s.kindFilter).toBe('all')
+    expect(s.search).toBe('')
   })
 
   it('resetFilters clears everything back to defaults', async () => {
@@ -64,15 +77,17 @@ describe('useOrdersFilterStore', () => {
     expect(s.sort).toBe('createdAt')
     expect(s.order).toBe('desc')
     expect(s.perPage).toBe(10)
+    expect(s.kindFilter).toBe('all')
   })
 
   it('sanitizes corrupted persisted payloads', async () => {
-    sessionStorage.setItem(FILTERS_KEY, JSON.stringify({ search: 123, order: 'sideways', perPage: -5 }))
+    sessionStorage.setItem(FILTERS_KEY, JSON.stringify({ search: 123, order: 'sideways', perPage: -5, kindFilter: 'BOGUS' }))
     vi.resetModules()
     const { useOrdersFilterStore } = await importFilterStore()
     const s = useOrdersFilterStore.getState()
     expect(s.search).toBe('')
     expect(s.order).toBe('desc')
     expect(s.perPage).toBe(10)
+    expect(s.kindFilter).toBe('all')
   })
 })

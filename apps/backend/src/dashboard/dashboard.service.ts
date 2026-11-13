@@ -1,3 +1,39 @@
+/**
+ * COUNTING PRINCIPLES (dashboard-counts audit 2026-11-13 §6 — locked by
+ * dashboard.service.spec.ts "P2 invariants" + counter-reconciliation.spec.ts).
+ * Every dashboard number is defined once, here, and every tile that shows
+ * it renders the same definition. Do not break these without updating the
+ * audit and the tests in the same change.
+ * 1. One count, one definition, one place — named for what it counts
+ *    (creation / transition / current-state). Never compute the "same"
+ *    number twice in different code.
+ * 2. Never sum two groups that can contain the same order without
+ *    DISTINCT/union — COUNT(DISTINCT order_id) after normalizing status
+ *    spellings in SQL; never a JS-side `+` of two counts, never Math.max
+ *    as a dedupe.
+ * 3. Normalize status spellings in the query, not in the UI (courier
+ *    literals DELIVERED/PICKED_UP become canonical names in SQL, before
+ *    any grouping). The UI never maps status strings.
+ * 4. Kind/channel filters are explicit and tested — every order count
+ *    states its kind filter (SALE unless the tile's purpose says
+ *    otherwise); the test asserts it with a non-SALE order present.
+ * 5. A tile's label must be true of its query — creations say Created,
+ *    current state says Now/Current; basis + period render on the tile,
+ *    not only in a tooltip. A label change requires a query review.
+ * 6. Sequence numbers are document numbers, not business counts — never
+ *    present a counter value as "orders today". Counters are per document
+ *    family; numbers are minted after validation (or behind idempotency)
+ *    so failures don't burn them.
+ * 7. Dates are Dhaka, computed server-side, tested at the boundary — day
+ *    ranges come from dhakaDayRange/dhakaDateParts (fixed UTC+6); no
+ *    client-computed, UTC, or server-local day boundary may feed a count.
+ *    Every date-dependent count has a boundary test (17:59Z vs 18:00Z).
+ * 8. Period counts and current-state counts are never compared without
+ *    saying so — Activity (events in period) and Pipeline/list (current
+ *    state) answer different questions; any UI placing them side by side
+ *    must label which is which. A "gap" between them is expected until
+ *    proven otherwise by reconciliation.
+ */
 import {
   Injectable,
   InternalServerErrorException,

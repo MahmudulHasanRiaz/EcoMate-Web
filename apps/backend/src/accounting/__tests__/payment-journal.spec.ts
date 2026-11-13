@@ -172,10 +172,16 @@ class FakeDb {
   get orderCounter() {
     return {
       upsert: async ({ where, update, create }: any) => {
-        let row = this.counters.find((c) => c.date === where.date);
+        const key = `${where.date_family.date}|${where.date_family.family}`;
+        let row = this.counters.find((c: any) => c.key === key);
         if (row) row.seq += update.seq.increment;
         else {
-          row = { date: where.date, seq: create.seq };
+          row = {
+            key,
+            date: where.date_family.date,
+            family: where.date_family.family,
+            seq: create.seq,
+          };
           this.counters.push(row);
         }
         return { ...row };

@@ -42,7 +42,7 @@ export function OrderStatusChart({ dateRange, userRole }: WidgetProps) {
     <>
       <WidgetShell
         title="Order Status"
-        description="Live pipeline — funnel analysis lives in Analytics → Sales"
+        description="Orders created in the selected period, grouped by current status — funnel analysis lives in Analytics → Sales"
         isLoading={isLoading}
         error={error ?? undefined}
         onRetry={() => refetch()}

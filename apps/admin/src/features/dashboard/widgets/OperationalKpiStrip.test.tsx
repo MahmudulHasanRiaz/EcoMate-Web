@@ -165,7 +165,8 @@ describe('OperationalKpiStrip', () => {
       const view = await wrap(makeClient(), RANGE_TODAY, 'today')
 
       for (const label of [
-        'New Orders',
+        'Created Today',
+        'Currently Pending',
         'Payment Pending',
         'Payment Verifying',
         'Confirmed',
@@ -180,12 +181,28 @@ describe('OperationalKpiStrip', () => {
       }
     })
 
-    it('shows the Pending status as "New Orders" (never as "Pending")', async () => {
+    it('never labels the Activity creation tile "New Orders"', async () => {
       const view = await wrap(makeClient(), RANGE_TODAY, 'today')
 
-      await expect.element(view.getByText('New Orders', { exact: true })).toBeInTheDocument()
+      await expect.element(view.getByText('Created Today', { exact: true })).toBeInTheDocument()
+      await expect.element(view.getByText('Currently Pending', { exact: true })).toBeInTheDocument()
+      await expect
+        .element(view.getByText('New Orders', { exact: true }))
+        .not.toBeInTheDocument()
       await expect
         .element(view.getByText('Pending', { exact: true }))
+        .not.toBeInTheDocument()
+    })
+
+    it('never labels the Pipeline backlog tile "New Orders"', async () => {
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
+
+      await expect.element(view.getByText('Currently Pending', { exact: true })).toBeInTheDocument()
+      await expect
+        .element(view.getByText('New Orders', { exact: true }))
+        .not.toBeInTheDocument()
+      await expect
+        .element(view.getByText('Created Today', { exact: true }))
         .not.toBeInTheDocument()
     })
 
@@ -194,7 +211,8 @@ describe('OperationalKpiStrip', () => {
 
       await vi.waitFor(() => {
         expect(cardLabels(view)).toEqual([
-          'New Orders',
+          'Created Today',
+          'Currently Pending',
           'Payment Pending',
           'Payment Verifying',
           'Confirmed',
@@ -211,7 +229,7 @@ describe('OperationalKpiStrip', () => {
 
       await vi.waitFor(() => {
         const text = view.container.textContent ?? ''
-        expect(text).toContain('42') // New Orders
+        expect(text).toContain('42') // Created Today
         expect(text).toContain('5') // Payment Pending
         expect(text).toContain('2') // Payment Verifying
         expect(text).toContain('18') // Confirmed
@@ -256,6 +274,11 @@ describe('OperationalKpiStrip', () => {
       vi.mocked(dashboardApi.getOperationalKpis).mockResolvedValue({
         data: { ...KPIS, newOrders: 0, statusCounts: statusCounts({}) },
       } as any)
+      // The Activity view also reads the pipeline endpoint for the
+      // Currently Pending tile — zero there too, or it would survive.
+      vi.mocked(dashboardApi.getOperationalPipelineKpis).mockResolvedValue({
+        data: { ...KPIS, newOrders: 0, statusCounts: statusCounts({}) },
+      } as any)
 
       const view = await wrap(makeClient(), RANGE_TODAY, 'today')
 
@@ -269,7 +292,8 @@ describe('OperationalKpiStrip', () => {
       const view = await wrap(client, RANGE_TODAY, 'today')
 
       await vi.waitFor(() => {
-        expect(view.container.querySelectorAll('.kpi-card').length).toBe(8)
+        // 8 status tiles + the Currently Pending tile.
+        expect(view.container.querySelectorAll('.kpi-card').length).toBe(9)
       })
 
       vi.mocked(dashboardApi.getOperationalKpis).mockResolvedValue({
@@ -291,7 +315,9 @@ describe('OperationalKpiStrip', () => {
       )
 
       await vi.waitFor(() => {
-        expect(cardLabels(view)).toEqual(['New Orders', 'Hold'])
+        // Currently Pending survives the refilter (pipeline mock still
+        // reports Pending 42) and sits right after the creation tile.
+        expect(cardLabels(view)).toEqual(['Created · Last 7 days', 'Currently Pending', 'Hold'])
       })
     })
   })
@@ -318,7 +344,8 @@ describe('OperationalKpiStrip', () => {
       const view = await wrap(makeClient(), RANGE_TODAY, 'today')
 
       await vi.waitFor(() => {
-        expect(view.container.querySelectorAll('.kpi-card').length).toBe(8)
+        // 8 status tiles + the Currently Pending tile.
+        expect(view.container.querySelectorAll('.kpi-card').length).toBe(9)
       })
       // One accent per card, as before.
       const tiles = view.container.querySelectorAll('.kpi-card')
@@ -338,12 +365,19 @@ describe('OperationalKpiStrip', () => {
       vi.mocked(dashboardApi.getOperationalKpis).mockReturnValue(
         new Promise(() => {}) as any,
       )
+      // The Activity view also reads the pipeline endpoint for the
+      // Currently Pending tile — pending there too, or it would resolve.
+      vi.mocked(dashboardApi.getOperationalPipelineKpis).mockReturnValue(
+        new Promise(() => {}) as any,
+      )
 
       const view = await wrap(makeClient(), RANGE_TODAY, 'today')
 
       await vi.waitFor(() => {
-        // The known statuses render as — until the real value is known.
-        expect(view.getByText('—').elements().length).toBe(16)
+        // The known statuses render as — until the real value is known,
+        // plus the Currently Pending tile (17 cards while loading).
+        // Exact match: the caption's em dash must not count as a tile.
+        expect(view.getByText('—', { exact: true }).elements().length).toBe(17)
       })
     })
 
@@ -427,14 +461,23 @@ describe('OperationalKpiStrip', () => {
       expect(dashboardApi.getOperationalKpis).not.toHaveBeenCalled()
     })
 
-    it('uses identical labels in both views — subtext carries the distinction', async () => {
+    it('labels the Pipeline Pending count as the current backlog', async () => {
       const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
 
-      // Same names everywhere: two names for one thing confused users.
-      await expect.element(view.getByText('New Orders', { exact: true })).toBeInTheDocument()
+      // The Pipeline view counts current state, so its Pending tile must
+      // not share the creation label: "New Orders" meant both and
+      // therefore neither.
+      await expect.element(view.getByText('Currently Pending', { exact: true })).toBeInTheDocument()
       await expect.element(view.getByText('Shipping', { exact: true })).toBeInTheDocument()
       await expect.element(view.getByText('Order Cohort', { exact: true })).not.toBeInTheDocument()
       await expect.element(view.getByText('Picked Up', { exact: true })).not.toBeInTheDocument()
+    })
+
+    it('labels the Activity Pending count as creations, beside the current backlog', async () => {
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'activity')
+
+      await expect.element(view.getByText('Created Today', { exact: true })).toBeInTheDocument()
+      await expect.element(view.getByText('Currently Pending', { exact: true })).toBeInTheDocument()
     })
 
     it('marks every status tile as current-state-of-cohort', async () => {
@@ -447,11 +490,17 @@ describe('OperationalKpiStrip', () => {
       })
     })
 
-    it('uses the period label as the subtext in the activity view', async () => {
+    it('carries the basis and the period on every tile in the activity view', async () => {
       const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'activity')
 
       await vi.waitFor(() => {
-        expect(view.getByText('Today').elements().length).toBe(8)
+        // Creation tile: basis + period. Every other status tile: the
+        // status-entry basis + period. The synthetic backlog tile: the
+        // current-state-of-cohort basis. No tile carries a bare period.
+        expect(view.getByText('Created · Today').elements().length).toBe(1)
+        expect(view.getByText('Entered · Today').elements().length).toBe(7)
+        expect(view.getByText('Now · Today cohort').elements().length).toBe(1)
+        expect(view.getByText('Today', { exact: true }).elements().length).toBe(0)
       })
     })
 
@@ -468,15 +517,16 @@ describe('OperationalKpiStrip', () => {
     })
 
     it('does not duplicate the total in the activity view', async () => {
-      // Activity "New Orders" already IS newOrders (orders created in the
+      // Activity "Created Today" already IS newOrders (orders created in the
       // period), so a second tile with the same number would be a
-      // confusing duplicate — the activity caption carries the basis note
+      // confusing duplicate — the activity caption names the shared total
       // instead.
       const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'activity')
 
       await vi.waitFor(() => {
         expect(cardLabels(view)).toEqual([
-          'New Orders',
+          'Created Today',
+          'Currently Pending',
           'Payment Pending',
           'Payment Verifying',
           'Confirmed',
@@ -491,17 +541,28 @@ describe('OperationalKpiStrip', () => {
         .not.toBeInTheDocument()
     })
 
-    it('states the counting basis for each view', async () => {
+    it('states the counting basis for each view, excepting the creation tile', async () => {
       const activity = await wrap(makeClient(), RANGE_TODAY, 'today', 'activity')
 
       await expect
         .element(activity.getByText(/tiles do not sum to a total/))
+        .toBeInTheDocument()
+      // G1: the caption must except the creation tile — creation is not a
+      // status-entry event — and name the total the two views share.
+      await expect
+        .element(activity.getByText(/except Created Today/))
+        .toBeInTheDocument()
+      await expect
+        .element(activity.getByText(/same total Pipeline calls Total Orders/))
         .toBeInTheDocument()
 
       const pipeline = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
 
       await expect
         .element(pipeline.getByText(/tiles sum to Total Orders/))
+        .toBeInTheDocument()
+      await expect
+        .element(pipeline.getByText(/same total the Activity view shows as created orders/))
         .toBeInTheDocument()
     })
 
@@ -515,12 +576,57 @@ describe('OperationalKpiStrip', () => {
       expect(useOrdersFilterStore.getState().statusFilter).toBe('st-ship')
     })
 
-    it('clicking the Total tile clears any status filter', async () => {
+    it('creation/cohort totals are not links — clicking one changes no filter', async () => {
+      // G5: "Created Today" counts period creations and "Total Orders"
+      // counts the cohort; neither population exists as an order-list
+      // filter, so the tiles must not look clickable or navigate anywhere.
       useOrdersFilterStore.getState().setStatusFilter('st-deliv')
-      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
+      const activity = await wrap(makeClient(), RANGE_TODAY, 'today', 'activity')
 
-      await view.getByText('Total Orders', { exact: true }).click()
-      expect(useOrdersFilterStore.getState().statusFilter).toBe('all')
+      await vi.waitFor(() => {
+        expect(cardLabels(activity)).toContain('Created Today')
+      })
+      expect(
+        activity.getByText('Created Today', { exact: true }).element().closest('a'),
+      ).toBeNull()
+      await activity.getByText('Created Today', { exact: true }).click()
+      expect(useOrdersFilterStore.getState().statusFilter).toBe('st-deliv')
+
+      const pipeline = await wrap(makeClient(), RANGE_TODAY, 'today', 'pipeline')
+
+      await vi.waitFor(() => {
+        expect(cardLabels(pipeline)).toContain('Total Orders')
+      })
+      expect(
+        pipeline.getByText('Total Orders', { exact: true }).element().closest('a'),
+      ).toBeNull()
+      await pipeline.getByText('Total Orders', { exact: true }).click()
+      expect(useOrdersFilterStore.getState().statusFilter).toBe('st-deliv')
+    })
+
+    it('clicking Currently Pending in the Activity view filters the list to Pending', async () => {
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'activity')
+
+      await vi.waitFor(() => {
+        expect(cardLabels(view)).toContain('Currently Pending')
+      })
+      await view.getByText('Currently Pending', { exact: true }).click()
+      expect(useOrdersFilterStore.getState().statusFilter).toBe('st-pending')
+    })
+
+    it('hides Currently Pending in the Activity view when the pipeline query fails', async () => {
+      vi.mocked(dashboardApi.getOperationalPipelineKpis).mockRejectedValue(
+        new Error('500'),
+      )
+
+      const view = await wrap(makeClient(), RANGE_TODAY, 'today', 'activity')
+
+      await vi.waitFor(() => {
+        expect(cardLabels(view)).toContain('Created Today')
+      })
+      await expect
+        .element(view.getByText('Currently Pending', { exact: true }))
+        .not.toBeInTheDocument()
     })
 
     it('caches pipeline separately from activity for the same range', async () => {

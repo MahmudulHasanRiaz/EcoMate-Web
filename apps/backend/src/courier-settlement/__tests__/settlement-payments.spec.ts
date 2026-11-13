@@ -60,7 +60,10 @@ function makePrisma(opts?: { existingSettlementTxns?: string[] }) {
 
   const tx: any = {
     orderCounter: {
-      upsert: async ({ where }: any) => ({ date: where.date, seq: 1 }),
+      upsert: async ({ where }: any) => ({
+        date: where.date_family.date,
+        seq: 1,
+      }),
     },
     courierSettlementRow: {
       count: async ({ where }: any) => rows.filter((r) => r.invoiceId === where.invoiceId).length,

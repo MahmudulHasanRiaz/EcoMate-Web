@@ -298,6 +298,47 @@ describe('AccountingService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    // ── Counter split + Dhaka day key (dashboard-counts audit §1c/§6 P1.4+P1.6) ──
+    it("mints JE numbers from the 'JE' family keyed by the Dhaka day of entryDate", async () => {
+      let txUpsert: jest.Mock;
+      let createdData: any;
+      (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {
+        const tx = {
+          orderCounter: {
+            upsert: jest.fn().mockResolvedValue({ date: '260702', seq: 1 }),
+          },
+          journalEntry: {
+            create: jest.fn().mockImplementation(async ({ data }: any) => {
+              createdData = data;
+              return mockEntry;
+            }),
+          },
+        };
+        txUpsert = tx.orderCounter.upsert as jest.Mock;
+        return cb(tx);
+      });
+
+      // 2026-07-01T18:30:00Z = 00:30 Dhaka 2026-07-02: the UTC date says
+      // Jul 1, the Dhaka business day says Jul 2. The old server-local
+      // getters keyed this to 260701 (the previous Dhaka day).
+      await service.createEntry({
+        periodId: 'fp-open',
+        entryDate: '2026-07-01T18:30:00.000Z',
+        description: 'Dhaka boundary entry',
+        lines: [
+          { accountId: 'acc-cash', debit: 10000, credit: 0 },
+          { accountId: 'acc-rev', debit: 0, credit: 10000 },
+        ],
+      });
+
+      expect(txUpsert!).toHaveBeenCalledWith({
+        where: { date_family: { date: '260702', family: 'JE' } },
+        update: { seq: { increment: 1 } },
+        create: { date: '260702', family: 'JE', seq: 1 },
+      });
+      expect(createdData.entryNo).toBe('JE-260702-0001');
+    });
   });
 
   describe('getEntry', () => {

@@ -11,10 +11,11 @@ import { dashboardApi } from '../api'
 import { ordersApi } from '@/features/orders/api'
 import { apiClient } from '@/lib/api-client'
 import { formatCurrency, formatDate } from '../utils'
+import { PERIOD_LABELS } from './OperationalKpiStrip'
 import type { WidgetProps } from '../types'
 import { toast } from 'sonner'
 
-export function PendingOrders({ dateRange, view = 'activity' }: WidgetProps) {
+export function PendingOrders({ dateRange, preset }: WidgetProps) {
   const queryClient = useQueryClient()
   const startStr = dateRange.start.toISOString()
   const endStr = dateRange.end.toISOString()
@@ -72,14 +73,18 @@ export function PendingOrders({ dateRange, view = 'activity' }: WidgetProps) {
     updateStatusMut.mutate({ orderId, statusId: shippingStatus.id, statusName: 'Shipping' })
   }
 
+  // G2/G6: one description, true in both views — the backend lists orders
+  // created in the selected period that are STILL in a pre-confirmation
+  // status (Pending, Payment Pending, Recall, No Response), capped at 20.
+  // The widget takes no view-specific data, so it must not claim a
+  // view-specific basis; the period and the cap are stated up front.
+  const periodLabel = PERIOD_LABELS[preset] ?? PERIOD_LABELS.last_30_days
+  const capReached = orders.length >= 20
+
   return (
     <WidgetShell
       title="Pending Orders"
-      description={
-        view === 'pipeline'
-          ? 'Cohort orders still awaiting processing · current status'
-          : 'Orders needing immediate processing'
-      }
+      description={`Created ${periodLabel} · Still awaiting processing · First 20 shown`}
       isLoading={isLoading}
       error={error ?? undefined}
       onRetry={() => refetch()}
@@ -216,6 +221,13 @@ export function PendingOrders({ dateRange, view = 'activity' }: WidgetProps) {
               </div>
             ))}
           </div>
+
+          {/* G2: the backend caps this list at 20 — say so when the cap bites. */}
+          {capReached && (
+            <p className="text-[11px] text-muted-foreground font-medium pt-3 border-t border-border/50 mt-4">
+              Showing the first 20 — open the order list for the full set.
+            </p>
+          )}
         </>
       )}
     </WidgetShell>
