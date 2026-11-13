@@ -46,16 +46,16 @@ describe('TemplatePageForm', () => {
     const onChange = vi.fn()
     const { getByRole } = await render(
       <TemplatePageForm
-        schema={templatePageSchemas.careers}
-        config={{ jobs: [] }}
+        schema={templatePageSchemas.faq}
+        config={{ items: [] }}
         onChange={onChange}
       />
     )
 
-    await userEvent.click(getByRole('button', { name: 'Add Job' }))
+    await userEvent.click(getByRole('button', { name: 'Add FAQ' }))
     expect(onChange).toHaveBeenCalledWith({
-      jobs: [
-        { title: '', department: '', location: '', type: '', salary: '', description: '' },
+      items: [
+        { question: '', answer: '', category: '' },
       ],
     })
   })

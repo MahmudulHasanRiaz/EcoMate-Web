@@ -32,6 +32,11 @@ export class CmsPagesService implements OnModuleInit {
    * contact, ...) as CmsPage rows of type 'template' so admins can toggle and
    * edit them from the Pages menu. Existing live page content that currently
    * lives in SystemSetting is copied into the config on first creation.
+   *
+   * The seeded defaults are tenant-neutral and EMPTY (see template-pages.ts)
+   * — normal boot never seeds fake content. Dummy/demo content lives only
+   * behind the demo-import path (prisma/seed.ts, SEED_DUMMY_DATA=true),
+   * which never creates CmsPage rows.
    */
   async ensureTemplatePages() {
     for (const def of templatePages) {
@@ -105,7 +110,9 @@ export class CmsPagesService implements OnModuleInit {
     return this.prisma.cmsPage.findMany({
       where: { isActive: true, showInFooter: true },
       orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }],
-      select: { id: true, slug: true, title: true },
+      // `type` decides the footer URL: template pages live at /<slug>,
+      // content pages at /pages/<slug>.
+      select: { id: true, slug: true, title: true, type: true },
     });
   }
 

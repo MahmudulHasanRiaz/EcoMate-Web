@@ -2209,21 +2209,137 @@ model SizeChart {
 }
 
 model CmsPage {
-  id           String   @id @default(uuid())
-  slug         String   @unique
-  title        String
-  content      String   @db.Text
-  isActive     Boolean  @default(true)
-  showInFooter Boolean  @default(false)
-  sortOrder    Int      @default(0)
-  type         String   @default("content")
-  templateKey  String?  @unique
-  config       Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String    @id @default(uuid())
+  slug            String    @unique
+  title           String
+  content         String    @db.Text
+  isActive        Boolean   @default(true)
+  showInFooter    Boolean   @default(false)
+  sortOrder       Int       @default(0)
+  type            String    @default("content")
+  templateKey     String?   @unique
+  config          Json?
+  // SEO + document versioning (storefront dynamic-pages round 2026-11-13).
+  // Previously the model had no SEO fields and no version/effective date,
+  // so policy pages shipped hardcoded "Last Updated: January 2024" copy.
+  metaDescription String?
+  ogImage         String?
+  effectiveDate   DateTime?
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([isActive, showInFooter])
   @@index([type])
+}
+
+// Careers (storefront dynamic-pages round 2026-11-13, Option B split gate).
+// Job postings are admin-created (HR panel); the storefront lists published
+// ones only. The old CMS `config.jobs` text array is deprecated at cutover —
+// the 4 fake seed jobs are NOT migrated; postings start empty.
+model JobPosting {
+  id               String    @id @default(uuid())
+  slug             String    @unique
+  title            String
+  departmentId     String?
+  designationId    String?
+  location         String
+  employmentType   String    @default("Full-time")
+  salaryMin        Int?
+  salaryMax        Int?
+  salaryDisplay    String?
+  description      String    @db.Text
+  requirements     String?   @db.Text
+  responsibilities String?   @db.Text
+  benefits         Json?
+  deadline         DateTime?
+  status           String    @default("DRAFT")
+  sortOrder        Int       @default(0)
+  // betterAuth user id of the staff member who created the posting.
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  department   Department?    @relation(fields: [departmentId], references: [id])
+  designation  Designation?   @relation(fields: [designationId], references: [id])
+  applications JobApplication[]
+
+  @@index([status])
+}
+
+// One visitor application per posting. CV is stored via the media infra
+// (cvUrl points at the stored file); per-application CV delete clears cvUrl
+// and stamps cvDeletedAt/cvDeletedById — the application record stays.
+model JobApplication {
+  id            String   @id @default(uuid())
+  jobPostingId  String
+  fullName      String
+  email         String
+  phone         String
+  coverLetter   String?  @db.Text
+  cvUrl         String?
+  cvOriginalName String?
+  cvDeletedAt   DateTime?
+  cvDeletedById String?
+  portfolioUrl  String?
+  status        String   @default("NEW")
+  internalNote  String?  @db.Text
+  reviewedById  String?
+  reviewedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  jobPosting JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+
+  @@index([jobPostingId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Showrooms / branches / offices (storefront dynamic-pages round 2026-11-13).
+// Replaces the CMS `config.stores` JSON array; the invented Chittagong /
+// Sylhet entries are NOT migrated.
+model StoreLocation {
+  id          String    @id @default(uuid())
+  name        String
+  type        String    @default("SHOWROOM")
+  address     String    @db.Text
+  city        String?
+  district    String?
+  phone       String?
+  email       String?
+  hours       String?
+  mapUrl      String?
+  socials     Json?
+  photo       String?
+  comingSoon  Boolean   @default(false)
+  openingDate DateTime?
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+// Simple support enquiries (storefront dynamic-pages round 2026-11-13, D9).
+// NOT a helpdesk: no ticket threading, assignment, or SLA — list + NEW/REPLIED.
+model SupportEnquiry {
+  id          String   @id @default(uuid())
+  name        String
+  email       String?
+  phone       String?
+  subject     String?
+  message     String   @db.Text
+  orderId     String?
+  status      String   @default("NEW")
+  repliedById String?
+  repliedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 model BlockedIp {
@@ -2739,6 +2855,7 @@ model Department {
   updatedAt   DateTime @updatedAt
 
   employees Employee[]
+  jobPostings JobPosting[]
 }
 
 model Designation {
@@ -2751,6 +2868,7 @@ model Designation {
   updatedAt DateTime @updatedAt
 
   employees Employee[]
+  jobPostings JobPosting[]
 }
 
 model Employee {

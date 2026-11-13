@@ -11,6 +11,11 @@ export interface CmsPage {
   type: 'content' | 'template'
   templateKey: string | null
   config: Record<string, any> | null
+  // SEO + document versioning (storefront dynamic-pages round).
+  metaDescription?: string | null
+  ogImage?: string | null
+  effectiveDate?: string | null
+  version?: number
   createdAt: string
   updatedAt: string
 }
@@ -25,6 +30,11 @@ export interface CreateCmsPageInput {
   type?: 'content' | 'template'
   templateKey?: string
   config?: Record<string, any>
+  // SEO + document versioning. Null clears the field on update.
+  metaDescription?: string | null
+  ogImage?: string | null
+  effectiveDate?: string | null
+  version?: number
 }
 
 export const cmsPagesApi = {

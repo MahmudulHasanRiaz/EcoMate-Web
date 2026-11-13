@@ -30,6 +30,9 @@
 
     <!-- Primary Meta Tags (overridden at runtime from /system-settings/branding) -->
     <title>Admin</title>
+    <!-- The admin app (including the login page) is never indexed: it is a
+         single-page app, so this one tag covers every admin route. -->
+    <meta name="robots" content="noindex, nofollow" />
     <meta name="title" content="Admin" />
     <meta name="description" content="Admin Dashboard." />
 

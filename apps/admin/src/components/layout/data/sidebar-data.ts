@@ -5,7 +5,8 @@ import {
   Building2, ShoppingCart, Receipt, Bell,
   Megaphone, UserPlus, UserCog, DollarSign, BookOpen, Store, ShieldAlert,
   HardDrive, Target, Plug, Wallet, BarChart3, CreditCard, CalendarDays,
-  CalendarCheck, LifeBuoy, ScanLine, KeyRound, Clock, TrendingUp,
+  CalendarCheck, LifeBuoy, ScanLine, KeyRound, Clock, TrendingUp, Briefcase,
+  MapPin, MailOpen,
 } from 'lucide-react'
 import { type SidebarData, type HueName, type NavItem } from '../types'
 import { getPosUrl } from '@/lib/utils'
@@ -42,6 +43,10 @@ export const sidebarData: SidebarData = {
             { title: 'Reviews', url: '/op/reviews', feature: 'admin_reviews' },
           ],
         }, 'Sales', 'info'),
+        // Support Enquiries (storefront dynamic-pages round 2026-11-13): no
+        // licence feature key exists for this inbox, so none is set — same
+        // reason the backend endpoints carry no @RequiresFeature.
+        inSection({ title: 'Support Enquiries', url: '/op/support-enquiries', icon: MailOpen }, 'Sales', 'info'),
         inSection({
           title: 'Dispatch', icon: Truck, feature: 'admin_dispatch',
           items: [
@@ -152,6 +157,13 @@ export const sidebarData: SidebarData = {
             { title: 'Designations', url: '/hr/employees/designations' },
           ],
         }, 'People', 'violet'),
+        inSection({
+          title: 'Careers', icon: Briefcase, feature: 'admin_hr_careers', permissions: ['view_hr'],
+          items: [
+            { title: 'Job Postings', url: '/hr/careers' },
+            { title: 'Applications', url: '/hr/careers/applications' },
+          ],
+        }, 'People', 'violet'),
         // ── Payroll ──
         inSection({ title: 'Payroll', url: '/hr/payroll', icon: DollarSign, feature: 'admin_payroll', permissions: ['view_hr'] }, 'Payroll', 'warning'),
         inSection({ title: 'Commissions', url: '/hr/commissions', icon: Percent, feature: 'admin_payroll', permissions: ['view_hr'] }, 'Payroll', 'warning'),
@@ -204,6 +216,7 @@ export const sidebarData: SidebarData = {
         // ── System ──
         inSection({ title: 'Backup & Restore', url: '/mon/backup', icon: HardDrive }, 'System', 'neutral'),
         inSection({ title: 'Pages', url: '/mon/pages', icon: FileText, feature: 'admin_cms_pages' }, 'System', 'neutral'),
+        inSection({ title: 'Store Locations', url: '/mon/settings/store-locations', icon: MapPin, feature: 'admin_cms_pages' }, 'System', 'neutral'),
         inSection({ title: 'Notifications', url: '/mon/notifications', icon: Bell, feature: 'admin_notifications' }, 'System', 'neutral'),
         inSection({ title: 'Product Catalogs', url: '/mon/marketing/catalog', icon: Upload, feature: 'admin_product_feeds' }, 'System', 'neutral'),
       ],

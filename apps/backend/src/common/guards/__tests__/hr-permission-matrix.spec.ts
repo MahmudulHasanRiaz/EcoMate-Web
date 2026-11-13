@@ -13,6 +13,8 @@ import { HrLedgersController } from '../../../hr-ledgers/hr-ledgers.controller';
 import { HrSelfServiceController } from '../../../hr-self-service/hr-self-service.controller';
 import { EmployeesController } from '../../../employees/employees.controller';
 import { AttendanceDevicesController } from '../../../attendance-devices/attendance-devices.controller';
+import { JobPostingsController, HrJobPostingsController } from '../../../job-postings/job-postings.controller';
+import { JobApplicationsController } from '../../../job-applications/job-applications.controller';
 
 // Reflector reads NestJS SetMetadata reliably for class-level (same path as the actual guards)
 const reflector = new Reflector();
@@ -217,6 +219,77 @@ describe('G-10 + §22 — HR permission matrix (static introspection)', () => {
 
     it('AttendanceDevicesController has listEvents', () => {
       expect(hasMethod(AttendanceDevicesController, 'listEvents')).toBe(true);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Careers (storefront dynamic-pages round 2026-11-13, Option B split gate)
+  // Admin controllers carry ONLY the new key — the guard ignores the
+  // declared admin_hr dependency, so the parent is enforced explicitly in
+  // the services (assertCareersFeature). The public /jobs controller must
+  // NOT be feature-gated: /careers stays live for every tenant.
+  // -----------------------------------------------------------------------
+  describe.each([
+    {
+      name: 'HrJobPostingsController',
+      ctor: HrJobPostingsController,
+      feature: 'admin_hr_careers',
+      roles: ['superadmin', 'admin', 'employee'],
+      perms: ['view_hr'],
+    },
+    {
+      name: 'JobApplicationsController',
+      ctor: JobApplicationsController,
+      feature: 'admin_hr_careers',
+      roles: ['superadmin', 'admin', 'employee'],
+      perms: ['view_hr'],
+    },
+  ])('Careers $name', ({ ctor, feature, roles, perms }) => {
+    it(`@Roles includes ${roles.join(',')}`, () => {
+      const meta = classMeta(ROLES_KEY, ctor);
+      expect(meta).toEqual(expect.arrayContaining(roles));
+    });
+
+    it(`@RequiresFeature('${feature}')`, () => {
+      const meta = classMeta(REQUIRES_FEATURE_KEY, ctor);
+      expect(meta).toBe(feature);
+    });
+
+    it(`@PermissionsAny includes ${perms.join(',')}`, () => {
+      const meta = classMeta(PERMISSIONS_ANY_KEY, ctor);
+      expect(meta).toEqual(expect.arrayContaining(perms));
+    });
+  });
+
+  describe('Careers public controller is ungated', () => {
+    it('JobPostingsController has NO @RequiresFeature (Option B: /careers stays live)', () => {
+      expect(classMeta(REQUIRES_FEATURE_KEY, JobPostingsController)).toBeUndefined();
+    });
+
+    it('JobPostingsController has NO class-level @Roles (public)', () => {
+      expect(classMeta(ROLES_KEY, JobPostingsController)).toBeUndefined();
+    });
+  });
+
+  describe('careers route methods exist', () => {
+    it('HrJobPostingsController has create', () => {
+      expect(hasMethod(HrJobPostingsController, 'create')).toBe(true);
+    });
+
+    it('HrJobPostingsController has update', () => {
+      expect(hasMethod(HrJobPostingsController, 'update')).toBe(true);
+    });
+
+    it('JobPostingsController has apply', () => {
+      expect(hasMethod(JobPostingsController, 'apply')).toBe(true);
+    });
+
+    it('JobApplicationsController has downloadCv', () => {
+      expect(hasMethod(JobApplicationsController, 'downloadCv')).toBe(true);
+    });
+
+    it('JobApplicationsController has deleteCv', () => {
+      expect(hasMethod(JobApplicationsController, 'deleteCv')).toBe(true);
     });
   });
 });

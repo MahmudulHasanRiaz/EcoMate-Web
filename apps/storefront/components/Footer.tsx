@@ -9,10 +9,11 @@
 // from the same config (StoreBrand itself stays a hook-based component for
 // the client Header).
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { MapPin, Phone, Mail } from 'lucide-react';
 import EcoMateAttribution from "./EcoMateAttribution";
 import FooterAppLinks from "./FooterAppLinks";
+import CmsFooterLinks from "./CmsFooterLinks";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
 import { resolveDerivativeUrl } from "@/lib/image-derivative";
 import Link from 'next/link';
@@ -60,6 +61,7 @@ export default function Footer({ config }: { config: StorefrontConfig }) {
       { id: 'cnt', type: 'custom', label: 'Contact us', url: '/support' },
       { id: 'cmp', type: 'custom', label: 'Company Information', url: '/company' },
       { id: 'str', type: 'custom', label: `${store.name} Stores`, url: '/stores' },
+      { id: 'dwn', type: 'custom', label: 'Download App', url: '/download' },
       { id: 'trm', type: 'custom', label: 'Terms & Conditions', url: '/terms-conditions' },
       { id: 'prv', type: 'custom', label: 'Privacy Policy', url: '/privacy-policy' },
       { id: 'car', type: 'custom', label: 'Careers', url: '/careers' },
@@ -78,7 +80,8 @@ export default function Footer({ config }: { config: StorefrontConfig }) {
       { id: 'su2', type: 'custom', label: 'How to Order' },
       { id: 'su3', type: 'custom', label: 'Order Tracking', url: '/orders' },
       { id: 'su4', type: 'custom', label: 'Payment' },
-      { id: 'su5', type: 'custom', label: 'Shipping' },
+      { id: 'su5', type: 'custom', label: 'Shipping Policy', url: '/shipping-policy' },
+      { id: 'su7', type: 'custom', label: 'Delivery Areas', url: '/delivery-areas' },
       { id: 'su6', type: 'custom', label: 'FAQ', url: '/faq' },
     ]},
     { id: 'con', title: 'Consumer Policy', items: [
@@ -164,7 +167,28 @@ export default function Footer({ config }: { config: StorefrontConfig }) {
           {/* Columns */}
           <div className={`grid grid-cols-2 md:col-span-3 gap-8 md:gap-4 ${colCount === 1 ? 'md:grid-cols-1' : colCount === 2 ? 'md:grid-cols-2' : colCount === 3 ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
             {columns.map((col: any) => (
-              <FooterColumn key={col.id} title={col.title} items={col.items} />
+              <FooterColumn
+                key={col.id}
+                title={col.title}
+                items={col.items}
+                extra={
+                  col.title === 'Information' ? (
+                    <Suspense fallback={null}>
+                      <CmsFooterLinks
+                        excludeUrls={(col.items || [])
+                          .map((i: any) =>
+                            i.type === 'category'
+                              ? i.slug
+                                ? `/products?category=${i.slug}`
+                                : `/products?categoryId=${i.categoryId || i.id}`
+                              : i.url,
+                          )
+                          .filter(Boolean)}
+                      />
+                    </Suspense>
+                  ) : undefined
+                }
+              />
             ))}
           </div>
 
@@ -178,7 +202,7 @@ export default function Footer({ config }: { config: StorefrontConfig }) {
   );
 }
 
-function FooterColumn({ title, items }: { title: string, items: any[] }) {
+function FooterColumn({ title, items, extra }: { title: string, items: any[], extra?: React.ReactNode }) {
   return (
     <div>
       <h4 className="font-bold text-[14px] text-gray-800 mb-4">{title}</h4>
@@ -198,12 +222,15 @@ function FooterColumn({ title, items }: { title: string, items: any[] }) {
               </li>
             );
           }
+          // Items with no destination are plain text, not link-looking spans:
+          // muted, no hover state, so they never read as broken navigation.
           return (
             <li key={item.id}>
-              <span className="text-[12px] text-gray-500">{item.label}</span>
+              <span className="text-[12px] text-gray-400">{item.label}</span>
             </li>
           );
         })}
+        {extra}
       </ul>
     </div>
   );

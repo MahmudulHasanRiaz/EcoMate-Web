@@ -36,6 +36,8 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   playStoreUrl: '',
   appStoreUrl: '',
   homepageSections: [],
+  // Client-side default until the full config loads: fail-closed.
+  searchIndexingEnabled: false,
 };
 
 function getBootstrappedConfig(): StorefrontConfig | undefined {

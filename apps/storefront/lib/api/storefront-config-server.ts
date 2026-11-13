@@ -44,6 +44,9 @@ const DEFAULT_CONFIG: StorefrontConfig = {
   appStoreUrl: '',
   licenseFeatures: [],
   homepageSections: [],
+  // Fetch failure → fail-closed (noindex): the tenant is unknown, and
+  // indexing wrong content is worse than a transient noindex.
+  searchIndexingEnabled: false,
 };
 
 export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfig> => {
@@ -63,8 +66,21 @@ export const getStorefrontConfigServer = cache(async (): Promise<StorefrontConfi
     return DEFAULT_CONFIG;
   }
 
+  // Search indexing (D7): capture the raw flag BEFORE merging over
+  // DEFAULT_CONFIG — the merge would otherwise turn a missing key into
+  // `false` (the fail-closed fetch-failure default).
+  const rawIndexingFlag = (config as unknown as Record<string, unknown>)
+    .searchIndexingEnabled;
+
   // Merge server config over defaults so missing nested fields never cause crashes
   config = { ...DEFAULT_CONFIG, ...config };
+
+  // Only an explicit boolean from a successful fetch counts. A missing
+  // key (pre-toggle backend) keeps the historic ON behaviour; a failed
+  // fetch never reaches here — it returned DEFAULT_CONFIG above
+  // (false = fail-closed).
+  config.searchIndexingEnabled =
+    typeof rawIndexingFlag === 'boolean' ? rawIndexingFlag : true;
 
   // Categories and license can be fetched in parallel — both independent of each other
   const [categories, licenseStatus] = await Promise.all([

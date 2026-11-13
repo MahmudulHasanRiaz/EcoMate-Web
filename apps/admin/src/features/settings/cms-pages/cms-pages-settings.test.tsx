@@ -90,7 +90,7 @@ describe('CmsPagesSettings', () => {
     await expect.element(getByText('Careers — Settings')).toBeInTheDocument()
     // schema-driven field is rendered for the template page
     await expect.element(getByText('Hero Title')).toBeInTheDocument()
-    await expect.element(getByText('Open Positions')).toBeInTheDocument()
+    await expect.element(getByText('Benefits')).toBeInTheDocument()
   })
 
   it('toggles a system page off via its switch', async () => {

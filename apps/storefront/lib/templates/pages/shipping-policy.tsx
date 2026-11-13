@@ -1,5 +1,8 @@
 import { Fragment } from "react";
-import { Truck } from "lucide-react";
+import { PolicyShell } from "../policy-shell";
+import { RichText, TemplateEmptyState } from "../shared";
+import { hasText } from "../content-utils";
+import type { PageMeta } from "../content-utils";
 
 interface ShippingSection {
   heading?: string;
@@ -7,64 +10,91 @@ interface ShippingSection {
 }
 
 /**
- * CMS-driven Shipping Policy page (fixed design).
- * Renders content entirely from the `config` prop (stored CmsPage config merged
- * over the registry defaults). No data fetching happens here.
+ * CMS-driven Shipping Policy page. "Last updated" comes from the CmsPage
+ * row (pageMeta), never hardcoded copy. Charge amounts come from the LIVE
+ * delivery config first (`deliveryCharge` / `freeDeliveryMin` props, fed by
+ * renderPreFormattedPage from the storefront config — the same values
+ * checkout uses); the legacy per-page CMS config values are only a fallback
+ * when the live config is unconfigured (0). The charge-line rewrite only
+ * runs when a charge is actually configured (> 0); otherwise the
+ * admin-written body renders verbatim.
  */
-export default function ShippingPolicyTemplate({ config }: { config: Record<string, any> }) {
+export default function ShippingPolicyTemplate({
+  config,
+  pageMeta,
+  deliveryCharge: liveDeliveryCharge,
+  freeDeliveryMin: liveFreeDeliveryMin,
+}: {
+  config: Record<string, any>;
+  storeName?: string;
+  pageMeta?: PageMeta;
+  deliveryCharge?: number;
+  freeDeliveryMin?: number;
+}) {
   const sections: ShippingSection[] = Array.isArray(config.sections) ? config.sections : [];
-  const deliveryCharge = Number(config.deliveryCharge) > 0 ? Number(config.deliveryCharge) : 60;
-  const freeDeliveryMin = Number(config.freeDeliveryMin) > 0 ? Number(config.freeDeliveryMin) : 5000;
+  const intro = typeof config?.intro === "string" ? config.intro : "";
+  const deliveryCharge =
+    typeof liveDeliveryCharge === "number" && liveDeliveryCharge > 0
+      ? liveDeliveryCharge
+      : Number(config.deliveryCharge) > 0
+        ? Number(config.deliveryCharge)
+        : 0;
+  const freeDeliveryMin =
+    typeof liveFreeDeliveryMin === "number" && liveFreeDeliveryMin > 0
+      ? liveFreeDeliveryMin
+      : Number(config.freeDeliveryMin) > 0
+        ? Number(config.freeDeliveryMin)
+        : 0;
+
+  if (sections.length === 0) {
+    return <TemplateEmptyState title="Shipping Policy" />;
+  }
 
   return (
-    <div className="max-w-screen-xl mx-auto px-3 md:px-4 py-4 md:py-8">
-      <h1 className="text-[18px] md:text-[24px] font-bold text-gray-900 mb-1">Shipping Policy</h1>
-      <p className="text-[13px] text-gray-500 mb-6">Last updated: December 2024</p>
+    <PolicyShell
+      title="Shipping Policy"
+      eyebrow="Delivery & Shipping"
+      intro={hasText(intro) ? intro : undefined}
+      pageMeta={pageMeta}
+    >
       <div className="max-w-3xl space-y-4 text-[13px] text-gray-600">
         {sections.map((section, i) => {
           const heading = (section?.heading || "").trim();
-          const bodyParts = (section?.body || "")
-            .split("\n\n")
-            .map((part) => part.trim())
-            .filter(Boolean);
+          const body = section?.body || "";
 
           // Gracefully skip empty sections.
-          if (bodyParts.length === 0) return null;
-
-          const content =
-            bodyParts.length > 1 ? (
-              <ul className="list-disc pl-5 space-y-1">
-                {bodyParts.map((part, j) => (
-                  <li key={j}>{renderChargeLine(part, deliveryCharge, freeDeliveryMin)}</li>
-                ))}
-              </ul>
-            ) : (
-              <p>{renderChargeLine(bodyParts[0], deliveryCharge, freeDeliveryMin)}</p>
-            );
+          if (!hasText(body)) return null;
 
           return (
             <Fragment key={i}>
               {heading && <h3 className="text-[15px] font-semibold text-gray-800">{heading}</h3>}
-              {content}
+              <RichText body={renderChargeLines(body, deliveryCharge, freeDeliveryMin)} />
             </Fragment>
           );
         })}
       </div>
-    </div>
+    </PolicyShell>
   );
 }
 
 /**
  * Fills the ৳ amounts in shipping-charge lines from the stored config so the
- * page always reflects the current delivery charge / free-delivery minimum.
- * Lines that do not match a known pattern are returned unchanged.
+ * page reflects the current delivery charge / free-delivery minimum. Lines
+ * that do not match a known pattern are returned unchanged, and when a
+ * charge is unconfigured (0) nothing is rewritten.
  */
-function renderChargeLine(part: string, deliveryCharge: number, freeDeliveryMin: number) {
-  if (/free shipping|free delivery/i.test(part) || /over\s*৳/i.test(part)) {
-    return part.replace(/৳[\d,]+/, `৳${freeDeliveryMin.toLocaleString()}`);
-  }
-  if (/flat rate/i.test(part)) {
-    return part.replace(/৳[\d,]+/, `৳${deliveryCharge}`);
-  }
-  return part;
+function renderChargeLines(body: string, deliveryCharge: number, freeDeliveryMin: number): string {
+  if (deliveryCharge <= 0 && freeDeliveryMin <= 0) return body;
+  return body
+    .split("\n")
+    .map((line) => {
+      if (freeDeliveryMin > 0 && (/free shipping|free delivery/i.test(line) || /over\s*৳/i.test(line))) {
+        return line.replace(/৳[\d,]+/, `৳${freeDeliveryMin.toLocaleString()}`);
+      }
+      if (deliveryCharge > 0 && /flat rate/i.test(line)) {
+        return line.replace(/৳[\d,]+/, `৳${deliveryCharge}`);
+      }
+      return line;
+    })
+    .join("\n");
 }

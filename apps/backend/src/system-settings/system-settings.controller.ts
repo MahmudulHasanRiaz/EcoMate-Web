@@ -383,6 +383,16 @@ export class SystemSettingsController {
           map['storefront_url'] ||
           process.env.STOREFRONT_URL ||
           (process.env.CLIENT_DOMAIN ? `https://${process.env.CLIENT_DOMAIN}` : 'http://localhost:3000'),
+        // Search-engine indexing (D7): one flag drives robots + sitemap +
+        // layout meta in lockstep. The key is present only when the tenant
+        // has it stored — a missing key (pre-toggle backend) means the
+        // storefront keeps its historic ON behaviour; only an explicit
+        // 'false' turns indexing off. Fresh tenants are seeded 'false',
+        // existing tenants were backfilled 'true' (migration
+        // 20261113160000).
+        ...(map['search_engine_indexing'] !== undefined
+          ? { searchIndexingEnabled: map['search_engine_indexing'] === 'true' }
+          : {}),
         homepageSections,
         store: {
           name: map['store_name'] || 'EcoMate',

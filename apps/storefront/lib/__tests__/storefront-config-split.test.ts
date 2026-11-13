@@ -49,6 +49,7 @@ function fullConfig(): StorefrontConfig {
     playStoreUrl: 'https://play.example',
     appStoreUrl: '',
     homepageSections: [{ id: '1', title: 'Featured', type: 'featured', limit: 4, enabled: true }],
+    searchIndexingEnabled: true,
   } as StorefrontConfig;
 }
 

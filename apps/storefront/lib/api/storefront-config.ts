@@ -165,6 +165,15 @@ export interface StorefrontConfig {
   licenseFeatures: string[];
   playStoreUrl: string;
   appStoreUrl: string;
+  /**
+   * Search-engine indexing (D7). One flag drives robots + sitemap +
+   * layout meta in lockstep. Only an explicit `false` turns indexing
+   * off (fresh tenant / switched off in Settings). `true` — or a
+   * missing key from a pre-toggle backend — keeps the historic ON
+   * behaviour. The server default (fetch failure) is `false`:
+   * fail-closed, see storefront-config-server.ts.
+   */
+  searchIndexingEnabled: boolean;
 }
 
 export function hasLicenseFeature(config: { licenseFeatures?: string[] } | null | undefined, key: string): boolean {

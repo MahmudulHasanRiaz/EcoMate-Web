@@ -3,6 +3,26 @@ import { NotFoundException } from '@nestjs/common';
 import { CmsPagesService } from '../cms-pages.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MediaResolverService } from '../../media/media-resolver.service';
+import { templatePages } from '../template-pages';
+
+// Invented tenant data that must never ship as a default again (storefront
+// dynamic-pages round, 2026-11-13). Any default containing one of these is a
+// regression: fresh tenants ship EMPTY pages.
+const FORBIDDEN_DEFAULT_STRINGS = [
+  'Store Limited',
+  'STORE PLUS',
+  'Mahmud Riaz',
+  'C-182394/2021',
+  'BSTI Certified',
+  'FIXED PLUS LTD',
+  '150+ Experts',
+  'Chittagong Store',
+  'Sylhet Store',
+  'Opening 2025',
+  'January 2024',
+  'December 2024',
+  'Get the Store App',
+];
 
 describe('CmsPagesService', () => {
   let service: CmsPagesService;
@@ -62,6 +82,41 @@ describe('CmsPagesService', () => {
       );
       expect(creates).toHaveLength(12);
       expect(creates).not.toContain('careers');
+    });
+
+    it('seeds only tenant-neutral empty defaults — no invented tenant data', async () => {
+      await service.ensureTemplatePages();
+      const calls = (prisma.cmsPage.create as jest.Mock).mock.calls.map(
+        (c: any[]) => c[0].data,
+      );
+      expect(calls).toHaveLength(13);
+      for (const d of calls) {
+        const json = JSON.stringify(d.config);
+        for (const forbidden of FORBIDDEN_DEFAULT_STRINGS) {
+          expect(json).not.toContain(forbidden);
+        }
+      }
+      // Spot-check the neutral shapes: no fake jobs, stores, or policy copy.
+      const bySlug = new Map(calls.map((d: any) => [d.slug, d.config]));
+      expect(bySlug.get('careers').jobs).toEqual([]);
+      expect(bySlug.get('stores').stores).toEqual([]);
+      expect(bySlug.get('faq').items).toEqual([]);
+      expect(bySlug.get('terms-conditions').sections).toEqual([]);
+      expect(bySlug.get('shipping-policy').deliveryCharge).toBe(0);
+    });
+  });
+
+  describe('templatePages defaults', () => {
+    it('contain no invented tenant data in any default config', () => {
+      expect(templatePages).toHaveLength(13);
+      const offenders: string[] = [];
+      for (const def of templatePages) {
+        const json = JSON.stringify(def.defaultConfig);
+        for (const forbidden of FORBIDDEN_DEFAULT_STRINGS) {
+          if (json.includes(forbidden)) offenders.push(`${def.key} contains "${forbidden}"`);
+        }
+      }
+      expect(offenders).toEqual([]);
     });
   });
 

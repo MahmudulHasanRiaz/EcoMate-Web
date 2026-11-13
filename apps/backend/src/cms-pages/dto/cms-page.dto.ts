@@ -5,6 +5,7 @@ import {
   IsInt,
   IsObject,
   IsIn,
+  IsDateString,
   MinLength,
 } from 'class-validator';
 
@@ -43,6 +44,23 @@ export class CreateCmsPageDto {
   @IsOptional()
   @IsObject()
   config?: Record<string, any>;
+
+  // SEO + document versioning (storefront dynamic-pages round).
+  @IsOptional()
+  @IsString()
+  metaDescription?: string;
+
+  @IsOptional()
+  @IsString()
+  ogImage?: string;
+
+  @IsOptional()
+  @IsDateString()
+  effectiveDate?: string;
+
+  @IsOptional()
+  @IsInt()
+  version?: number;
 }
 
 export class UpdateCmsPageDto {
@@ -83,4 +101,21 @@ export class UpdateCmsPageDto {
   @IsOptional()
   @IsObject()
   config?: Record<string, any>;
+
+  // SEO + document versioning (storefront dynamic-pages round).
+  @IsOptional()
+  @IsString()
+  metaDescription?: string;
+
+  @IsOptional()
+  @IsString()
+  ogImage?: string;
+
+  @IsOptional()
+  @IsDateString()
+  effectiveDate?: string;
+
+  @IsOptional()
+  @IsInt()
+  version?: number;
 }
