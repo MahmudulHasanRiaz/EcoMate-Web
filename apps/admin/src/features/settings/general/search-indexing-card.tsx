@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { systemSettingsApi } from '@/features/settings/storage-api'
+import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
 import { Globe, Loader2 } from 'lucide-react'
 
@@ -15,10 +16,22 @@ import { Globe, Loader2 } from 'lucide-react'
  * New tenants default OFF (seeder); existing tenants were backfilled ON
  * by migration 20261113160000. Nothing in the app ever turns it on
  * automatically — only this switch does.
+ *
+ * Indexing-ON guard: turning ON requires an explicitly saved canonical
+ * domain (`canonical_domain` in the same system-settings query — the
+ * CLIENT_DOMAIN derive-on-read does NOT count). Turning OFF is always
+ * allowed, so an already-ON tenant is never locked in. The backend
+ * enforces the same guard with a 400; this card disables the switch
+ * (with the reason shown in place) when turning ON is blocked.
  */
 export function SearchIndexingCard() {
+  const { user } = useAuthStore((s) => s.auth)
   const queryClient = useQueryClient()
   const [isSaving, setIsSaving] = useState(false)
+
+  // The Canonical Domain card is superadmin-only, so a non-superadmin
+  // can never save a domain themselves — the blocking reason says so.
+  const isSuperadmin = user?.role === 'superadmin'
 
   const { data: settings, isLoading } = useQuery({
     queryKey: ['system-settings'],
@@ -29,6 +42,14 @@ export function SearchIndexingCard() {
   // A missing key means a pre-toggle backend: keep the historic ON
   // behaviour visible rather than showing a wrong OFF.
   const enabled = settings ? settings['search_engine_indexing'] !== 'false' : true
+
+  // Only an explicitly saved canonical_domain satisfies the guard —
+  // the storefront-config derived domain must NOT be used here.
+  const hasSavedDomain = Boolean(settings?.['canonical_domain']?.trim())
+  // Blocked only when turning ON is what the user would be doing:
+  // currently OFF with no saved domain. Already-ON stays switchable
+  // (turning OFF is always allowed); OFF + saved domain is switchable.
+  const blocked = !enabled && !hasSavedDomain
 
   const saveMut = useMutation({
     mutationFn: (value: boolean) =>
@@ -41,7 +62,8 @@ export function SearchIndexingCard() {
           : 'Search indexing turned off — robots will disallow crawling and the sitemap will be empty.',
       )
     },
-    onError: () => toast.error('Failed to save search indexing setting'),
+    onError: (e: any) =>
+      toast.error(e?.response?.data?.message || 'Failed to save search indexing setting'),
     onSettled: () => setIsSaving(false),
   })
 
@@ -85,10 +107,17 @@ export function SearchIndexingCard() {
           <Switch
             checked={enabled}
             onCheckedChange={handleToggle}
-            disabled={isLoading || isSaving}
+            disabled={isLoading || isSaving || blocked}
             aria-label='Allow search engines to index the store'
           />
         </div>
+        {blocked && (
+          <p className='text-sm text-muted-foreground'>
+            {isSuperadmin
+              ? 'Search indexing can’t be turned on yet — save a canonical domain in the Canonical Domain card below first.'
+              : 'Search indexing can’t be turned on yet — ask a superadmin to save a canonical domain in the Canonical Domain card below.'}
+          </p>
+        )}
         <p className='text-xs text-muted-foreground'>
           Admin, login, account and checkout pages are always excluded from indexing, regardless of this setting.
           Pages with no configured content are also excluded automatically.
