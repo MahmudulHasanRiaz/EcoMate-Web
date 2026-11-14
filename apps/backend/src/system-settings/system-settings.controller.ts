@@ -1062,6 +1062,32 @@ export class SystemSettingsController {
       value = validateCanonicalDomain(value);
     }
 
+    // Indexing-ON guard (owner decision): search indexing may only be
+    // turned ON once a canonical domain has been EXPLICITLY saved in
+    // Settings → General → Canonical Domain. The guard fires only on an
+    // OFF→ON transition (stored value explicitly 'false'): a re-save of
+    // 'true', a missing stored row (historic ON behaviour), and turning
+    // OFF are all allowed. resolveCanonicalDomain()'s CLIENT_DOMAIN
+    // derive does NOT satisfy the guard — only a saved row does, parsed
+    // with the same parseCanonicalDomain() that validates saves (so an
+    // invalid/legacy stored value counts as not saved).
+    if (key === 'search_engine_indexing' && value === 'true') {
+      const stored = await this.prisma.systemSetting.findUnique({
+        where: { key: 'search_engine_indexing' },
+      });
+      if (stored?.value === 'false') {
+        const savedDomain = await this.prisma.systemSetting.findUnique({
+          where: { key: 'canonical_domain' },
+        });
+        const parsed = parseCanonicalDomain(savedDomain?.value || '');
+        if (!parsed.ok || !parsed.origin) {
+          throw new BadRequestException(
+            'Search indexing can only be turned on after a canonical domain is saved in Settings → General → Canonical Domain.',
+          );
+        }
+      }
+    }
+
     await this.prisma.systemSetting.upsert({
       where: { key },
       create: { key, value },
