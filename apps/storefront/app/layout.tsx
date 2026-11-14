@@ -12,7 +12,7 @@ import OfflineBanner from "@/components/OfflineBanner";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer, StorefrontConfigError } from "@/lib/api/storefront-config-server";
 import { pickCriticalConfig } from "@/lib/api/storefront-config-split";
-import { siteUrl } from "@/lib/site-url";
+import { BUILD_ORIGIN_PLACEHOLDER, envSiteUrl } from "@/lib/site-url";
 import { hasLicenseFeature } from "@/lib/api/storefront-config";
 import type { CSSProperties } from "react";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
@@ -51,7 +51,16 @@ export async function generateMetadata(): Promise<Metadata> {
     const config = await getStorefrontConfigServer();
     const faviconUrl = config.branding?.storefrontFavicon || "";
     return {
-      metadataBase: new URL(siteUrl() || 'https://example.com'),
+      // metadataBase is the build-time env origin when it validates as a
+      // public https:// URL — never a wrong :3001/http value, never
+      // example.com at runtime by choice. It is deliberately NOT derived
+      // from the request host here: headers() in the root layout's
+      // generateMetadata would opt EVERY route in the app into dynamic
+      // rendering (and static pages have no request at build time anyway,
+      // so they could not benefit). Request-derived canonicals live where
+      // they can work: sitemap, robots, and page-level metadata via
+      // canonicalSiteUrl() (lib/site-url.ts).
+      metadataBase: new URL(envSiteUrl() || BUILD_ORIGIN_PLACEHOLDER),
       title: {
         template: `%s — ${config.store.name}`,
         default: config.store.name,
@@ -105,12 +114,12 @@ export default async function RootLayout({
   const licenseFeatures: string[] = (initialConfig as any)?.licenseFeatures ?? [];
   const hasMobileDistro = hasLicenseFeature({ licenseFeatures }, 'mobile_distribution');
 
-  const BASE_URL = siteUrl() || 'https://example.com';
+  const BASE_URL = envSiteUrl() || BUILD_ORIGIN_PLACEHOLDER;
 
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: initialConfig?.store.name || 'Store',
+    name: initialConfig?.store.name || 'EcoMate',
     url: BASE_URL,
     logo: initialConfig?.branding?.storeLogo || undefined,
     sameAs: [
@@ -152,7 +161,7 @@ export default async function RootLayout({
             <meta name="theme-color" content={initialConfig?.branding?.colors?.primary || '#0089CD'} />
             <meta name="apple-mobile-web-app-capable" content="yes" />
             <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-            <meta name="apple-mobile-web-app-title" content={initialConfig?.store?.name || 'Store'} />
+            <meta name="apple-mobile-web-app-title" content={initialConfig?.store?.name || 'EcoMate'} />
             <link rel="apple-touch-icon" href={initialConfig?.branding?.storefrontFavicon || '/favicon.svg'} />
           </>
         )}
@@ -190,7 +199,7 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: stringifyForScript({
             '@context': 'https://schema.org',
             '@type': 'WebSite',
-            name: initialConfig?.store.name || 'Store',
+            name: initialConfig?.store.name || 'EcoMate',
             url: BASE_URL,
             potentialAction: {
               '@type': 'SearchAction',
@@ -261,7 +270,7 @@ export default async function RootLayout({
                   </div>
                   <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-3">Under Maintenance</h1>
                   <p className="text-gray-600 text-sm mb-6 leading-relaxed">
-                    {initialConfig?.store?.name || 'Store'} is currently undergoing scheduled updates to serve you better. We'll be back shortly. Thank you for your patience!
+                    {initialConfig?.store?.name || 'EcoMate'} is currently undergoing scheduled updates to serve you better. We'll be back shortly. Thank you for your patience!
                   </p>
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50 px-4 py-2 rounded-full inline-block">
                     Coming Back Soon

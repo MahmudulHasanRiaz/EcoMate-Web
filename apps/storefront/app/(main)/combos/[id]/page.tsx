@@ -38,13 +38,12 @@ async function getCombo(id: string) {
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const [combo, config] = await Promise.all([
-    getCombo(id),
-    getStorefrontConfigServer().catch(() => ({ store: { name: 'Store' } })),
-  ]);
+  const combo = await getCombo(id);
   if (!combo) return { title: 'Combo Not Found' };
   return {
-    title: `${combo.name} — ${(config as any).store?.name || 'Store'}`,
+    // Bare title — the root layout template appends the store name once
+    // (the old `${combo.name} — ${storeName}` rendered it twice).
+    title: combo.name,
     description: combo.shortDesc?.slice(0, 160) || `Check out our ${combo.name} combo deal`,
     openGraph: {
       title: combo.name,

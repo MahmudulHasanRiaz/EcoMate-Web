@@ -10,7 +10,7 @@ import { siteUrl } from "@/lib/site-url";
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
-  let storeName = 'Store';
+  let storeName = 'EcoMate';
   try {
     storeName = (await getStorefrontConfigServer()).store.name;
   } catch {}

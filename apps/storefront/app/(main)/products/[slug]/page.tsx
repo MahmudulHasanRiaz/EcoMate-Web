@@ -43,7 +43,7 @@ function ogImageAbsolute(product: Product): string | undefined {
 
 export async function generateMetadata(props: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await props.params;
-  let storeName = "Store";
+  let storeName = "EcoMate";
   try { const c = await getStorefrontConfigServer(); storeName = c.store.name; } catch {}
   try {
     // Shared request-memoized fetch with the page below — one backend hit.

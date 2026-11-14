@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
 } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CategoriesService } from './categories.service';
@@ -17,10 +18,19 @@ import { RequiresFeature } from '@ecomate/feature-flags';
 export class CategoriesController {
   constructor(private readonly svc: CategoriesService) {}
 
+  /**
+   * Full-set list. `?isActive=true|false` filters by active flag — the
+   * storefront sitemap relies on `?isActive=true` so inactive categories
+   * are never listed. Any other value (or none) means "no filter", which
+   * preserves the admin's unfiltered list.
+   */
   @Public()
   @Get()
-  async findAll() {
-    return this.svc.findAll();
+  async findAll(@Query('isActive') isActive?: string) {
+    const filter: { isActive?: boolean } = {};
+    if (isActive === 'true') filter.isActive = true;
+    else if (isActive === 'false') filter.isActive = false;
+    return this.svc.findAll(filter);
   }
 
   @Public()

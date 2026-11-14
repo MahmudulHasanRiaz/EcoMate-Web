@@ -11,8 +11,8 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     // Without mobile distribution: return non-installable manifest
     if (!hasMobileDistro) {
       return {
-        name: config.store.name || 'Store',
-        short_name: config.store.name || 'Store',
+        name: config.store.name || 'EcoMate',
+        short_name: config.store.name || 'EcoMate',
         description: config.seo.description || '',
         start_url: '/',
         display: 'browser',
@@ -25,8 +25,8 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     const primaryColor = config.branding?.colors?.primary || '#0089CD'
     const faviconPngUrl = faviconUrl.replace(/\.svg$/, '.png')
     return {
-      name: config.store.name || 'Store',
-      short_name: config.store.name || 'Store',
+      name: config.store.name || 'EcoMate',
+      short_name: config.store.name || 'EcoMate',
       description: config.seo.description || '',
       start_url: '/',
       display: 'standalone',
@@ -41,8 +41,8 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     }
   } catch {
     return {
-      name: 'Store',
-      short_name: 'Store',
+      name: 'EcoMate',
+      short_name: 'EcoMate',
       description: '',
       start_url: '/',
       display: 'browser',

@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
-import { publicMediaUrl, siteUrl } from '@/lib/site-url';
+import { canonicalSiteUrl, publicMediaUrl } from '@/lib/site-url';
+import { serverFetch } from '@/lib/api-server';
 import {
   preFormattedPages,
   templateHasRealContent,
@@ -14,14 +15,14 @@ import {
 export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = siteUrl() || 'https://example.com';
+  const baseUrl = await canonicalSiteUrl();
 
   const staticPages: MetadataRoute.Sitemap = [
     { url: baseUrl, lastModified: new Date(), changeFrequency: 'daily' as const, priority: 1 },
+    { url: `${baseUrl}/products`, lastModified: new Date(), changeFrequency: 'daily' as const, priority: 0.9 },
     { url: `${baseUrl}/combos`, lastModified: new Date(), changeFrequency: 'daily' as const, priority: 0.8 },
   ];
 
-  const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
   // Product images are served from the backend (/uploads/…) — resolve them
   // through the ONE public-media helper, never against the API origin:
   // in production API_URL is the internal http://backend:4000, which
@@ -61,10 +62,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // placeholder until the first runtime revalidation.
   // The payload is kept: the delivery-areas inclusion rule below also
   // needs the live shipping config.
+  // All dynamic fetches go through serverFetch: internal-secret header,
+  // throw on !ok, retries on connection failure. A backend error therefore
+  // surfaces as a thrown fetch (caught per block below) instead of a
+  // non-JSON error body silently parsing to [] — the outage guard at the
+  // bottom only throws (loud, nothing cached) when EVERY fetch fails.
   let storefrontCfg: any = null;
   try {
-    const cfgRes = await fetch(`${apiUrl}/system-settings/storefront`);
-    const cfg = await cfgRes.json();
+    const cfg = await serverFetch<any>('/system-settings/storefront');
     storefrontCfg = cfg;
     if (cfg?.searchIndexingEnabled === false) return [];
   } catch {
@@ -76,8 +81,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Fetch categories for dynamic category pages
   let categoryPages: MetadataRoute.Sitemap = [];
   try {
-    const res = await fetch(`${apiUrl}/categories?isActive=true`);
-    const data = await res.json();
+    const data = await serverFetch<any>('/categories?isActive=true');
     dynamicOk = true;
     const categories = data.data || data || [];
     if (Array.isArray(categories)) {
@@ -97,9 +101,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     let cursor: string | null = null;
     let prevCursor: string | undefined;
     for (;;) {
-      const pageUrl: string = `${apiUrl}/products?isActive=true&perPage=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
-      const res: any = await fetch(pageUrl);
-      const data: any = await res.json();
+      const pageUrl: string = `/products?isActive=true&perPage=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+      const data: any = await serverFetch(pageUrl);
       dynamicOk = true;
       const products = data.data || [];
       if (Array.isArray(products)) {
@@ -124,8 +127,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Fetch combos for combo detail pages
   let comboPages: MetadataRoute.Sitemap = [];
   try {
-    const res = await fetch(`${apiUrl}/combos?isActive=true&perPage=1000`);
-    const data = await res.json();
+    const data = await serverFetch<any>('/combos?isActive=true&perPage=1000');
     dynamicOk = true;
     const combos = data.data || [];
     if (Array.isArray(combos)) {
@@ -153,10 +155,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       TEMPLATE_PAGE_ROUTES.map(
         async (t): Promise<MetadataRoute.Sitemap[number] | null> => {
           try {
-            const res = await fetch(`${apiUrl}/cms-pages/slug/${t.slug}`);
+            // serverFetch throws on !ok (a missing slug is a 404) — the
+            // inner catch below turns that into "omit this page", same as
+            // the old `if (!res.ok) return null`.
+            const page = await serverFetch<any>(`/cms-pages/slug/${t.slug}`);
             dynamicOk = true;
-            if (!res.ok) return null;
-            const page = await res.json();
             if (!page?.isActive) return null;
             const def = preFormattedPages[t.key];
             const merged = def
@@ -187,16 +190,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // endpoint (`GET /cms-pages`) without auth and always got `[]` — no
   // `/pages/*` URL ever entered the sitemap. The public footer endpoint
   // (`GET /cms-pages/footer`, active + showInFooter) is the correct
-  // source and needs no auth.
+  // source and needs no auth. Template-type rows live at /<slug> and
+  // content rows at /pages/<slug> — the same split the footer renders
+  // (CmsFooterLinks); mapping every row to /pages/<slug> 404s the
+  // template ones.
   let cmsPages: MetadataRoute.Sitemap = [];
   try {
-    const res = await fetch(`${apiUrl}/cms-pages/footer`);
-    const data = await res.json();
+    const data = await serverFetch<any>('/cms-pages/footer');
     dynamicOk = true;
     const pages = Array.isArray(data) ? data : data.data || [];
     if (Array.isArray(pages)) {
       cmsPages = pages.map((p: any) => ({
-        url: `${baseUrl}/pages/${p.slug}`,
+        url: p.type === 'template' ? `${baseUrl}/${p.slug}` : `${baseUrl}/pages/${p.slug}`,
         lastModified: new Date(p.updatedAt),
         changeFrequency: 'monthly' as const,
         priority: 0.5,

@@ -101,7 +101,7 @@ export default async function HomePage() {
     <>
       {/* Single h1 for the homepage (screen-reader only — zero visual change). */}
       <h1 className="sr-only">
-        {config?.store?.name || 'Store'}
+        {config?.store?.name || 'EcoMate'}
         {config?.store?.tagline ? ` — ${config.store.tagline}` : ''}
       </h1>
       <Hero
