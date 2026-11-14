@@ -95,7 +95,7 @@ export class CachePurgeService {
 
     const backendCache = await this.purgeBackendCache();
     const cloudflare = await this.purgeCloudflare();
-    const storefront = await this.purgeStorefront(storefrontUrl);
+    const storefront = await this.revalidateStorefront(storefrontUrl);
     const { version, result: versionBump } = await this.bumpVersion();
 
     // Log the outcome, never any credential. Token/secret values are
@@ -215,9 +215,20 @@ export class CachePurgeService {
     };
   }
 
-  private async purgeStorefront(
-    storefrontUrl: string,
+  /**
+   * Ask the storefront to revalidate its `products` + `config` caches
+   * (POST /api/revalidate). Public so a settings save that changes a
+   * crawler-facing value (canonical_domain) can trigger it directly
+   * instead of waiting out the storefront's revalidate windows — the
+   * purge-all button is the manual form of the same call. Never throws:
+   * a failed / not-configured revalidation is reported, never fatal to
+   * the caller (a settings save must not fail because the storefront
+   * could not be reached).
+   */
+  async revalidateStorefront(
+    storefrontUrl?: string,
   ): Promise<PurgeLayerResult> {
+    const url = storefrontUrl ?? (await this.resolveStorefrontUrl());
     const secret = process.env['REVALIDATION_SECRET'];
     if (!secret) {
       return {
@@ -229,8 +240,8 @@ export class CachePurgeService {
       };
     }
     try {
-      const url = `${storefrontUrl.replace(/\/$/, '')}/api/revalidate?tags=products,config`;
-      const res = await fetch(url, {
+      const revalidateUrl = `${url.replace(/\/$/, '')}/api/revalidate?tags=products,config`;
+      const res = await fetch(revalidateUrl, {
         method: 'POST',
         headers: { 'x-revalidation-secret': secret },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -244,6 +255,7 @@ export class CachePurgeService {
             (text ? `: ${text.slice(0, 200)}` : '.'),
         };
       }
+      this.logger.log('Storefront revalidated (tags products,config).');
       return {
         status: 'purged',
         detail:

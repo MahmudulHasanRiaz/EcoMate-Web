@@ -69,7 +69,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // bottom only throws (loud, nothing cached) when EVERY fetch fails.
   let storefrontCfg: any = null;
   try {
-    const cfg = await serverFetch<any>('/system-settings/storefront');
+    // Tagged "config": POST /api/revalidate {tags:["config"]} (the
+    // Purge-all button, and a canonical_domain save) purges this fetch
+    // AND the sitemap route cache — without the tag, a domain change
+    // would sit stale here until the hourly revalidate.
+    const cfg = await serverFetch<any>('/system-settings/storefront', {
+      tags: ['config'],
+    });
     storefrontCfg = cfg;
     if (cfg?.searchIndexingEnabled === false) return [];
   } catch {

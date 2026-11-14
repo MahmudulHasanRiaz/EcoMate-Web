@@ -89,6 +89,12 @@ describe('SystemSettingsController', () => {
         {} as any,
         cache as any,
         {} as any,
+        {
+          revalidateStorefront: jest.fn().mockResolvedValue({
+            status: 'purged',
+            detail: '',
+          }),
+        } as any,
       );
     }
 
@@ -128,6 +134,12 @@ describe('SystemSettingsController', () => {
         {} as any,
         cache as any,
         {} as any,
+        {
+          revalidateStorefront: jest.fn().mockResolvedValue({
+            status: 'purged',
+            detail: '',
+          }),
+        } as any,
       );
       return { ctrl, prisma, cache };
     }
@@ -201,6 +213,7 @@ describe('SystemSettingsController', () => {
       };
       const ctrl = new SystemSettingsController(
         prisma as any,
+        {} as any,
         {} as any,
         {} as any,
         {} as any,

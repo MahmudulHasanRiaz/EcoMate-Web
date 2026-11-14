@@ -15,6 +15,7 @@ import { StorageService } from '../storage/storage.service';
 import { MediaService } from '../media/media.service';
 import { MediaResolverService } from '../media/media-resolver.service';
 import { CacheService } from '../cache/cache.service';
+import { CachePurgeService } from '../cache-purge/cache-purge.service';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
@@ -171,6 +172,109 @@ function validateCatalogImageRatio(raw: string): CatalogImageRatio {
   );
 }
 
+// Canonical domain (SystemSetting `canonical_domain`) — THE centralized
+// source for the storefront's public origin (sitemap, robots, canonical
+// URLs, metadataBase). Rules mirror the storefront's isPublicHttpsOrigin
+// (apps/storefront/lib/site-url.ts) exactly, so a value the backend
+// accepts is one the storefront trusts: public https:// URL, NO port,
+// no userinfo, never example.com, never an internal host. The parse
+// result carries the precise reason so an invalid save fails with a 400
+// naming the problem — a bad value must never be persisted.
+type CanonicalDomainResult =
+  | { ok: true; origin: string }
+  | { ok: false; reason: string };
+
+function isInternalCanonicalHostname(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'backend' || h === 'localhost' || h === '127.0.0.1' || h === '::1')
+    return true;
+  if (/^10\.\d+\.\d+\.\d+$/.test(h)) return true;
+  if (/^192\.168\.\d+\.\d+$/.test(h)) return true;
+  const m = h.match(/^172\.(\d+)\.\d+\.\d+$/);
+  if (m) {
+    const second = Number(m[1]);
+    if (second >= 16 && second <= 31) return true;
+  }
+  return false;
+}
+
+function parseCanonicalDomain(raw: string): CanonicalDomainResult {
+  const value = (raw || '').trim().replace(/\/$/, '');
+  // Empty clears the setting (the storefront then falls back to the
+  // deployment-derived domain / request host) — not an error.
+  if (!value) return { ok: true, origin: '' };
+  let u: URL;
+  try {
+    u = new URL(value);
+  } catch {
+    return {
+      ok: false,
+      reason:
+        'canonical_domain must be a valid URL, e.g. https://demo.ecomate.bd',
+    };
+  }
+  if (u.protocol !== 'https:') {
+    return {
+      ok: false,
+      reason: `canonical_domain must use https:// (got ${u.protocol}//${u.host})`,
+    };
+  }
+  if (u.port) {
+    return {
+      ok: false,
+      reason: `canonical_domain must not include a port (got :${u.port})`,
+    };
+  }
+  if (!u.hostname) {
+    return {
+      ok: false,
+      reason:
+        'canonical_domain must include a domain, e.g. https://demo.ecomate.bd',
+    };
+  }
+  if (u.hostname === 'example.com') {
+    return {
+      ok: false,
+      reason:
+        'canonical_domain must not be example.com — save the store’s real public domain',
+    };
+  }
+  if (u.username || u.password) {
+    return {
+      ok: false,
+      reason: 'canonical_domain must not include a username or password',
+    };
+  }
+  if (isInternalCanonicalHostname(u.hostname)) {
+    return {
+      ok: false,
+      reason: `canonical_domain must be a public domain, not an internal host (got ${u.hostname})`,
+    };
+  }
+  // URL.origin normalises: lowercases the host, drops a default :443.
+  return { ok: true, origin: u.origin };
+}
+
+function validateCanonicalDomain(raw: string): string {
+  const parsed = parseCanonicalDomain(raw);
+  if (!parsed.ok) throw new BadRequestException(parsed.reason);
+  return parsed.origin;
+}
+
+// Effective canonical domain for the storefront-config payload: the
+// saved `canonical_domain` value first; when unset, derive from the
+// tenant's deployment domain (CLIENT_DOMAIN). Returns '' when neither
+// yields a valid public https origin — the caller then omits the key
+// and the storefront falls through to the request host.
+function resolveCanonicalDomain(map: Record<string, string>): string {
+  const saved = parseCanonicalDomain(map['canonical_domain'] || '');
+  if (saved.ok && saved.origin) return saved.origin;
+  const clientDomain = (process.env.CLIENT_DOMAIN || '').trim();
+  if (!clientDomain) return '';
+  const derived = parseCanonicalDomain(`https://${clientDomain}`);
+  return derived.ok ? derived.origin : '';
+}
+
 @Controller('system-settings')
 export class SystemSettingsController {
   constructor(
@@ -180,6 +284,7 @@ export class SystemSettingsController {
     private readonly mediaResolver: MediaResolverService,
     private readonly cache: CacheService,
     private readonly featureFlags: FeatureFlagsService,
+    private readonly cachePurge: CachePurgeService,
   ) {}
 
   @Get()
@@ -378,11 +483,23 @@ export class SystemSettingsController {
         ];
       }
 
+      const canonicalDomain = resolveCanonicalDomain(map);
+
       const result = {
         storefrontUrl:
           map['storefront_url'] ||
           process.env.STOREFRONT_URL ||
           (process.env.CLIENT_DOMAIN ? `https://${process.env.CLIENT_DOMAIN}` : 'http://localhost:3000'),
+        // Canonical domain — THE centralized source for the storefront's
+        // public origin (sitemap, robots, canonical URLs, metadataBase).
+        // A saved value wins. When unset, DERIVE from CLIENT_DOMAIN so
+        // live tenants keep a correct canonical with ZERO action
+        // (auto-seed on read — deliberately never persisted, so a wrong
+        // deploy-time value can never pin a bad canonical; the
+        // storefront re-validates before use and falls through to the
+        // request host when nothing here parses). Omitted entirely when
+        // neither a saved nor a derivable value exists.
+        ...(canonicalDomain ? { canonicalDomain } : {}),
         // Search-engine indexing (D7): one flag drives robots + sitemap +
         // layout meta in lockstep. The key is present only when the tenant
         // has it stored — a missing key (pre-toggle backend) means the
@@ -793,6 +910,14 @@ export class SystemSettingsController {
         );
       }
     }
+    // Canonical domain is superadmin-only: it decides what every
+    // crawler sees as this store's origin — a wrong value poisons the
+    // sitemap, robots and every canonical at once.
+    if (key === 'canonical_domain' && user?.role !== 'superadmin') {
+      throw new ForbiddenException(
+        'Only superadmins may change the canonical domain',
+      );
+    }
     let value = body.value ?? '';
 
     // Masked-secret convention: an EMPTY submitted value for a redacted secret
@@ -930,6 +1055,11 @@ export class SystemSettingsController {
       value = JSON.stringify(systems);
     } else if (key === 'catalogImageRatio') {
       value = JSON.stringify(validateCatalogImageRatio(value));
+    } else if (key === 'canonical_domain') {
+      // Strict validation + normalisation (trailing slash stripped,
+      // host lowercased, default :443 dropped). '' clears the setting —
+      // the storefront then falls back to the deployment-derived domain.
+      value = validateCanonicalDomain(value);
     }
 
     await this.prisma.systemSetting.upsert({
@@ -938,6 +1068,16 @@ export class SystemSettingsController {
       update: { value },
     });
     await this.cache.delete('storefront:config');
+    if (key === 'canonical_domain') {
+      // Best-effort on-demand invalidation of the storefront's
+      // sitemap/robots caches — the same call the Purge-all button
+      // makes (POST /api/revalidate, tags products,config). Never fails
+      // the save: revalidateStorefront reports instead of throwing, and
+      // when REVALIDATION_SECRET is unset it is an immediate no-op —
+      // the storefront then picks the change up via its 60s config
+      // revalidate (pages/metadata) and 1h sitemap revalidate.
+      void this.cachePurge.revalidateStorefront();
+    }
     return { key, value };
   }
 

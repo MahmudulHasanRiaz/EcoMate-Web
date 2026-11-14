@@ -4,6 +4,7 @@ import { SectionShell } from '@/features/settings/storefront/components/section-
 import { Field } from '@/features/settings/storefront/components/field'
 import { systemSettingsApi } from '@/features/settings/storage-api'
 import { SearchIndexingCard } from './search-indexing-card'
+import { CanonicalDomainCard } from './canonical-domain-card'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 
@@ -132,6 +133,7 @@ export function GeneralSettings() {
         </div>
       </SectionShell>
       <SearchIndexingCard />
+      <CanonicalDomainCard />
     </div>
   )
 }

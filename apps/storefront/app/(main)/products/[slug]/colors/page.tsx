@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { getProductBySlugServer, getSizeChartPresenceServer } from "@/lib/api/products-server";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { sanitizeProductHTML } from "@/lib/sanitize-product";
-import { siteUrl } from "@/lib/site-url";
+import { canonicalSiteUrl } from "@/lib/site-url";
 import ColorCatalogGrid from "@/components/ColorCatalogGrid";
 import ProductDetailClient from "@/components/ProductDetailClient";
 import Link from "next/link";
@@ -25,7 +25,7 @@ export async function generateMetadata(props: {
       ? `${product.name} (${sp.color})`
       : `${product.name} — Colors`;
     // Color views are facets of the PDP — canonical collapses them there.
-    const canonical = `${siteUrl()}/products/${slug}`;
+    const canonical = `${await canonicalSiteUrl()}/products/${slug}`;
     return {
       title,
       description: sp.color

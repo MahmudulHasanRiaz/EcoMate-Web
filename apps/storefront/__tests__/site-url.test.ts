@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { canonicalSiteUrl, envSiteUrl, siteUrl } from '@/lib/site-url';
+import {
+  canonicalSiteUrl,
+  canonicalDomainFromConfig,
+  envSiteUrl,
+  siteUrl,
+} from '@/lib/site-url';
 
 // Controlled request headers for canonicalSiteUrl: `null` means headers()
 // throws (no request context — the build-time prerender case).
@@ -12,7 +17,22 @@ vi.mock('next/headers', () => ({
   }),
 }));
 
-const ENV_KEYS = ['NEXT_PUBLIC_STOREFRONT_URL', 'NEXT_PUBLIC_BASE_URL'] as const;
+// Controlled storefront config for the Settings-domain tier: `null` means
+// the config fetch throws (backend unreachable — fall through the chain).
+let mockConfigValue: any = { store: { name: 'Test Store' } };
+
+vi.mock('@/lib/api/storefront-config-server', () => ({
+  getStorefrontConfigServer: vi.fn(async () => {
+    if (mockConfigValue === null) throw new Error('config unreachable');
+    return mockConfigValue;
+  }),
+}));
+
+const ENV_KEYS = [
+  'STORE_NEXT_PUBLIC_STOREFRONT_URL',
+  'NEXT_PUBLIC_STOREFRONT_URL',
+  'NEXT_PUBLIC_BASE_URL',
+] as const;
 let savedEnv: Record<string, string | undefined>;
 
 function setEnv(values: Partial<Record<(typeof ENV_KEYS)[number], string>>) {
@@ -25,6 +45,7 @@ describe('canonicalSiteUrl', () => {
     savedEnv = {};
     for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
     mockHeadersValue = new Headers({ host: 'demo.ecomate.bd' });
+    mockConfigValue = { store: { name: 'Test Store' } };
   });
 
   afterEach(() => {
@@ -87,6 +108,60 @@ describe('canonicalSiteUrl', () => {
     setEnv({ NEXT_PUBLIC_STOREFRONT_URL: 'https://example.com' });
     await expect(canonicalSiteUrl()).resolves.toBe('https://demo.ecomate.bd');
   });
+
+  it('Settings domain wins over the request host', async () => {
+    setEnv({});
+    mockConfigValue = { canonicalDomain: 'https://shop.example.com' };
+    await expect(canonicalSiteUrl()).resolves.toBe('https://shop.example.com');
+  });
+
+  it('Settings domain wins over a spoofed x-forwarded-host', async () => {
+    setEnv({});
+    mockConfigValue = { canonicalDomain: 'https://shop.example.com' };
+    mockHeadersValue = new Headers({
+      'x-forwarded-host': 'evil.example.net',
+      host: 'demo.ecomate.bd',
+    });
+    await expect(canonicalSiteUrl()).resolves.toBe('https://shop.example.com');
+  });
+
+  it('no request context + Settings domain set → Settings domain, not the placeholder', async () => {
+    setEnv({});
+    mockHeadersValue = null;
+    mockConfigValue = { canonicalDomain: 'https://shop.example.com/' };
+    await expect(canonicalSiteUrl()).resolves.toBe('https://shop.example.com');
+  });
+
+  it('invalid Settings domain falls through to the request host', async () => {
+    setEnv({});
+    mockConfigValue = { canonicalDomain: 'http://shop.example.com:3001' };
+    await expect(canonicalSiteUrl()).resolves.toBe('https://demo.ecomate.bd');
+  });
+
+  it('unreachable Settings config falls through to the request host', async () => {
+    setEnv({});
+    mockConfigValue = null;
+    await expect(canonicalSiteUrl()).resolves.toBe('https://demo.ecomate.bd');
+  });
+});
+
+describe('canonicalDomainFromConfig', () => {
+  it('accepts a valid domain, trailing slash stripped', () => {
+    expect(
+      canonicalDomainFromConfig({ canonicalDomain: 'https://shop.example.com/' }),
+    ).toBe('https://shop.example.com');
+  });
+
+  it('rejects absent, empty, non-string and invalid values', () => {
+    expect(canonicalDomainFromConfig({})).toBe('');
+    expect(canonicalDomainFromConfig(null)).toBe('');
+    expect(canonicalDomainFromConfig({ canonicalDomain: '' })).toBe('');
+    expect(canonicalDomainFromConfig({ canonicalDomain: 42 })).toBe('');
+    expect(canonicalDomainFromConfig({ canonicalDomain: 'http://shop.example.com' })).toBe('');
+    expect(canonicalDomainFromConfig({ canonicalDomain: 'https://shop.example.com:3001' })).toBe('');
+    expect(canonicalDomainFromConfig({ canonicalDomain: 'https://example.com' })).toBe('');
+    expect(canonicalDomainFromConfig({ canonicalDomain: 'https://backend:4000' })).toBe('');
+  });
 });
 
 describe('envSiteUrl', () => {
@@ -121,6 +196,27 @@ describe('envSiteUrl', () => {
   it('falls back to the legacy NEXT_PUBLIC_BASE_URL', () => {
     setEnv({ NEXT_PUBLIC_BASE_URL: 'https://legacy.example.com' });
     expect(envSiteUrl()).toBe('https://legacy.example.com');
+  });
+
+  it('accepts the runtime STORE_ var (read at runtime, never build-inlined)', () => {
+    setEnv({ STORE_NEXT_PUBLIC_STOREFRONT_URL: 'https://runtime.example.com' });
+    expect(envSiteUrl()).toBe('https://runtime.example.com');
+  });
+
+  it('runtime STORE_ var wins over the build-baked NEXT_PUBLIC_ var', () => {
+    setEnv({
+      STORE_NEXT_PUBLIC_STOREFRONT_URL: 'https://runtime.example.com',
+      NEXT_PUBLIC_STOREFRONT_URL: 'https://baked.example.com',
+    });
+    expect(envSiteUrl()).toBe('https://runtime.example.com');
+  });
+
+  it('invalid runtime STORE_ var falls through to NEXT_PUBLIC_', () => {
+    setEnv({
+      STORE_NEXT_PUBLIC_STOREFRONT_URL: 'http://runtime.example.com:3001',
+      NEXT_PUBLIC_STOREFRONT_URL: 'https://baked.example.com',
+    });
+    expect(envSiteUrl()).toBe('https://baked.example.com');
   });
 });
 

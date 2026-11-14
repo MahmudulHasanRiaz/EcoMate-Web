@@ -33,7 +33,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const sp = await searchParams;
   const storeName = await getMetaStoreName();
-  const base = metaBaseUrl();
+  const base = await metaBaseUrl();
 
   const facetCount =
     (sp.category || sp.categoryId ? 1 : 0) +

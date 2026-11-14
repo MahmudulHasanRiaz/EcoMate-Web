@@ -27,6 +27,7 @@ import { PageInfo } from '@/components/page-info'
 type PickerTarget =
   | { kind: 'hero'; sectionIndex: number }
   | { kind: 'gallery'; sectionIndex: number }
+  | { kind: 'poster'; sectionIndex: number }
   | { kind: 'review-image'; sectionIndex: number; itemIndex: number }
 
 export function LandingPages() {
@@ -204,6 +205,7 @@ export function LandingPages() {
     const sec = sections[pickerTarget.sectionIndex]
     if (!sec) return []
     if (pickerTarget.kind === 'hero') return sec.image ? [sec.image] : []
+    if (pickerTarget.kind === 'poster') return sec.poster ? [sec.poster] : []
     if (pickerTarget.kind === 'gallery') return Array.isArray(sec.images) ? sec.images.filter(Boolean) : []
     const item = sec.items?.[pickerTarget.itemIndex]
     return item?.image ? [item.image] : []
@@ -214,6 +216,8 @@ export function LandingPages() {
     const { sectionIndex } = pickerTarget
     if (pickerTarget.kind === 'hero') {
       updateSection(sectionIndex, 'image', urls[0] || '')
+    } else if (pickerTarget.kind === 'poster') {
+      updateSection(sectionIndex, 'poster', urls[0] || '')
     } else if (pickerTarget.kind === 'gallery') {
       const current: string[] = Array.isArray(sections[sectionIndex]?.images) ? sections[sectionIndex].images : []
       updateSection(sectionIndex, 'images', Array.from(new Set([...current.filter(Boolean), ...urls])))
@@ -258,7 +262,7 @@ export function LandingPages() {
     'trust-badges': { label: 'Trust Badges', icon: '✅', default: { type: 'trust-badges', title: 'Why Shop With Us', items: [{ icon: '🚚', label: 'Free Delivery' }, { icon: '💳', label: 'Cash on Delivery' }, { icon: '🔄', label: 'Easy Returns' }, { icon: '🔒', label: 'Secure Payment' }] } },
     'cta-footer': { label: 'CTA Footer', icon: '🎯', default: { type: 'cta-footer', title: 'Limited Time Offer', subtitle: 'Order now before stock runs out', ctaText: 'Order Now', badgeText: '', offerEndsAt: '', stockCount: 0 } },
     'image-gallery': { label: 'Image Gallery', icon: '🖼️', default: { type: 'image-gallery', title: 'Gallery', images: [''] } },
-    'video-embed': { label: 'Video Embed', icon: '🎬', default: { type: 'video-embed', title: 'Watch', videoUrl: '' } },
+    'video-embed': { label: 'Video Embed', icon: '🎬', default: { type: 'video-embed', title: 'Watch', videoUrl: '', poster: '' } },
     testimonials: { label: 'Testimonials', icon: '💬', default: { type: 'testimonials', title: 'What Our Customers Say', items: [{ name: 'Customer', text: 'Great product!', rating: 5 }] } },
     'review-slider': { label: 'Review Slider', icon: '⭐', default: { type: 'review-slider', title: 'Reviews', items: [{ image: '', title: 'Review', text: 'Amazing!', rating: 5 }] } },
     faq: { label: 'FAQ', icon: '❓', default: { type: 'faq', title: 'FAQs', items: [{ question: 'Question?', answer: 'Answer here.' }] } },
@@ -390,6 +394,20 @@ export function LandingPages() {
         <div className='space-y-1 col-span-2' key='videoUrl'>
           <Label className='text-xs'>Video URL</Label>
           <Input className='h-8 text-xs' value={sec.videoUrl || ''} onChange={e => updateSection(i, 'videoUrl', e.target.value)} placeholder='https://youtube.com/...' />
+        </div>,
+      )
+    }
+
+    if (sec.poster !== undefined) {
+      fields.push(
+        <div className='space-y-1 col-span-2' key='poster'>
+          <Label className='text-xs'>Poster URL</Label>
+          <div className='flex items-center gap-2'>
+            <Input className='h-8 text-xs flex-1' value={sec.poster || ''} onChange={e => updateSection(i, 'poster', e.target.value)} placeholder='https://...' />
+            <Button variant='outline' size='sm' className='h-8 text-xs shrink-0' onClick={() => setPickerTarget({ kind: 'poster', sectionIndex: i })}>
+              <ImagePlus className='h-3.5 w-3.5 mr-1' /> Browse
+            </Button>
+          </div>
         </div>,
       )
     }
@@ -937,9 +955,9 @@ export function LandingPages() {
         </DialogContent>
       </Dialog>
 
-      {/* Media Library picker for section image fields (hero, gallery, review photos).
-          Video sections have no thumbnail/poster field in the section model or
-          the storefront renderer, so there is nothing to pick for them. */}
+      {/* Media Library picker for section image fields (hero, gallery, review photos,
+          video poster). The poster is only rendered by the storefront for native
+          <video> sections; YouTube embeds ignore it (iframes have no poster). */}
       <MediaPicker
         open={pickerTarget !== null}
         onOpenChange={(v) => { if (!v) setPickerTarget(null) }}

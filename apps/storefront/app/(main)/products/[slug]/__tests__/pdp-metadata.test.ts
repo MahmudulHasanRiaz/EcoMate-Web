@@ -71,13 +71,19 @@ describe('PDP generateMetadata (F2/F3)', () => {
     expect(cdn.openGraph?.images?.[0]?.url).toBe('https://cdn.example.com/p1.jpg');
   });
 
-  it('never crashes with env unset (relative output, no internal leak)', async () => {
+  it('never crashes with env unset (build-time placeholder canonical, no internal leak)', async () => {
     mockConfig.mockRejectedValue(new Error('down'));
     mockProduct.mockResolvedValue({ ...baseProduct, image: '/uploads/p1.jpg' });
 
     const meta: any = await generateMetadata(params('test-panjabi'));
 
-    expect(meta.alternates?.canonical).toBe('/products/test-panjabi');
+    // No request context + no env + config down: the documented build-time
+    // fallback is the placeholder origin (never a relative canonical, never
+    // an internal host). The first runtime revalidation replaces it with
+    // the request-derived origin. OG images stay relative here — they
+    // resolve through publicMediaUrl/siteUrl, unchanged by this round.
+    expect(meta.alternates?.canonical).toBe('https://example.com/products/test-panjabi');
+    expect(meta.openGraph?.url).toBe('https://example.com/products/test-panjabi');
     expect(meta.openGraph?.images?.[0]?.url).toBe('/uploads/p1.jpg');
   });
 

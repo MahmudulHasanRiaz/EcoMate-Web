@@ -692,7 +692,7 @@ function VideoEmbedSection({ section }: SectionProps) {
       <div className="max-w-4xl mx-auto px-6">
         {section.title && <h2 className="text-2xl font-bold text-center text-gray-900 mb-8">{section.title}</h2>}
         <div className="aspect-video rounded-2xl overflow-hidden bg-black">
-          <video src={section.videoUrl} controls className="w-full h-full" />
+          <video src={section.videoUrl} poster={section.poster || undefined} controls className="w-full h-full" />
         </div>
       </div>
     </section>

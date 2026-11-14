@@ -16,7 +16,7 @@ export async function generateMetadata({ params }: TagPageProps): Promise<Metada
   return {
     title: label,
     description: `Shop ${label} at ${storeName}`,
-    alternates: { canonical: `${metaBaseUrl()}/products/tags/${slug}` },
+    alternates: { canonical: `${await metaBaseUrl()}/products/tags/${slug}` },
   };
 }
 

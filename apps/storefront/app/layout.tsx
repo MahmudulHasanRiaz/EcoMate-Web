@@ -12,7 +12,7 @@ import OfflineBanner from "@/components/OfflineBanner";
 import { Toaster } from "sonner";
 import { getStorefrontConfigServer, StorefrontConfigError } from "@/lib/api/storefront-config-server";
 import { pickCriticalConfig } from "@/lib/api/storefront-config-split";
-import { BUILD_ORIGIN_PLACEHOLDER, envSiteUrl } from "@/lib/site-url";
+import { BUILD_ORIGIN_PLACEHOLDER, canonicalDomainFromConfig, envSiteUrl } from "@/lib/site-url";
 import { hasLicenseFeature } from "@/lib/api/storefront-config";
 import type { CSSProperties } from "react";
 import type { StorefrontConfig } from "@/lib/api/storefront-config";
@@ -51,16 +51,22 @@ export async function generateMetadata(): Promise<Metadata> {
     const config = await getStorefrontConfigServer();
     const faviconUrl = config.branding?.storefrontFavicon || "";
     return {
-      // metadataBase is the build-time env origin when it validates as a
-      // public https:// URL — never a wrong :3001/http value, never
-      // example.com at runtime by choice. It is deliberately NOT derived
-      // from the request host here: headers() in the root layout's
-      // generateMetadata would opt EVERY route in the app into dynamic
-      // rendering (and static pages have no request at build time anyway,
-      // so they could not benefit). Request-derived canonicals live where
-      // they can work: sitemap, robots, and page-level metadata via
+      // metadataBase comes from the canonical chain minus the
+      // request-host tier: the Settings domain first (saved in Settings
+      // → General; served through the cached storefront config this
+      // function already fetches — NO headers() here, so no route is
+      // opted into dynamic rendering), then the env-validated origin.
+      // The request host cannot be used here: headers() in the root
+      // layout's generateMetadata would opt EVERY route in the app into
+      // dynamic rendering (and static pages have no request at build
+      // time anyway). Request-derived canonicals live where they can
+      // work: sitemap, robots, and page-level metadata via
       // canonicalSiteUrl() (lib/site-url.ts).
-      metadataBase: new URL(envSiteUrl() || BUILD_ORIGIN_PLACEHOLDER),
+      metadataBase: new URL(
+        canonicalDomainFromConfig(config) ||
+          envSiteUrl() ||
+          BUILD_ORIGIN_PLACEHOLDER,
+      ),
       title: {
         template: `%s — ${config.store.name}`,
         default: config.store.name,
@@ -114,7 +120,10 @@ export default async function RootLayout({
   const licenseFeatures: string[] = (initialConfig as any)?.licenseFeatures ?? [];
   const hasMobileDistro = hasLicenseFeature({ licenseFeatures }, 'mobile_distribution');
 
-  const BASE_URL = envSiteUrl() || BUILD_ORIGIN_PLACEHOLDER;
+  const BASE_URL =
+    canonicalDomainFromConfig(initialConfig) ||
+    envSiteUrl() ||
+    BUILD_ORIGIN_PLACEHOLDER;
 
   const jsonLd = {
     '@context': 'https://schema.org',
