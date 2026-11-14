@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -56,12 +56,35 @@ export function NavGroup({ title, items }: NavGroupProps) {
   const { state, isMobile } = useSidebar()
   const href = useLocation({ select: (location) => location.href })
 
+  // Smart accordion: one collapsible group open at a time per NavGroup.
+  // The group holding the current route is always open — on first load and
+  // on every navigation (the effect below re-opens it). Opening another
+  // group closes the previous one; the open group can still be closed
+  // manually and stays closed until the next navigation. The effect reads
+  // items through a ref so a parent re-render never yanks manual state.
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+  const [openKey, setOpenKey] = useState<string | null>(() => activeCollapsibleKey(items, href))
+  useEffect(() => {
+    const key = activeCollapsibleKey(itemsRef.current, href)
+    if (key) setOpenKey(key)
+  }, [href])
+
   const renderItem = (item: NavItem, hue: HueName, key: string) => {
     if (!item.items) return <SidebarMenuLink key={key} item={item} hue={hue} href={href} />
     if (state === 'collapsed' && !isMobile) {
       return <SidebarMenuCollapsedDropdown key={key} item={item} hue={hue} href={href} />
     }
-    return <SidebarMenuCollapsible key={key} item={item} hue={hue} href={href} />
+    return (
+      <SidebarMenuCollapsible
+        key={key}
+        item={item}
+        hue={hue}
+        href={href}
+        open={openKey === item.title}
+        onOpenChange={(next) => setOpenKey(next ? item.title : null)}
+      />
+    )
   }
 
   // Group the flat items by their presentational section, rendering a
@@ -188,10 +211,14 @@ function SidebarMenuCollapsible({
   item,
   hue,
   href,
+  open,
+  onOpenChange,
 }: {
   item: NavCollapsible
   hue: HueName
   href: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
   const { setOpenMobile } = useSidebar()
   const isActive = checkIsActive(href, item)
@@ -199,7 +226,8 @@ function SidebarMenuCollapsible({
   return (
     <Collapsible
       asChild
-      defaultOpen={checkIsActive(href, item, true)}
+      open={open}
+      onOpenChange={onOpenChange}
       className="group/collapsible"
     >
       <SidebarMenuItem>
@@ -330,11 +358,18 @@ function SidebarMenuCollapsedDropdown({
   )
 }
 
+/** Title of the collapsible group holding the current route, if any. */
+function activeCollapsibleKey(items: NavItem[], href: string): string | null {
+  return items.find((item) => item.items && checkIsActive(href, item, true))?.title ?? null
+}
+
 function checkIsActive(href: string, item: NavItem, mainNav = false) {
   return (
     href === item.url || // /endpoint?search=param
     href.split('?')[0] === item.url || // endpoint
-    !!item?.items?.filter((i) => i.url === href).length || // if child nav is active
+    // Child match is query-insensitive too, so a filtered list such as
+    // /op/orders?status=pending still keeps its group open and highlighted.
+    !!item?.items?.filter((i) => i.url === href.split('?')[0]).length || // if child nav is active
     (mainNav &&
       href.split('/')[1] !== '' &&
       href.split('/')[1] === item?.url?.split('/')[1])
