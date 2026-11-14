@@ -3,7 +3,7 @@ import { fetchCombosServer } from "@/lib/api/combos-server";
 import ComboGridClient from "./ComboGridClient";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { hasLicenseFeature } from "@/lib/api/storefront-config";
-import { siteUrl } from "@/lib/site-url";
+import { canonicalSiteUrl } from "@/lib/site-url";
 
 // Combo stock renders via a revalidate:0 fetch — the page must be fully
 // dynamic or Next.js throws DYNAMIC_SERVER_USAGE at runtime.
@@ -17,7 +17,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: 'Combo Deals',
     description: `Bundle combo deals at ${storeName}`,
-    alternates: { canonical: `${siteUrl()}/combos` },
+    alternates: { canonical: `${await canonicalSiteUrl()}/combos` },
   };
 }
 

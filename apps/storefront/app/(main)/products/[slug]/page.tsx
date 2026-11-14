@@ -14,7 +14,7 @@ import { hasLicenseFeature } from "@/lib/api/storefront-config";
 import { toMetaDescription } from "@/lib/strip-html";
 import { sanitizeProductHTML } from "@/lib/sanitize-product";
 import { stringifyForScript } from "@/lib/safe-json";
-import { publicMediaUrl, siteUrl } from "@/lib/site-url";
+import { publicMediaUrl, canonicalSiteUrl } from "@/lib/site-url";
 import ProductDetailClient from "@/components/ProductDetailClient";
 
 // Surge-ready caching: the PDP shell (product core, related, reviews,
@@ -55,7 +55,7 @@ export async function generateMetadata(props: { params: Promise<{ slug: string }
         ? { title: "Product Not Found" }
         : { title: "Service Unavailable", robots: { index: false, follow: false } };
     }
-    const url = `${siteUrl()}/products/${slug}`;
+    const url = `${await canonicalSiteUrl()}/products/${slug}`;
     // NOTE: title is the bare product name — the root layout template
     // (`%s — Store`) appends the store name exactly once.
     // Prefer plain-text shortDesc; otherwise strip HTML from description so
@@ -171,7 +171,11 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
     // isomorphic-dompurify never enters the PDP client bundle.
     const sanitizedDescription = sanitizeProductHTML(product.description || '');
     const sanitizedSpecifications = sanitizeProductHTML(product.descriptionSections?.specifications || '');
-    const pageUrl = `${siteUrl()}/products/${slug}`;
+    // Canonical base, resolved once per render through the request-derived
+    // chain (Settings domain → request host → env) — the JSON-LD URLs
+    // below must agree with the canonical in generateMetadata above.
+    const canonicalBase = await canonicalSiteUrl();
+    const pageUrl = `${canonicalBase}/products/${slug}`;
     // AggregateRating only when ratings actually exist AND the reviews UI is
     // visible — otherwise search engines flag it as invalid markup.
     let reviewsVisible = true;
@@ -213,15 +217,15 @@ export default async function ProductPage(props: { params: Promise<{ slug: strin
       '@context': 'https://schema.org',
       '@type': 'BreadcrumbList',
       itemListElement: [
-        { '@type': 'ListItem', position: 1, name: 'Home', item: `${siteUrl()}/` },
+        { '@type': 'ListItem', position: 1, name: 'Home', item: `${canonicalBase}/` },
         ...(product.category
           ? [{
               '@type': 'ListItem',
               position: 2,
               name: product.category,
               item: product.categorySlug
-                ? `${siteUrl()}/category/${product.categorySlug}`
-                : `${siteUrl()}/products`,
+                ? `${canonicalBase}/category/${product.categorySlug}`
+                : `${canonicalBase}/products`,
             }]
           : []),
         { '@type': 'ListItem', position: product.category ? 3 : 2, name: product.name, item: pageUrl },

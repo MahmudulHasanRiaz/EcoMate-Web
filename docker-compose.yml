@@ -201,6 +201,11 @@ services:
       REVALIDATION_SECRET: ${REVALIDATION_SECRET:-}
       NEXT_PUBLIC_API_URL: ${STORE_NEXT_PUBLIC_API_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}/api}
       NEXT_PUBLIC_STOREFRONT_URL: ${STORE_NEXT_PUBLIC_STOREFRONT_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
+      # Same value as a plain runtime env (no NEXT_PUBLIC_ prefix, so
+      # Next.js does NOT inline it at build time): the storefront reads
+      # it at runtime as the env fallback for canonicals (lib/site-url.ts
+      # envSiteUrl — the Settings domain wins over it when set).
+      STORE_NEXT_PUBLIC_STOREFRONT_URL: ${STORE_NEXT_PUBLIC_STOREFRONT_URL:-https://${CLIENT_DOMAIN:-mac.riaz.com.bd}}
       NEXT_PUBLIC_GA_MEASUREMENT_ID: ${NEXT_PUBLIC_GA_MEASUREMENT_ID:-}
       NEXT_PUBLIC_GA_ADS_CONVERSION_ID: ${NEXT_PUBLIC_GA_ADS_CONVERSION_ID:-}
       POS_URL: ${POS_URL:-http://pos:80}

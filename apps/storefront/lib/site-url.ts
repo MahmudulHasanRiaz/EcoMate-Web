@@ -1,17 +1,27 @@
 import { headers } from 'next/headers';
+import { getStorefrontConfigServer } from './api/storefront-config-server';
 
 // Canonical public origin of THIS storefront.
-// Priority: NEXT_PUBLIC_STOREFRONT_URL (docker-compose sets it per client
-// from CLIENT_DOMAIN) → NEXT_PUBLIC_BASE_URL (legacy) → '' (relative
-// output). Never throws; callers that REQUIRE an absolute URL add their own
-// placeholder fallback (existing repo convention: https://example.com).
 //
-// NOTE on build-time inlining: NEXT_PUBLIC_* vars are baked into the image
-// at build time — the CI build passes no build-args, so the GHCR image
-// carries siteUrl() === '' and no compose env can ever fix it at runtime.
-// The request-host canonical below (canonicalSiteUrl) is therefore the
-// runtime source of truth; the env vars are only a fallback, and only when
-// they parse as a public https:// URL with no port.
+// Chain (first hit wins):
+//   1. Settings domain — SystemSetting `canonical_domain`, saved in
+//      Settings → General (superadmin-only) and served through the
+//      cached storefront config. THE centralized source: editable
+//      without a rebuild, survives rebuilds, and — because it wins over
+//      the request host — a spoofed x-forwarded-host can never become
+//      the canonical while it is set. Unset → derived from
+//      CLIENT_DOMAIN on the backend (auto-seed on read, zero action).
+//   2. Request host — x-forwarded-host first (the proxy overwrites it
+//      with the real host), then host, via hostOrigin() validation.
+//   3. Env — envSiteUrl(): NEXT_PUBLIC_* (build-time baked) and the
+//      runtime STORE_NEXT_PUBLIC_STOREFRONT_URL the compose file passes
+//      through to the container (NOT build-inlined — the name has no
+//      NEXT_PUBLIC_ prefix, so Next.js reads it at runtime).
+//   4. Build-time placeholder — never a real origin, only when there is
+//      no request context at all (build-time prerender).
+//
+// The env vars alone can never be the runtime source of truth: the CI
+// build passes no build-args, so the GHCR image carries them as ''.
 export function siteUrl(): string {
   return (
     process.env.NEXT_PUBLIC_STOREFRONT_URL ||
@@ -28,6 +38,9 @@ export function siteUrl(): string {
 // dynamic rendering; see canonicalSiteUrl below).
 export function envSiteUrl(): string {
   for (const raw of [
+    // Runtime var first: set by docker-compose from the deployment value
+    // (STORE_NEXT_PUBLIC_STOREFRONT_URL) — read at runtime, never baked.
+    process.env.STORE_NEXT_PUBLIC_STOREFRONT_URL,
     process.env.NEXT_PUBLIC_STOREFRONT_URL,
     process.env.NEXT_PUBLIC_BASE_URL,
   ]) {
@@ -73,11 +86,42 @@ function hostOrigin(host: string): string | null {
   return `https://${hostname}`;
 }
 
+// Validate + normalise a canonical domain from the storefront config
+// payload (the backend write-validates the saved value, and derives the
+// unset case from CLIENT_DOMAIN — but the storefront never trusts the
+// payload blindly: same rules as envSiteUrl). Returns '' when absent or
+// invalid, so callers fall through the chain. Used by the root layout
+// on the config it already fetched (zero new fetches, zero new
+// dynamic opt-in) and by canonicalSiteUrl() below.
+export function canonicalDomainFromConfig(config: {
+  canonicalDomain?: unknown;
+} | null | undefined): string {
+  const raw = config?.canonicalDomain;
+  if (typeof raw !== 'string' || !raw.trim()) return '';
+  const origin = raw.trim().replace(/\/$/, '');
+  return isPublicHttpsOrigin(origin) ? origin : '';
+}
+
+// Settings tier of the chain: the canonical domain from the cached
+// storefront config (GET /system-settings/storefront — React cache()
+// dedupes this with the layout's own config fetch in the same request,
+// Data Cache revalidate 60s, tag "config"; NO headers(), so it is safe
+// wherever a config read is safe). Never throws.
+export async function settingsCanonicalDomain(): Promise<string> {
+  try {
+    return canonicalDomainFromConfig(await getStorefrontConfigServer());
+  } catch {
+    return '';
+  }
+}
+
 // Canonical public origin for crawler-facing surfaces (sitemap, robots,
-// canonical alternates). Derives the origin from the REQUEST host at
-// runtime — x-forwarded-host first (the proxy sets it from the real host),
-// then host — https unless the host is localhost. Falls back to the env
-// var only when it parses as a public https:// URL with no port, and never
+// canonical alternates). Settings domain wins when set (that is the
+// point of centralizing it — a spoofed x-forwarded-host can no longer
+// become the canonical); otherwise the REQUEST host at runtime —
+// x-forwarded-host first (the proxy sets it from the real host), then
+// host — https unless the host is localhost. Falls back to the env var
+// only when it parses as a public https:// URL with no port, and never
 // emits https://example.com at runtime: the placeholder is returned only
 // when there is no request context at all (build-time prerender).
 //
@@ -85,17 +129,21 @@ function hostOrigin(host: string): string | null {
 // rendering. That is correct for sitemap/robots (already dynamic/ISR) and
 // for page-level generateMetadata — but it must NOT be called from the
 // root layout's generateMetadata, where it would make every route in the
-// app dynamic. The root layout uses envSiteUrl() instead (deferred:
-// metadataBase can only become request-derived if the app accepts
-// dynamic-everything or the image is built with the env set).
+// app dynamic. The root layout uses canonicalDomainFromConfig(config) +
+// envSiteUrl() instead — same chain minus the request-host tier, which a
+// static prerender could not see anyway.
 export async function canonicalSiteUrl(): Promise<string> {
+  const settings = await settingsCanonicalDomain();
+  if (settings) return settings;
   try {
     const hdrs = await headers();
     // NOTE: x-forwarded-host is client-controllable; the deployment proxy
     // is expected to overwrite it with the real host (verify in the nginx
-    // config). A spoofed value can only poison a response the attacker
-    // requests themselves — sitemap/robots are cached per URL, so confirm
-    // the proxy overwrites it before relying on the cache.
+    // config). While no Settings domain is set, a spoofed value can only
+    // poison a response the attacker requests themselves — sitemap/robots
+    // are cached per URL, so confirm the proxy overwrites it before
+    // relying on the cache. Once a Settings domain IS set, this tier is
+    // never reached and spoofing is moot.
     const forwarded = hdrs.get('x-forwarded-host')?.split(',')[0]?.trim();
     const host = forwarded || hdrs.get('host')?.trim();
     if (host) {

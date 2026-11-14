@@ -20,6 +20,12 @@ describe('getStorefrontConfig deliveryInfo', () => {
       {} as any,
       cache as any,
       {} as any,
+      {
+        revalidateStorefront: jest.fn().mockResolvedValue({
+          status: 'purged',
+          detail: '',
+        }),
+      } as any,
     );
   }
 

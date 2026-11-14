@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: CategoryPageProps): Promise<M
   return {
     title: name,
     description: `Shop ${name} at ${storeName}`,
-    alternates: { canonical: `${metaBaseUrl()}/category/${slug}` },
+    alternates: { canonical: `${await metaBaseUrl()}/category/${slug}` },
   };
 }
 

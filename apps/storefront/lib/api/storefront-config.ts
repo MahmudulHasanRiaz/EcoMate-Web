@@ -174,6 +174,16 @@ export interface StorefrontConfig {
    * fail-closed, see storefront-config-server.ts.
    */
   searchIndexingEnabled: boolean;
+  /**
+   * Canonical domain — THE centralized source for the storefront's
+   * public origin (sitemap, robots, canonical URLs, metadataBase).
+   * Saved in Settings → General (superadmin-only, write-validated);
+   * when unset the backend derives it from CLIENT_DOMAIN (auto-seed on
+   * read). Absent when neither exists — callers fall through to the
+   * request host. The storefront re-validates with
+   * canonicalDomainFromConfig() before trusting it.
+   */
+  canonicalDomain?: string;
 }
 
 export function hasLicenseFeature(config: { licenseFeatures?: string[] } | null | undefined, key: string): boolean {
