@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { siteUrl } from '@/lib/site-url';
+import { canonicalSiteUrl } from '@/lib/site-url';
 import { getStorefrontConfigServer } from '@/lib/api/storefront-config-server';
 
 // Robots must be evaluated at request time, never baked at build time:
@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
  *   force-dynamic above means this is rendered per request instead.
  */
 export default async function robots(): Promise<MetadataRoute.Robots> {
-  const baseUrl = siteUrl() || 'https://example.com';
+  const baseUrl = await canonicalSiteUrl();
   const config = await getStorefrontConfigServer().catch(() => null);
   // getStorefrontConfigServer normalises to a clean boolean (explicit
   // `false` only when the tenant stored it; missing key → ON; fetch

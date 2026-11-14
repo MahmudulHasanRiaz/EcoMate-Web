@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { notFound } from 'next/navigation';
 import { getCmsPageBySlug } from '@/lib/api/cms-pages';
 import { preFormattedPages, templateHasRealContent } from '@/lib/templates/registry';
-import { renderPreFormattedPage } from '@/lib/templates/render-page';
+import { renderPreFormattedPage, preFormattedPageMetadata } from '@/lib/templates/render-page';
 
 vi.mock('next/navigation', () => ({
   notFound: vi.fn(() => {
@@ -12,6 +12,9 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/api/cms-pages', () => ({ getCmsPageBySlug: vi.fn() }));
 vi.mock('@/lib/api/storefront-config-server', () => ({
   getStorefrontConfigServer: vi.fn(async () => ({ store: { name: 'Test Store' } })),
+}));
+vi.mock('next/headers', () => ({
+  headers: vi.fn(async () => new Headers({ host: 'demo.ecomate.bd' })),
 }));
 
 const mockGet = getCmsPageBySlug as unknown as ReturnType<typeof vi.fn>;
@@ -86,6 +89,37 @@ describe('pre-formatted pages', () => {
     const el = (await renderPreFormattedPage('faq')) as any;
     expect(mockNotFound).not.toHaveBeenCalled();
     expect(el.props.config.items).toEqual([]);
+  });
+});
+
+describe('preFormattedPageMetadata — D8 noindex for content-less pages', () => {
+  beforeEach(() => {
+    mockGet.mockReset();
+    mockNotFound.mockReset();
+  });
+
+  it('content-less template pages (all 13) carry noindex even when the flag is ON', async () => {
+    mockGet.mockResolvedValue(null);
+    for (const key of EXPECTED_KEYS) {
+      const meta = await preFormattedPageMetadata(key);
+      expect(meta.robots, `${key} content-less must be noindex`).toEqual({
+        index: false,
+        follow: true,
+      });
+    }
+  });
+
+  it('a page with real configured content carries no robots field', async () => {
+    mockGet.mockResolvedValue({
+      id: 'x',
+      slug: 'faq',
+      title: 'FAQ',
+      isActive: true,
+      config: { items: [{ question: 'Q?', answer: 'A.' }] },
+    });
+    const meta = await preFormattedPageMetadata('faq');
+    expect(meta.robots).toBeUndefined();
+    expect(meta.title).toBe('FAQ');
   });
 });
 

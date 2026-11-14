@@ -71,10 +71,17 @@ export class CategoriesService {
     return roots;
   }
 
-  async findAll() {
-    const cached = await this.cache.get<any[]>('categories:all');
+  async findAll(filter: { isActive?: boolean } = {}) {
+    // The cache key must vary with the filter, or an unfiltered list
+    // cached first would be served for ?isActive=true (and vice versa).
+    const cacheKey =
+      filter.isActive === undefined
+        ? 'categories:all'
+        : `categories:all:isActive:${filter.isActive}`;
+    const cached = await this.cache.get<any[]>(cacheKey);
     if (cached) return cached;
     const data = await this.prisma.category.findMany({
+      where: filter.isActive !== undefined ? { isActive: filter.isActive } : {},
       include: {
         children: { where: { isActive: true } },
         _count: { select: { productCategories: true } },
@@ -82,7 +89,7 @@ export class CategoriesService {
       orderBy: { sortOrder: 'asc' },
     });
     await this.enrichWithDerivatives(data);
-    await this.cache.set('categories:all', data);
+    await this.cache.set(cacheKey, data);
     return data;
   }
 

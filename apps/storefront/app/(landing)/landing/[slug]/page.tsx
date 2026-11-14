@@ -38,7 +38,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const page: LandingData | null = await getLanding(slug);
   const config = await getStorefrontConfigServer().catch(() => null);
 
-  if (!page) return {};
+  // Builder landings are NEVER indexed — always noindex, never in the
+  // sitemap. Unconditional, even when the page is null: a draft preview
+  // URL must never be indexable if it is ever linked or crawled.
+  const robots = { index: false, follow: false } as const;
+  if (!page) return { robots };
 
   const ogImage = page.trackingJson?.ogImage || config?.branding?.storefrontOgImage;
 
@@ -46,7 +50,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: `${page.title} — ${config?.store?.name || "Offer"}`,
     description: page.title,
     // Paid-traffic-only pages: keep them out of the organic index.
-    robots: { index: false, follow: true },
+    robots,
     openGraph: {
       title: page.title,
       description: page.title,

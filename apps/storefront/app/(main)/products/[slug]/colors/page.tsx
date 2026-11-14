@@ -15,7 +15,7 @@ export async function generateMetadata(props: {
   searchParams: Promise<{ color?: string }>;
 }): Promise<Metadata> {
   const [{ slug }, sp] = await Promise.all([props.params, props.searchParams]);
-  let storeName = "Store";
+  let storeName = "EcoMate";
   try { const c = await getStorefrontConfigServer(); storeName = c.store.name; } catch {}
   try {
     const product = await getProductBySlugServer(slug);

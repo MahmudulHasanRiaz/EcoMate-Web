@@ -1,24 +1,29 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import sitemap, { revalidate } from '@/app/sitemap';
+import { serverFetch } from '@/lib/api-server';
+
+vi.mock('@/lib/api-server', () => ({ serverFetch: vi.fn() }));
+
+const mockServerFetch = serverFetch as unknown as ReturnType<typeof vi.fn>;
 
 /**
- * Mock fetch router: `routes` maps a URL substring to a JSON payload (or a
- * thrown error). Every mocked response carries `ok: true` unless the
- * payload is `{ __status: <code> }`, which simulates a non-2xx response.
+ * Mock serverFetch router: `routes` maps a path substring to a JSON
+ * payload (or a thrown error). A payload of `{ __status: <code> }`
+ * simulates a non-2xx response — serverFetch throws on !ok, exactly as
+ * the real implementation does.
  */
-function mockFetch(routes: Record<string, any>, fallback: any = { data: [] }) {
-  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: any) => {
-    const url = String(input);
+function mockServerFetchRouter(routes: Record<string, any>, fallback: any = { data: [] }) {
+  return mockServerFetch.mockImplementation(async (path: string) => {
     for (const [key, value] of Object.entries(routes)) {
-      if (url.includes(key)) {
+      if (path.includes(key)) {
         if (value instanceof Error) throw value;
         if (value && typeof value === 'object' && '__status' in value) {
-          return { ok: false, status: value.__status, json: async () => ({}) } as any;
+          throw new Error(`API error: ${value.__status}`);
         }
-        return { ok: true, status: 200, json: async () => value } as any;
+        return value;
       }
     }
-    return { ok: true, status: 200, json: async () => fallback } as any;
+    return fallback;
   });
 }
 
@@ -29,12 +34,16 @@ const configOff = { searchIndexingEnabled: false };
 describe('sitemap (P0-5)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    mockServerFetch.mockReset();
+    delete process.env.NEXT_PUBLIC_STOREFRONT_URL;
+    delete process.env.API_URL;
+    delete process.env.NEXT_PHASE;
   });
 
   it('caches for an hour, follows cursor pagination, and emits clean category URLs + product images', async () => {
     expect(revalidate).toBe(3600);
 
-    const fetchMock = mockFetch({
+    const fetchMock = mockServerFetchRouter({
       '/system-settings/storefront': configOn,
       '/categories': { data: [{ slug: 'panjabi', updatedAt: '2026-10-01T00:00:00.000Z' }] },
       '/products?isActive=true&perPage=500&cursor=c1': {
@@ -53,7 +62,7 @@ describe('sitemap (P0-5)', () => {
     // cursor pagination followed — both pages present
     expect(urls).toContain('https://example.com/products/prod-a');
     expect(urls).toContain('https://example.com/products/prod-b');
-    const productCalls = fetchMock.mock.calls.filter(([u]) => String(u).includes('/products'));
+    const productCalls = fetchMock.mock.calls.filter(([p]) => String(p).includes('/products'));
     expect(productCalls.length).toBe(2);
 
     // clean category URL (canonical form), not /products?category=
@@ -67,20 +76,16 @@ describe('sitemap (P0-5)', () => {
 
   it('builds every URL from NEXT_PUBLIC_STOREFRONT_URL when set (F3)', async () => {
     process.env.NEXT_PUBLIC_STOREFRONT_URL = 'https://test.local';
-    try {
-      mockFetch({ '/system-settings/storefront': configOn });
-      const urls = (await sitemap()).map((e) => e.url);
-      expect(urls.length).toBeGreaterThan(0);
-      for (const u of urls) {
-        expect(u === 'https://test.local' || u.startsWith('https://test.local/')).toBe(true);
-      }
-    } finally {
-      delete process.env.NEXT_PUBLIC_STOREFRONT_URL;
+    mockServerFetchRouter({ '/system-settings/storefront': configOn });
+    const urls = (await sitemap()).map((e) => e.url);
+    expect(urls.length).toBeGreaterThan(0);
+    for (const u of urls) {
+      expect(u === 'https://test.local' || u.startsWith('https://test.local/')).toBe(true);
     }
   });
 
   it('throws instead of caching a degenerate sitemap when the backend is unreachable', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+    mockServerFetch.mockImplementation(async () => {
       throw new Error('connect ECONNREFUSED');
     });
     await expect(sitemap()).rejects.toThrow('backend unreachable');
@@ -88,19 +93,15 @@ describe('sitemap (P0-5)', () => {
 
   it('does not throw during the build-time prerender (no backend exists in the builder)', async () => {
     process.env.NEXT_PHASE = 'phase-production-build';
-    try {
-      vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-        throw new Error('connect ECONNREFUSED');
-      });
-      const entries = await sitemap();
-      expect(entries.length).toBeGreaterThan(0);
-    } finally {
-      delete process.env.NEXT_PHASE;
-    }
+    mockServerFetch.mockImplementation(async () => {
+      throw new Error('connect ECONNREFUSED');
+    });
+    const entries = await sitemap();
+    expect(entries.length).toBeGreaterThan(0);
   });
 
   it('serves a static-only sitemap when the backend answers with empty catalogs', async () => {
-    mockFetch({ '/system-settings/storefront': configOn });
+    mockServerFetchRouter({ '/system-settings/storefront': configOn });
     const entries = await sitemap();
     expect(entries.length).toBeGreaterThan(0);
     expect(entries.every((e) => !e.url.includes('/products/'))).toBe(true);
@@ -109,41 +110,36 @@ describe('sitemap (P0-5)', () => {
   it('never leaks the internal API origin into image URLs (production API_URL=http://backend:4000)', async () => {
     process.env.NEXT_PUBLIC_STOREFRONT_URL = 'https://shop.example.com.bd';
     process.env.API_URL = 'http://backend:4000/api';
-    try {
-      mockFetch({
-        '/system-settings/storefront': configOn,
-        '/products': {
-          data: [
-            { slug: 'rel-img', updatedAt: '2026-10-01T00:00:00.000Z', images: ['/uploads/rel.jpg'] },
-            { slug: 'abs-img', updatedAt: '2026-10-01T00:00:00.000Z', images: ['http://backend:4000/uploads/abs.jpg'] },
-          ],
-          meta: { hasMore: false, nextCursor: null },
-        },
-      });
-      const entries = await sitemap();
-      const rel = entries.find((e) => e.url.endsWith('/products/rel-img')) as any;
-      const abs = entries.find((e) => e.url.endsWith('/products/abs-img')) as any;
-      expect(rel?.images?.[0]).toBe('https://shop.example.com.bd/uploads/rel.jpg');
-      expect(abs?.images?.[0]).toBe('https://shop.example.com.bd/uploads/abs.jpg');
-      for (const e of entries) {
-        for (const img of (e as any).images ?? []) {
-          expect(img).not.toContain('backend');
-        }
+    mockServerFetchRouter({
+      '/system-settings/storefront': configOn,
+      '/products': {
+        data: [
+          { slug: 'rel-img', updatedAt: '2026-10-01T00:00:00.000Z', images: ['/uploads/rel.jpg'] },
+          { slug: 'abs-img', updatedAt: '2026-10-01T00:00:00.000Z', images: ['http://backend:4000/uploads/abs.jpg'] },
+        ],
+        meta: { hasMore: false, nextCursor: null },
+      },
+    });
+    const entries = await sitemap();
+    const rel = entries.find((e) => e.url.endsWith('/products/rel-img')) as any;
+    const abs = entries.find((e) => e.url.endsWith('/products/abs-img')) as any;
+    expect(rel?.images?.[0]).toBe('https://shop.example.com.bd/uploads/rel.jpg');
+    expect(abs?.images?.[0]).toBe('https://shop.example.com.bd/uploads/abs.jpg');
+    for (const e of entries) {
+      for (const img of (e as any).images ?? []) {
+        expect(img).not.toContain('backend');
       }
-    } finally {
-      delete process.env.NEXT_PUBLIC_STOREFRONT_URL;
-      delete process.env.API_URL;
     }
   });
 
   it('flag OFF returns an empty sitemap', async () => {
-    mockFetch({ '/system-settings/storefront': configOff });
+    mockServerFetchRouter({ '/system-settings/storefront': configOff });
     const entries = await sitemap();
     expect(entries).toEqual([]);
   });
 
   it('flag ON includes /company + /download only when their rows have real content, and omits content-less templates (D8)', async () => {
-    const fetchMock = mockFetch({
+    const fetchMock = mockServerFetchRouter({
       '/system-settings/storefront': configOn,
       '/cms-pages/slug/company': {
         id: 'c1', slug: 'company', isActive: true, updatedAt: '2026-11-01T00:00:00.000Z',
@@ -170,18 +166,18 @@ describe('sitemap (P0-5)', () => {
     expect(urls).not.toContain('https://example.com/faq');
     // Inactive row → omitted even though it has content.
     expect(urls).not.toContain('https://example.com/about');
-    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/cms-pages/slug/company'))).toBe(true);
+    expect(fetchMock.mock.calls.some(([p]) => String(p).includes('/cms-pages/slug/company'))).toBe(true);
   });
 
   it('missing flag key (pre-toggle backend) keeps the historic ON behaviour', async () => {
-    mockFetch({ '/system-settings/storefront': {} });
+    mockServerFetchRouter({ '/system-settings/storefront': {} });
     const entries = await sitemap();
     expect(entries.length).toBeGreaterThan(0);
     expect(entries.some((e) => e.url === 'https://example.com')).toBe(true);
   });
 
   it('fetches CMS content pages from the public footer endpoint, never the role-guarded list', async () => {
-    const fetchMock = mockFetch({
+    const fetchMock = mockServerFetchRouter({
       '/system-settings/storefront': configOn,
       '/cms-pages/footer': [
         { id: 'p1', slug: 'track-order', title: 'Track Order', updatedAt: '2026-10-01T00:00:00.000Z' },
@@ -190,11 +186,25 @@ describe('sitemap (P0-5)', () => {
     const entries = await sitemap();
     const urls = entries.map((e) => e.url);
     expect(urls).toContain('https://example.com/pages/track-order');
-    const calls = fetchMock.mock.calls.map(([u]) => String(u));
-    expect(calls.some((u) => u.includes('/cms-pages/footer'))).toBe(true);
+    const calls = fetchMock.mock.calls.map(([p]) => String(p));
+    expect(calls.some((p) => p.includes('/cms-pages/footer'))).toBe(true);
     // The old role-guarded list endpoint (exact path, no /slug/ or /footer).
     expect(
-      calls.some((u) => /\/cms-pages\/?(\?|$)/.test(u)),
+      calls.some((p) => /\/cms-pages\/?(\?|$)/.test(p)),
     ).toBe(false);
+  });
+
+  it('a non-2xx backend response is loud (serverFetch throws on !ok, no silent [])', async () => {
+    mockServerFetchRouter({
+      '/system-settings/storefront': configOn,
+      '/categories': { __status: 500 },
+      '/products': { __status: 500 },
+      '/combos': { __status: 500 },
+      '/cms-pages/slug/': { __status: 500 },
+      '/cms-pages/footer': { __status: 500 },
+    });
+    // Every dynamic fetch fails → the outage guard throws instead of
+    // caching a static-only sitemap.
+    await expect(sitemap()).rejects.toThrow('backend unreachable');
   });
 });

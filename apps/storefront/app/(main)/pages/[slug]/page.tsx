@@ -16,27 +16,58 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { slug } = await params;
   const page = await getCmsPageBySlug(slug);
   if (!page) return pageMetadata("Page Not Found", "The page you are looking for does not exist.");
+  // A template-type row lives at /<slug> — that route is its canonical
+  // URL, so /pages/<slug> must not serve (or index) it.
+  if (page.type !== 'content') {
+    return {
+      ...(await pageMetadata("Page Not Found", "The page you are looking for does not exist.")),
+      robots: { index: false, follow: false },
+    };
+  }
   const config = await getStorefrontConfigServer().catch(() => null);
-  const storeName = config?.store.name || "Store";
-  return pageMetadata(
+  const storeName = config?.store.name || "EcoMate";
+  const meta = await pageMetadata(
     `${page.title}`,
     page.metaDescription || `${page.title} — ${storeName}.`,
     undefined,
     page.ogImage || undefined,
   );
+  // D8: a content page with no real content is served with an honest
+  // empty state — and noindex, so it never enters the index.
+  if (!hasPageContent(page.content)) {
+    return { ...meta, robots: { index: false, follow: true } };
+  }
+  return meta;
 }
 
 export const revalidate = 3600;
+
+// True when the stored HTML carries visible text — tags, whitespace and
+// &nbsp; alone do not count. A template row seeded with content: '' (and
+// a content page nobody has written yet) is empty.
+function hasPageContent(content: string | null | undefined): boolean {
+  if (!content) return false;
+  const text = content
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .trim();
+  return text.length > 0;
+}
 
 export default async function CmsPageView({ params }: PageProps) {
   const { slug } = await params;
   const page = await getCmsPageBySlug(slug);
   if (!page) notFound();
+  // Template rows live at /<slug> — the template route is the canonical
+  // URL; /pages/<slug> 404s for them (CmsPage.type defaults to 'content'
+  // in the DB, so an unset type never 404s a real content page).
+  if (page.type !== 'content') notFound();
 
   const config = await getStorefrontConfigServer().catch(() => null);
-  const storeName = config?.store.name || "Store";
+  const storeName = config?.store.name || "EcoMate";
   const updated = formatPageDate(page.updatedAt);
   const effective = formatPageDate(page.effectiveDate);
+  const hasContent = hasPageContent(page.content);
 
   return (
     <div className="bg-gray-50 min-h-screen pb-24">
@@ -59,10 +90,22 @@ export default async function CmsPageView({ params }: PageProps) {
       </div>
 
       <article className="max-w-4xl mx-auto px-4 py-12">
-        <div
-          className="cms-content bg-white rounded-2xl border border-gray-100 p-8 md:p-12 shadow-sm"
-          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(page.content) }}
-        />
+        {hasContent ? (
+          <div
+            className="cms-content bg-white rounded-2xl border border-gray-100 p-8 md:p-12 shadow-sm"
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(page.content) }}
+          />
+        ) : (
+          <div className="bg-white rounded-2xl border border-gray-100 p-8 md:p-12 shadow-sm text-center">
+            <p className="text-gray-500 text-sm">This page doesn&apos;t have any content yet.</p>
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 text-[12px] font-bold uppercase tracking-widest text-brand-blue hover:opacity-80 mt-4"
+            >
+              <ArrowLeft size={14} /> Back to {storeName}
+            </Link>
+          </div>
+        )}
         {(updated || effective || page.version) && (
           <div className="mt-10 pt-6 border-t border-gray-100 text-[12px] text-gray-400">
             {updated && <span>Last updated: {updated}</span>}

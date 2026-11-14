@@ -6,6 +6,11 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  CreateLandingPageDto,
+  UpdateLandingPageDto,
+} from './dto/landing-page.dto';
+import { assertValidCustomCode } from './custom-code-validation';
 
 @Injectable()
 export class LandingPagesService {
@@ -65,7 +70,9 @@ export class LandingPagesService {
     return page;
   }
 
-  async create(dto: Record<string, any>) {
+  async create(dto: CreateLandingPageDto) {
+    // Fail fast on unsafe custom code before any other check or write.
+    assertValidCustomCode(dto);
     if (!dto.title || !dto.slug) {
       throw new BadRequestException(
         'Page title and URL slug are both required',
@@ -92,7 +99,9 @@ export class LandingPagesService {
     }
   }
 
-  async update(id: string, dto: Record<string, any>) {
+  async update(id: string, dto: UpdateLandingPageDto) {
+    // Fail fast on unsafe custom code before any DB read or write.
+    assertValidCustomCode(dto);
     await this.findById(id);
     if (dto.slug !== undefined) {
       this.validateSlug(dto.slug);

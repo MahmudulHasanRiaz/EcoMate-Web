@@ -1173,10 +1173,10 @@ export default function CheckoutPage() {
         <div className="max-w-screen-xl mx-auto px-4 flex justify-between items-center">
           <Link href="/" className="hover:text-brand-blue transition-colors flex items-center">
             {config.branding?.storeLogo ? (
-              <img src={resolveDerivativeUrl(config._mediaMeta, config.branding.storeLogo, 'small')} alt={config.store?.name || 'Store'} className="h-6 w-auto object-contain" />
+              <img src={resolveDerivativeUrl(config._mediaMeta, config.branding.storeLogo, 'small')} alt={config.store?.name || 'EcoMate'} className="h-6 w-auto object-contain" />
             ) : (
               <span className="text-base font-black tracking-tight text-gray-805">
-                {config.store?.name || 'Store'}
+                {config.store?.name || 'EcoMate'}
               </span>
             )}
           </Link>
@@ -1242,10 +1242,10 @@ export default function CheckoutPage() {
             <div className="hidden lg:flex justify-between items-baseline border-b border-gray-100 pb-4 mb-2">
               <Link href="/" className="hover:text-brand-blue transition-colors flex items-center">
                 {config.branding?.storeLogo ? (
-                  <img src={resolveDerivativeUrl(config._mediaMeta, config.branding.storeLogo, 'small')} alt={config.store?.name || 'Store'} className="h-8 w-auto object-contain" />
+                  <img src={resolveDerivativeUrl(config._mediaMeta, config.branding.storeLogo, 'small')} alt={config.store?.name || 'EcoMate'} className="h-8 w-auto object-contain" />
                 ) : (
                   <span className="text-xl font-black tracking-tight text-gray-800">
-                    {config.store?.name || 'Store'}
+                    {config.store?.name || 'EcoMate'}
                   </span>
                 )}
               </Link>
@@ -1466,7 +1466,7 @@ export default function CheckoutPage() {
                   <ShieldCheck size={10} className="text-brand-blue" />
                 </div>
                 <p className="text-[10px] text-gray-400 leading-normal">
-                  By placing order, you agree to {config.store?.name || 'Store'}'s{" "}
+                  By placing order, you agree to {config.store?.name || 'EcoMate'}'s{" "}
                   <Link href="/terms-conditions" className="text-brand-blue hover:underline font-bold">Terms & Conditions</Link>,{" "}
                   <Link href="/privacy-policy" className="text-brand-blue hover:underline font-bold">Privacy Policy</Link>, and{" "}
                   <Link href="/refund-policy" className="text-brand-blue hover:underline font-bold">Return Policy</Link>.

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { getCmsPageBySlug } from "@/lib/api/cms-pages";
 import { getStorefrontConfigServer } from "@/lib/api/storefront-config-server";
 import { pageMetadata } from "@/lib/metadata";
-import { preFormattedPages } from "./registry";
+import { preFormattedPages, templateHasRealContent } from "./registry";
 import type { PageMeta } from "./content-utils";
 
 export { templateHasRealContent } from "./registry";
@@ -56,5 +56,18 @@ export async function preFormattedPageMetadata(key: string): Promise<Metadata> {
   const page = await getCmsPageBySlug(def.slug).catch(() => null);
   const title = page?.title || def.title;
   const description = page?.metaDescription || `${title} — ${def.description}`;
-  return pageMetadata(title, description, undefined, page?.ogImage || undefined);
+  const meta = await pageMetadata(title, description, undefined, page?.ogImage || undefined);
+  // D8: a content-less template page carries `noindex` even when the
+  // indexing flag is ON — otherwise it is omitted from the sitemap but
+  // still served indexable. The merged config (defaults + stored row) is
+  // exactly what renderPreFormattedPage passes to the template. (The four
+  // routes that already add this themselves — delivery-areas, download,
+  // faq, support — now redundantly re-add the identical field; harmless.)
+  const merged = def
+    ? { ...def.defaultConfig, ...(page?.config || {}) }
+    : page?.config;
+  if (!templateHasRealContent(key, merged)) {
+    return { ...meta, robots: { index: false, follow: true } };
+  }
+  return meta;
 }

@@ -833,6 +833,9 @@ export default function LandingTemplateRenderer({
   });
 
   const renderSection = (section: any, i: number) => {
+    // A hidden section renders nothing — the admin toggle ("This section
+    // is hidden and will not appear on the published page") must hold.
+    if (section.hidden) return null;
     const sectionProps = { section, index: i, products };
     switch (section.type) {
       case "hero": return <HeroSection key={i} {...sectionProps} />;

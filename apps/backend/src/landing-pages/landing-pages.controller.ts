@@ -9,9 +9,14 @@ import {
   Param,
   Query,
   Req,
+  ValidationPipe,
 } from '@nestjs/common';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { LandingPagesService } from './landing-pages.service';
+import {
+  CreateLandingPageDto,
+  UpdateLandingPageDto,
+} from './dto/landing-page.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { RequiresFeature } from '@ecomate/feature-flags';
 import { isInternalRequest } from '../common/rate-limit/internal-request';
@@ -71,15 +76,22 @@ export class LandingPagesController {
   @Permissions('create_landing_pages')
   @RequiresFeature('admin_landing_pages')
   @Post()
-  create(@Body() body: Record<string, any>) {
-    return this.svc.create(body);
+  create(
+    @Body(new ValidationPipe({ whitelist: true }))
+    dto: CreateLandingPageDto,
+  ) {
+    return this.svc.create(dto);
   }
 
   @Permissions('edit_landing_pages')
   @RequiresFeature('admin_landing_pages')
   @Put(':id')
-  update(@Param('id') id: string, @Body() body: Record<string, any>) {
-    return this.svc.update(id, body);
+  update(
+    @Param('id') id: string,
+    @Body(new ValidationPipe({ whitelist: true }))
+    dto: UpdateLandingPageDto,
+  ) {
+    return this.svc.update(id, dto);
   }
 
   @Permissions('edit_landing_pages')

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { LandingOrderProvider, type OrderLineItem } from "./LandingOrderContext";
 import { CheckoutFormSection } from "./TemplateRenderer";
 import { stringifyForScript } from "@/lib/safe-json";
+import { sanitizeLandingCss, sanitizeLandingHtml } from "@/lib/landing-sanitize";
 
 /**
  * EcoMate SDK — injected as inline script BEFORE user HTML.
@@ -55,10 +56,18 @@ function CustomContentWithPortal({ html, css }: { html: string; css?: string | n
     if (el) setMountNode(el);
   }, [html]);
 
+  // Render-time sanitization (defense in depth — the backend also rejects
+  // forbidden constructs at save time): customHtml is DOMPurify-sanitized
+  // against a strict allowlist and customCss is scoped under
+  // #landing-root, on EVERY render. Even a row written by direct API call
+  // or an older unsafe row renders safe.
+  const safeHtml = useMemo(() => sanitizeLandingHtml(html), [html]);
+  const safeCss = useMemo(() => sanitizeLandingCss(css || ""), [css]);
+
   return (
     <>
-      {css && <style dangerouslySetInnerHTML={{ __html: css }} />}
-      <div id="landing-root" className="landing-custom-content" dangerouslySetInnerHTML={{ __html: html }} />
+      {safeCss && <style dangerouslySetInnerHTML={{ __html: safeCss }} />}
+      <div id="landing-root" className="landing-custom-content" dangerouslySetInnerHTML={{ __html: safeHtml }} />
       {mountNode && createPortal(
         <CheckoutFormSection section={{ title: "Complete Your Order", type: "checkout-form" }} index={0} />,
         mountNode

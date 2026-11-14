@@ -11,7 +11,7 @@ interface BeforeInstallPromptEvent extends Event {
 
 export default function PWAInstallBanner() {
   const { config } = useStorefrontConfig();
-  const storeName = config.store.name || 'Store';
+  const storeName = config.store.name || 'EcoMate';
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showBanner, setShowBanner] = useState(false);
   const [dismissed, setDismissed] = useState(false);

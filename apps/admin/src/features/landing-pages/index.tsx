@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Globe, GlobeOff, Trash2, Pencil, ExternalLink, Code, Layout, Loader2, Search, X, Copy, Eye, EyeOff, ChevronUp, ChevronDown } from 'lucide-react'
+import { Plus, Globe, GlobeOff, Trash2, Pencil, ExternalLink, Code, Layout, Loader2, Search, X, Copy, Eye, EyeOff, ChevronUp, ChevronDown, ImagePlus } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { MediaPicker } from '@/components/media-picker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -17,8 +18,16 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { landingPagesApi, type LandingPage } from './api'
+import { AI_INSTRUCTION_SECTIONS, buildAiInstructions } from './ai-instructions'
+import { buildPreviewUrl, buildSavePayload, buildStorefrontPageUrl, getLandingPageStatus } from './helpers'
 import { apiClient } from '@/lib/api-client'
 import { PageInfo } from '@/components/page-info'
+
+/** Which section field the MediaPicker is currently choosing an image for. */
+type PickerTarget =
+  | { kind: 'hero'; sectionIndex: number }
+  | { kind: 'gallery'; sectionIndex: number }
+  | { kind: 'review-image'; sectionIndex: number; itemIndex: number }
 
 export function LandingPages() {
   const queryClient = useQueryClient()
@@ -37,21 +46,16 @@ export function LandingPages() {
   const [templateId, setTemplateId] = useState('clothing')
   const [sections, setSections] = useState<any[]>([])
   const [customHtml, setCustomHtml] = useState('')
+  const [customCss, setCustomCss] = useState('')
   const [selectedProducts, setSelectedProducts] = useState<{ id: string; name: string }[]>([])
-  const [selectedCombos, setSelectedCombos] = useState<{ id: string; name: string }[]>([])
   const [productSearch, setProductSearch] = useState('')
   const [productResults, setProductResults] = useState<any[]>([])
   const [searching, setSearching] = useState(false)
   const [showProductDropdown, setShowProductDropdown] = useState(false)
-  const [comboSearch, setComboSearch] = useState('')
-  const [comboResults, setComboResults] = useState<any[]>([])
-  const [combosSearching, setCombosSearching] = useState(false)
-  const [showComboDropdown, setShowComboDropdown] = useState(false)
   const [primaryColor, setPrimaryColor] = useState('#3730a3')
+  const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null)
   const searchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const comboSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const productSearchRef = useRef<HTMLDivElement>(null)
-  const comboSearchRefDiv = useRef<HTMLDivElement>(null)
   const sectionAddRef = useRef<HTMLDivElement>(null)
   const [showSectionMenu, setShowSectionMenu] = useState(false)
 
@@ -99,8 +103,10 @@ export function LandingPages() {
       templateId: row.templateId,
       sections: row.sections,
       customHtml: row.customHtml,
+      customCss: row.customCss,
       productIds: Array.isArray(row.productIds) ? row.productIds : [],
-      comboIds: Array.isArray(row.comboIds) ? row.comboIds : [],
+      // comboIds intentionally NOT cloned/sent: combos render nowhere
+      // (audit §3.3); existing rows keep their stored value untouched.
     }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['landing-pages'] }); toast.success('Duplicated'); },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Error'),
@@ -113,7 +119,7 @@ export function LandingPages() {
 
   const reset = () => {
     setTitle(''); setSlug(''); setPageType('template'); setTemplateId('clothing'); setSections([])
-    setCustomHtml(''); setSelectedProducts([]); setSelectedCombos([]); setTab('general'); setEditRow(null); setHasUnsaved(false)
+    setCustomHtml(''); setCustomCss(''); setPrimaryColor('#3730a3'); setSelectedProducts([]); setTab('general'); setEditRow(null); setHasUnsaved(false)
   }
 
   const openEdit = (row: LandingPage) => {
@@ -122,6 +128,8 @@ export function LandingPages() {
     setTemplateId(row.templateId || 'clothing')
     setSections(row.sections || [])
     setCustomHtml(row.customHtml || '')
+    setCustomCss(row.customCss || '')
+    setPrimaryColor(row.trackingJson?.primaryColor || '#3730a3')
     // Resolve product names from IDs
     const pIds = Array.isArray(row.productIds) ? row.productIds : []
     if (pIds.length > 0) {
@@ -137,8 +145,9 @@ export function LandingPages() {
     } else {
       setSelectedProducts([])
     }
-    const cIds = Array.isArray(row.comboIds) ? row.comboIds : []
-    setSelectedCombos(cIds.map((id: string) => ({ id, name: id.slice(0, 8) + '...' })))
+    // Combos are not loaded: combo assignment was removed — combos are
+    // stored on the row but rendered nowhere (audit §3.3), so the editor
+    // neither shows nor sends them. Existing rows keep their stored value.
     setFormOpen(true)
     setTab('general')
   }
@@ -147,14 +156,12 @@ export function LandingPages() {
     if (!title || !slug) { toast.error('Title and slug are required'); return }
     if (!/^[a-z0-9-]+$/.test(slug)) { toast.error('Slug must be lowercase alphanumeric with dashes only'); return }
     if (pageType === 'custom' && !customHtml.trim()) { toast.error('Custom HTML is empty. Paste your code or switch to Template mode.'); return }
-    const payload: Record<string, any> = {
-      title, slug, pageType, templateId: pageType === 'template' ? templateId : null,
-      sections: pageType === 'template' ? sections : null,
-      customHtml: pageType === 'custom' ? customHtml : null,
+    const payload = buildSavePayload({
+      title, slug, pageType, templateId, sections, customHtml, customCss,
       productIds: selectedProducts.map(p => p.id),
-      comboIds: selectedCombos.map(c => c.id),
-      trackingJson: { primaryColor },
-    }
+      primaryColor,
+      existingTrackingJson: editRow?.trackingJson,
+    })
     if (editRow) {
       updateMut.mutate({ id: editRow.id, data: payload })
     } else {
@@ -191,33 +198,32 @@ export function LandingPages() {
     setSelectedProducts(prev => prev.filter(p => p.id !== id))
   }
 
-  // Combo search with debounce
-  useEffect(() => {
-    if (!comboSearch || comboSearch.length < 2) { setComboResults([]); setShowComboDropdown(false); return }
-    clearTimeout(comboSearchRef.current)
-    comboSearchRef.current = setTimeout(() => {
-      setCombosSearching(true)
-      apiClient.get('/combos', { params: { search: comboSearch, perPage: 50, isActive: true } })
-        .then(res => {
-          const items = Array.isArray(res.data) ? res.data : (res.data as any)?.data || []
-          setComboResults(items)
-          setShowComboDropdown(items.length > 0)
-        })
-        .catch(() => {})
-        .finally(() => setCombosSearching(false))
-    }, 300)
-    return () => { clearTimeout(comboSearchRef.current) }
-  }, [comboSearch])
+  // Media picker: the value(s) for the field the picker is choosing for.
+  const pickerSelected: string[] = (() => {
+    if (!pickerTarget) return []
+    const sec = sections[pickerTarget.sectionIndex]
+    if (!sec) return []
+    if (pickerTarget.kind === 'hero') return sec.image ? [sec.image] : []
+    if (pickerTarget.kind === 'gallery') return Array.isArray(sec.images) ? sec.images.filter(Boolean) : []
+    const item = sec.items?.[pickerTarget.itemIndex]
+    return item?.image ? [item.image] : []
+  })()
 
-  const addCombo = (c: any) => {
-    if (!selectedCombos.find(sc => sc.id === c.id)) {
-      setSelectedCombos(prev => [...prev, { id: c.id, name: c.name }])
+  const handlePickerSelect = (urls: string[]) => {
+    if (!pickerTarget) return
+    const { sectionIndex } = pickerTarget
+    if (pickerTarget.kind === 'hero') {
+      updateSection(sectionIndex, 'image', urls[0] || '')
+    } else if (pickerTarget.kind === 'gallery') {
+      const current: string[] = Array.isArray(sections[sectionIndex]?.images) ? sections[sectionIndex].images : []
+      updateSection(sectionIndex, 'images', Array.from(new Set([...current.filter(Boolean), ...urls])))
+    } else {
+      const items = [...(sections[sectionIndex]?.items || [])]
+      items[pickerTarget.itemIndex] = { ...items[pickerTarget.itemIndex], image: urls[0] || '' }
+      updateSection(sectionIndex, 'items', items)
     }
-    setComboSearch(''); setShowComboDropdown(false)
-  }
-
-  const removeCombo = (id: string) => {
-    setSelectedCombos(prev => prev.filter(c => c.id !== id))
+    markDirty()
+    setPickerTarget(null)
   }
 
   // Close dropdowns on outside click
@@ -225,9 +231,6 @@ export function LandingPages() {
     const handler = (e: MouseEvent) => {
       if (productSearchRef.current && !productSearchRef.current.contains(e.target as Node)) {
         setShowProductDropdown(false)
-      }
-      if (comboSearchRefDiv.current && !comboSearchRefDiv.current.contains(e.target as Node)) {
-        setShowComboDropdown(false)
       }
       if (sectionAddRef.current && !sectionAddRef.current.contains(e.target as Node)) {
         setShowSectionMenu(false)
@@ -341,7 +344,12 @@ export function LandingPages() {
       fields.push(
         <div className='space-y-1 col-span-2' key='image'>
           <Label className='text-xs'>Image URL</Label>
-          <Input className='h-8 text-xs' value={sec.image || ''} onChange={e => updateSection(i, 'image', e.target.value)} placeholder='https://...' />
+          <div className='flex items-center gap-2'>
+            <Input className='h-8 text-xs flex-1' value={sec.image || ''} onChange={e => updateSection(i, 'image', e.target.value)} placeholder='https://...' />
+            <Button variant='outline' size='sm' className='h-8 text-xs shrink-0' onClick={() => setPickerTarget({ kind: 'hero', sectionIndex: i })}>
+              <ImagePlus className='h-3.5 w-3.5 mr-1' /> Browse
+            </Button>
+          </div>
         </div>,
       )
     }
@@ -365,9 +373,14 @@ export function LandingPages() {
               </button>
             </div>
           ))}
-          <Button variant='outline' size='sm' className='text-xs' onClick={() => updateSection(i, 'images', [...sec.images, ''])}>
-            <Plus className='h-3 w-3 mr-1' /> Add Image
-          </Button>
+          <div className='flex gap-2'>
+            <Button variant='outline' size='sm' className='text-xs' onClick={() => updateSection(i, 'images', [...sec.images, ''])}>
+              <Plus className='h-3 w-3 mr-1' /> Add Image
+            </Button>
+            <Button variant='outline' size='sm' className='text-xs' onClick={() => setPickerTarget({ kind: 'gallery', sectionIndex: i })}>
+              <ImagePlus className='h-3 w-3 mr-1' /> Browse library
+            </Button>
+          </div>
         </div>,
       )
     }
@@ -485,7 +498,12 @@ export function LandingPages() {
               )}
               {isImageTitleText && (
                 <div className='grid grid-cols-2 gap-2'>
-                  <Input className='h-8 text-xs' value={item.image || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], image: e.target.value }; updateSection(i, 'items', next) }} placeholder='Image URL' />
+                  <div className='flex items-center gap-2 col-span-2'>
+                    <Input className='h-8 text-xs flex-1' value={item.image || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], image: e.target.value }; updateSection(i, 'items', next) }} placeholder='Image URL' />
+                    <Button variant='outline' size='sm' className='h-8 text-xs shrink-0' onClick={() => setPickerTarget({ kind: 'review-image', sectionIndex: i, itemIndex: itemI })}>
+                      <ImagePlus className='h-3.5 w-3.5 mr-1' /> Browse
+                    </Button>
+                  </div>
                   <Input className='h-8 text-xs' value={item.title || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], title: e.target.value }; updateSection(i, 'items', next) }} placeholder='Title' />
                   <Input className='h-8 text-xs' value={item.text || ''} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], text: e.target.value }; updateSection(i, 'items', next) }} placeholder='Review' />
                   <Input className='h-8 text-xs' type='number' min={1} max={5} value={item.rating ?? 5} onChange={e => { const next = [...sec.items]; next[itemI] = { ...next[itemI], rating: parseInt(e.target.value) || 5 }; updateSection(i, 'items', next) }} placeholder='Rating' />
@@ -570,11 +588,16 @@ export function LandingPages() {
                       <Badge variant='outline' className='text-xs'>{p.pageType}</Badge>
                     </td>
                     <td className='px-4 py-3'>
-                      {p.isActive && !p.isDraft ? (
-                        <Badge variant='default' className='bg-green-600 text-xs'>Published</Badge>
-                      ) : (
-                        <Badge variant='secondary' className='text-xs'>Draft</Badge>
-                      )}
+                      {(() => {
+                        const status = getLandingPageStatus(p)
+                        return status === 'Published' ? (
+                          <Badge variant='default' className='bg-green-600 text-xs'>Published</Badge>
+                        ) : status === 'Unpublished' ? (
+                          <Badge variant='outline' className='text-xs text-amber-600 border-amber-600'>Unpublished</Badge>
+                        ) : (
+                          <Badge variant='secondary' className='text-xs'>Draft</Badge>
+                        )
+                      })()}
                     </td>
                     <td className='px-4 py-3 text-muted-foreground text-xs'>
                       {new Date(p.updatedAt).toLocaleDateString()}
@@ -583,7 +606,7 @@ export function LandingPages() {
                       <div className='flex items-center justify-end gap-1'>
                         {p.isActive && !p.isDraft && (
                           <Button variant='ghost' size='sm' className='h-8 w-8 p-0' title='View'
-                            onClick={() => window.open(`/landing/${p.slug}`, '_blank')}>
+                            onClick={() => window.open(buildStorefrontPageUrl(p.slug), '_blank')}>
                             <ExternalLink className='h-4 w-4' />
                           </Button>
                         )}
@@ -781,17 +804,36 @@ export function LandingPages() {
                     <div className='flex items-center justify-between'>
                       <div>
                         <p className='text-sm font-medium'>Custom HTML</p>
-                        <p className='text-xs text-muted-foreground'>Paste your AI-generated HTML code here. Use <code className='bg-muted px-1 rounded'>window.EcoMate.track()</code> for events.</p>
+                        <p className='text-xs text-muted-foreground'>HTML fragment only — no JavaScript. Checkout and tracking are provided by the platform.</p>
                       </div>
-                      <PromptReferenceModal />
+                      <div className='flex items-center gap-2'>
+                        <Button variant='outline' size='sm' onClick={() => {
+                          navigator.clipboard.writeText(buildAiInstructions())
+                          toast.success('AI instructions copied to clipboard')
+                        }}>
+                          <Copy className='h-4 w-4 mr-1' /> Copy AI instructions
+                        </Button>
+                        <PromptReferenceModal />
+                      </div>
                     </div>
                     <Textarea
                       value={customHtml}
                       onChange={e => setCustomHtml(e.target.value)}
                       rows={24}
-                      placeholder='<html>...</html>'
+                      placeholder='<div id="ecomate-checkout-mount"></div>'
                       className='font-mono text-xs leading-relaxed'
                     />
+                    <div className='space-y-1.5'>
+                      <Label>Custom CSS</Label>
+                      <p className='text-xs text-muted-foreground'>Plain CSS only — no Tailwind classes, no @import. Scoped to your page automatically.</p>
+                      <Textarea
+                        value={customCss}
+                        onChange={e => { setCustomCss(e.target.value); markDirty(); }}
+                        rows={10}
+                        placeholder={'.hero {\n  padding: 2rem;\n}'}
+                        className='font-mono text-xs leading-relaxed'
+                      />
+                    </div>
                   </div>
                 )}
               </TabsContent>
@@ -858,60 +900,11 @@ export function LandingPages() {
                   )}
                 </div>
 
-                <div className='border-t pt-4 space-y-1.5'>
-                  <Label>Assigned Combos</Label>
-                  <div className='relative' ref={comboSearchRefDiv}>
-                    <div className='flex items-center border rounded-md px-3 py-2 bg-background'>
-                      <Search className='h-4 w-4 text-muted-foreground mr-2 shrink-0' />
-                      <input
-                        type='text'
-                        value={comboSearch}
-                        onChange={e => setComboSearch(e.target.value)}
-                        placeholder='Search combos by name...'
-                        className='flex-1 text-sm bg-transparent outline-none border-0 p-0'
-                      />
-                      {combosSearching && <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />}
-                    </div>
-                    {showComboDropdown && (
-                      <div className='absolute z-50 top-full mt-1 left-0 right-0 bg-background border rounded-md shadow-lg max-h-60 overflow-y-auto'>
-                        {comboResults.map((c: any) => (
-                          <button
-                            key={c.id}
-                            type='button'
-                            onClick={() => addCombo(c)}
-                            className='w-full flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-muted/50 text-left transition-colors'
-                          >
-                            <div className='min-w-0 flex-1'>
-                              <p className='font-medium truncate'>{c.name}</p>
-                              <p className='text-xs text-muted-foreground'>৳{Number(c.basePrice || 0).toLocaleString()}</p>
-                            </div>
-                            <Plus className='h-4 w-4 shrink-0 text-muted-foreground' />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {selectedCombos.length > 0 && (
-                    <div className='flex flex-wrap items-center gap-1.5 mt-2'>
-                      {selectedCombos.map(c => (
-                        <Badge key={c.id} variant='secondary' className='gap-1 pr-1 text-xs max-w-[200px]'>
-                          <span className='truncate'>{c.name}</span>
-                          <button onClick={() => removeCombo(c.id)} className='ml-0.5 hover:text-destructive shrink-0'>
-                            <X className='h-3 w-3' />
-                          </button>
-                        </Badge>
-                      ))}
-                      {selectedCombos.length > 1 && (
-                        <button onClick={() => setSelectedCombos([])} className='text-[11px] text-muted-foreground hover:text-destructive ml-1'>
-                          Clear all
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {selectedCombos.length === 0 && (
-                    <p className='text-xs text-muted-foreground'>Search and select combos above.</p>
-                  )}
-                </div>
+                <p className='text-xs text-muted-foreground border-t pt-4'>
+                  Assigned products are rendered by the platform. Combos are not shown here:
+                  combo assignment renders nothing on the published page, so it was removed.
+                  Pages that already have combos stored keep them, unchanged.
+                </p>
               </TabsContent>
             </div>
           </Tabs>
@@ -919,7 +912,7 @@ export function LandingPages() {
           <div className='border-t px-6 py-3 flex justify-between items-center'>
             {editRow && (
               <div className='flex gap-2'>
-                <Button variant='outline' size='sm' onClick={() => window.open(`/landing/${editRow.slug}?preview=true`, '_blank')}>
+                <Button variant='outline' size='sm' onClick={() => window.open(buildPreviewUrl(editRow.slug), '_blank')}>
                   <ExternalLink className='h-4 w-4 mr-1' /> Preview
                 </Button>
                 {editRow.isActive && !editRow.isDraft ? (
@@ -943,6 +936,18 @@ export function LandingPages() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Media Library picker for section image fields (hero, gallery, review photos).
+          Video sections have no thumbnail/poster field in the section model or
+          the storefront renderer, so there is nothing to pick for them. */}
+      <MediaPicker
+        open={pickerTarget !== null}
+        onOpenChange={(v) => { if (!v) setPickerTarget(null) }}
+        selected={pickerSelected}
+        multiple={pickerTarget?.kind === 'gallery'}
+        accept='image'
+        onSelect={handlePickerSelect}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget}
@@ -968,89 +973,8 @@ export function LandingPages() {
   )
 }
 
-function PromptReferenceModal() {
+export function PromptReferenceModal() {
   const [open, setOpen] = useState(false)
-  const promptSections = [
-    {
-      title: "Architecture & Limits",
-      content: "Landing page at /landing/[slug] — NO main app JS. Available: Tailwind CSS CDN, Google Fonts. CSP: inline scripts allowed, images from any URL, YouTube iframes allowed. BLOCKED: external JS files, other iframes, object/embed. Your output is a single self-contained HTML file."
-    },
-    {
-      title: "Product Data Model",
-      content: "Products are assigned via UUID. Build your UI around this JS object:\n\nwindow.products = [\n  {\n    id: 'uuid-here',\n    name: 'Premium Cotton Shirt',\n    price: 990,\n    compareAtPrice: 1290,\n    image: 'https://cdn.example.com/shirt.jpg',\n    variants: [\n      { id: 'v1', label: 'S', price: 990, stock: 10 },\n      { id: 'v2', label: 'M', price: 990, stock: 25 }\n    ]\n  }\n]\n\nRead from window.products (injected by the platform). If single product, window.products has 1 item. If multiple, iterate."
-    },
-    {
-      title: "EcoMate SDK — The ONLY API You Need",
-      content: "AI code must ONLY use the EcoMate SDK. Never call backend APIs directly.\n\nwindow.EcoMate.products — array of assigned products [{ id, name, price, compareAtPrice, image, variants: [{ id, label, price, stock }] }]\n\nwindow.EcoMate.track(event, data) — tracking. Available events with EXACT trigger conditions:\n• PageView: auto on load. DO NOT call manually.\n• ViewContent: ONCE per section via IntersectionObserver. Payload: { productId, section? }\n• AddToCart: ONCE per add action (variant select OR + click, NOT qty change). Payload: { productId, variantId?, quantity, price }\n• Lead: ONCE after form validation, before submit. Payload: { phone }\n• InitiateCheckout: ONCE after API success. Payload: { orderId }\n• Purchase: server-side. NEVER call from frontend.\n\nwindow.EcoMate.checkout.submit(data) — creates order. Returns Promise. Data: { items: [{productId, variantId?, quantity, price}], name, phone, address, deliveryZone, payment, gatewayCode }\n\nwindow.EcoMate.theme — { primary: '#4f46e5', currency: '৳' }\n\nSECURITY: Never create own fetch() calls. Never access localStorage, sessionStorage, cookies, eval. Never create own order form or checkout logic — use EcoMate SDK."
-    },
-    {
-      title: "Tracking — Events & Exact Payloads",
-      content: "Timeline scope: these limits apply per single page visit (not lifetime).\n\nPageView — fires automatically on page load. DO NOT call manually.\n\nViewContent — fires ONCE per section, the first time it becomes visible.\nUse IntersectionObserver: new IntersectionObserver(entries => { if (entry.isIntersecting && !fired) { EcoMate.track('ViewContent', { productId: p.id }); fired = true; } })\nPayload: { productId: string, section?: string }\n\nAddToCart — fires ONCE per add action (click variant pill, tap +). NOT on quantity change.\nPayload: { productId: string, variantId?: string, quantity: number, price: number }\n\nLead — fires ONCE after successful form field validation AND before the POST request.\nPayload: { phone: string }\n\nInitiateCheckout — fires ONCE after POST /api/orders returns 200.\nPayload: { orderId: string }\n\nPurchase — fired server-side. Do NOT fire from frontend.\n\nCRITICAL: Implement a local dedup flag per event:\nvar tracked = {};\nfunction trackOnce(event, data) { if (tracked[event]) return; tracked[event] = true; EcoMate.track(event, data); }\n\nExample: user clicks CTA → fires ViewContent. User scrolls to product → IntersectionObserver fires ViewContent again but BLOCKED by dedup flag. User submits order → fires Lead (only once even if validate fires multiple times). API success → fires InitiateCheckout. Total: 3 fire calls, 3 distinct events."
-    },
-    {
-      title: "UI Requirements — States & Error Handling",
-      content: "CRITICAL: Every interactive element needs 4 states:\n1. IDLE — default appearance\n2. LOADING — disable button, show spinner/text change (e.g., 'Placing Order...'), prevent double-click\n3. SUCCESS — show order confirmation with displayId from API response\n4. ERROR — show inline error message (red box, not alert()), keep form data intact\n\nPhone validation: require 11 digits starting with 01. Show inline <p class='text-red-500 text-xs'> error below the input, not an alert().\nPrevent double submission: disable submit button immediately on click, re-enable on error."
-    },
-    {
-      title: "Clothing-Specific UI (Size, Color, Quantity)",
-      content: "Include for each product:\n- Color selector: row of colored circles/swatches, click to select (not dropdown)\n- Size selector: row of pill buttons (S/M/L/XL), click to select (not dropdown)\n- Quantity stepper: − 1 + row, min 1, max stock\n- Show stock for selected variant: 'Only X left' if stock <= 5\n- If variant has different price, update displayed price on selection\n- Default: select first available variant, quantity = 1"
-    },
-    {
-      title: "Bangladesh-Specific Checkout UX",
-      content: "- Default payment method: Cash on Delivery (COD), shown as first/selected option\n- Delivery zone selector: radio buttons or pill toggle, NOT dropdown\n  'ঢাকার ভিতরে (+৬০টাকা)' / 'ঢাকার বাইরে (+১২০টাকা)'\n- Delivery charge auto-updates total when zone changes\n- Order summary box (above the form):\n    Product price: ৳990\n    Delivery: +৳60\n    —————————\n    Total: ৳1,050\n- Phone field placeholder: '01XXXXXXXXX'\n- Submit button: full-width, indigo/blue color, 'অর্ডার কনফার্ম করুন' in Bengali"
-    },
-    {
-      title: "Incomplete Order (Abandoned Checkout)",
-      content: "Track users who start filling but don't submit:\n- Add onblur handler to phone input: window.EcoMate.track('Lead', { phone: input.value })\n- This fires EVEN if user never clicks submit.\n- If using <div id='ecomate-checkout-mount'>, this is handled automatically."
-    },
-    {
-      title: "Output Structure",
-      content: "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset='UTF-8'>\n  <meta name='viewport' content='width=device-width, initial-scale=1.0'>\n  <script src='https://cdn.tailwindcss.com'></script>\n  <link href='https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali' rel='stylesheet'>\n  <style>/* your custom CSS */</style>\n</head>\n<body class='font-[Noto_Sans_Bengali]'>\n  <!-- Hero, features, product grid, etc -->\n  <div id='ecomate-checkout-mount'></div>\n  <!-- Trust badges, footer -->\n  <script>\n    // Product data available via window.products\n    // Track user interactions\n    // Order form submission\n  </script>\n</body>\n</html>"
-    },
-  ];
-
-  const examplePrompt = `Create a modern sales landing page for a clothing brand in Bangladesh.
-Target audience: young adults in Dhaka, mobile-first, Bengali language.
-
-REQUIRED SECTIONS:
-1. Hero — gradient background, headline, CTA button (scrolls to #checkout)
-2. Feature badges — COD, Free Delivery, Easy Returns, Authentic — using emoji icons
-3. Product showcase — render EcoMate.products with image, name, price, compareAtPrice.
-   Include Color selector (swatches), Size selector (S/M/L/XL pills), Quantity stepper (− 1 +).
-   Show stock availability. Update displayed price when variant changes.
-4. Checkout — use <div id="ecomate-checkout-mount"></div> for built-in order form
-5. Trust badges section
-6. Footer with contact info
-
-CHECKOUT UI:
-- Cash on Delivery selected by default
-- Delivery zone toggle: Inside Dhaka (+60) / Outside Dhaka (+120)
-- Order summary showing: product price + delivery charge = total
-- Phone validation: 01XXXXXXXXX (11 digits), inline red error text
-- Submit button: "অর্ডার কনফার্ম করুন", shows loading state while submitting
-- Use EcoMate.checkout.submit() to create orders (NOT raw fetch)
-- On success: show order confirmation with displayId
-- On error: show error message, keep form data intact
-
-TRACKING (use ONLY EcoMate SDK, implement ALL with dedup flag):
-- PageView: auto, do not call manually
-- ViewContent: IntersectionObserver per product section, fire ONCE
-- AddToCart: on variant select or + click (NOT quantity change), fire ONCE
-- Lead: on form submit (after validation, before submitting), fire ONCE
-- InitiateCheckout: after checkout.submit() resolves successfully, fire ONCE
-- Each event fires EXACTLY ONCE per page visit — use var tracked = {} to dedup
-
-TECHNICAL CONSTRAINTS (MUST FOLLOW):
-- Use ONLY EcoMate SDK — never raw fetch(), never POST /api/orders directly
-- Never access localStorage, sessionStorage, cookies, or eval
-- Never create own order form — use <div id="ecomate-checkout-mount">
-- Tailwind CSS CDN, Noto Sans Bengali font
-- Single HTML file, mobile-first responsive
-- Loading state on submit button, prevent double-click
-- Show success message with displayId on success
-- Show inline red error box on failure
-- Use IntersectionObserver for scroll-based events
-- No placeholder logic — all tracking calls fully implemented`
 
   return (
     <>
@@ -1061,10 +985,13 @@ TECHNICAL CONSTRAINTS (MUST FOLLOW):
         <DialogContent className='max-w-2xl max-h-[85vh] overflow-y-auto'>
           <DialogHeader>
             <DialogTitle>Custom Code — Full Integration Guide</DialogTitle>
-            <DialogDescription>Give this to any AI to generate a fully integrated landing page.</DialogDescription>
+            <DialogDescription>
+              Custom code is HTML + plain CSS only — no JavaScript of any kind. Tracking and
+              checkout are provided by the platform. Give this to any AI to generate a safe page.
+            </DialogDescription>
           </DialogHeader>
           <div className='space-y-4 text-sm'>
-            {promptSections.map((sec, i) => (
+            {AI_INSTRUCTION_SECTIONS.map((sec, i) => (
               <div key={i} className='bg-muted/20 rounded-lg p-4 space-y-1'>
                 <h4 className='font-semibold text-xs uppercase tracking-wider text-muted-foreground'>{sec.title}</h4>
                 <p className='text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap'>{sec.content}</p>
@@ -1072,15 +999,17 @@ TECHNICAL CONSTRAINTS (MUST FOLLOW):
             ))}
 
             <div className='border-t pt-4'>
-              <h4 className='font-semibold text-sm mb-2'>Complete Example Prompt</h4>
-              <div className='bg-muted rounded-lg p-3 mb-3'>
-                <p className='text-xs text-muted-foreground leading-relaxed border-l-2 border-primary pl-3 italic whitespace-pre-wrap'>{examplePrompt}</p>
-              </div>
+              <h4 className='font-semibold text-sm mb-2'>Copy the instructions for any AI</h4>
+              <p className='text-xs text-muted-foreground leading-relaxed mb-3'>
+                This copies the same contract shown above, plus a slot for your requirements.
+                Paste it into any AI, fill in your requirements, and paste the two blocks it
+                returns into the Custom HTML and Custom CSS fields.
+              </p>
               <Button variant='default' size='sm' onClick={() => {
-                navigator.clipboard.writeText(examplePrompt)
-                toast.success('Full prompt copied to clipboard')
+                navigator.clipboard.writeText(buildAiInstructions())
+                toast.success('AI instructions copied to clipboard')
               }}>
-                <Code className='h-4 w-4 mr-1' /> Copy Full Prompt
+                <Copy className='h-4 w-4 mr-1' /> Copy AI instructions
               </Button>
             </div>
           </div>

@@ -13,7 +13,7 @@ export class StorefrontConfigError extends Error {
 }
 
 const DEFAULT_CONFIG: StorefrontConfig = {
-  store: { name: "Store", tagline: "", email: "", phone: "", address: "" },
+  store: { name: "EcoMate", tagline: "", email: "", phone: "", address: "" },
   systems: [],
   currency: { code: "BDT", symbol: "৳" },
   delivery: { charge: 0, freeDeliveryMin: 0 },

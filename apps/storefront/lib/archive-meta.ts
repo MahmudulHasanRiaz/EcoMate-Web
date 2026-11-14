@@ -6,7 +6,7 @@ export async function getMetaStoreName(): Promise<string> {
   try {
     return (await getStorefrontConfigServer()).store.name;
   } catch {
-    return 'Store';
+    return 'EcoMate';
   }
 }
 
