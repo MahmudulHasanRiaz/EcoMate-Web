@@ -64,6 +64,7 @@ export const sidebarData: SidebarData = {
           title: 'Products', icon: Package, feature: 'admin_products',
           items: [
             { title: 'All Products', url: '/op/products' },
+            { title: 'Store Availability', url: '/op/products/store-availability', feature: 'admin_stores' },
             { title: 'Combos', url: '/op/combos', icon: Gift, feature: 'admin_combos' },
             { title: 'Categories', url: '/op/categories' },
             { title: 'Brands', url: '/op/brands', feature: 'admin_brands' },
@@ -112,6 +113,14 @@ export const sidebarData: SidebarData = {
           ],
         }, 'Growth', 'violet'),
         inSection({ title: 'Referrals', url: '/op/referrals', icon: UserPlus, feature: 'admin_referrals' }, 'Growth', 'violet'),
+        inSection({
+          title: 'Sales Channels', icon: Store, feature: 'admin_stores',
+          items: [
+            { title: 'Overview', url: '/op/channels', icon: LayoutDashboard },
+            { title: 'Stores', url: '/op/channels/stores', icon: Store },
+            { title: 'Sync Center', url: '/op/channels/sync-center', icon: RefreshCw },
+          ],
+        }, 'Growth', 'violet'),
         inSection({ title: 'Landing Pages', url: '/op/landing-pages', icon: FileText, feature: 'admin_landing_pages' }, 'Growth', 'violet'),
         // ── Finance ──
         inSection({

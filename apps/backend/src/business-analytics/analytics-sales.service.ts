@@ -74,6 +74,7 @@ import {
   bucketEdges,
   fittingGranularity,
 } from './analytics-overview.service';
+import { newSalesChannelModelEnabled } from '../orders/channels/channel-flags';
 
 /** Trend honesty bound (same policy as the overview trend). */
 export const SALES_TREND_BUCKET_CAP = 366;
@@ -88,6 +89,10 @@ export interface SalesOrderInput extends PnlOrderInput {
   /** Canonical Channel (SalesChannelV2); null where never mapped. */
   channel?: string | null;
   source?: string | null;
+  // P8 additive (§9.3 dual-read): canonical dimensions, present only with
+  // the new-channel model flag on in service mappings.
+  salesChannelType?: string | null;
+  marketingChannel?: string | null;
 }
 
 export interface SalesCashInput {
@@ -481,6 +486,9 @@ export interface CancellationBreakdown {
   byPriorStage: { stage: CancelPriorStage; orders: number; value: number }[];
   bySalesChannel: { key: string; label: string; orders: number; value: number }[];
   byChannel: { key: string; label: string; orders: number; value: number }[];
+  // P8 additive (§9.3 dual-read): present only with the flag on.
+  bySalesChannelType?: { key: string; label: string; orders: number; value: number }[];
+  byMarketingChannel?: { key: string; label: string; orders: number; value: number }[];
 }
 
 function priorStageOf(order: SalesOrderInput): CancelPriorStage {
@@ -537,6 +545,10 @@ export function computeCancellations(
   });
   const byChannel = new Map<string, { orders: number; value: number }>();
   const byCanonicalChannel = new Map<string, { orders: number; value: number }>();
+  // P8 additive: canonical groupings accumulate always but are only exposed
+  // with the flag on — flag-off responses stay identical.
+  const bySalesChannelType = new Map<string, { orders: number; value: number }>();
+  const byMarketingChannel = new Map<string, { orders: number; value: number }>();
   for (const o of inRange) {
     const key = o.salesChannel ?? 'unspecified';
     const entry = byChannel.get(key) ?? { orders: 0, value: 0 };
@@ -548,19 +560,39 @@ export function computeCancellations(
     canonicalEntry.orders += 1;
     canonicalEntry.value += o.total;
     byCanonicalChannel.set(canonicalKey, canonicalEntry);
+    const typeKey = o.salesChannelType ?? 'unspecified';
+    const te = bySalesChannelType.get(typeKey) ?? { orders: 0, value: 0 };
+    te.orders += 1;
+    te.value += o.total;
+    bySalesChannelType.set(typeKey, te);
+    const mcKey = o.marketingChannel ?? 'unspecified';
+    const me = byMarketingChannel.get(mcKey) ?? { orders: 0, value: 0 };
+    me.orders += 1;
+    me.value += o.total;
+    byMarketingChannel.set(mcKey, me);
   }
+  const bySalesChannelRows = [...byChannel.entries()]
+    .map(([key, v]) => ({ key, label: key, orders: v.orders, value: v.value }))
+    .sort((a, b) => b.value - a.value);
+  const toRows = (m: Map<string, { orders: number; value: number }>) =>
+    [...m.entries()]
+      .map(([key, v]) => ({ key, label: key, orders: v.orders, value: v.value }))
+      .sort((a, b) => b.value - a.value);
   return {
     total: inRange.length,
     totalValue: inRange.reduce((s, o) => s + o.total, 0),
     undated,
     dateBasis: 'Cancelled transition (undated cancels count, never dated)',
     byPriorStage,
-    bySalesChannel: [...byChannel.entries()]
-      .map(([key, v]) => ({ key, label: key, orders: v.orders, value: v.value }))
-      .sort((a, b) => b.value - a.value),
-    byChannel: [...byCanonicalChannel.entries()]
-      .map(([key, v]) => ({ key, label: key, orders: v.orders, value: v.value }))
-      .sort((a, b) => b.value - a.value),
+    bySalesChannel: bySalesChannelRows,
+    byChannel: toRows(byCanonicalChannel),
+    // P8 dual-read: canonical rows are additive and flag-gated.
+    ...(newSalesChannelModelEnabled()
+      ? {
+          bySalesChannelType: toRows(bySalesChannelType),
+          byMarketingChannel: toRows(byMarketingChannel),
+        }
+      : {}),
   };
 }
 
@@ -1047,6 +1079,8 @@ export class AnalyticsSalesService {
           // Canonical Channel for the cancellations byChannel breakdown
           // (legacy salesChannel stays for bySalesChannel — never merged).
           channel: true,
+          salesChannelType: true,
+          marketingChannel: true,
           status: { select: { name: true } },
           timeline: true,
           createdAt: true,
@@ -1128,6 +1162,8 @@ export class AnalyticsSalesService {
         salesChannel: o.salesChannel,
         channel: o.channel ?? null,
         source: o.source,
+        salesChannelType: o.salesChannelType ?? null,
+        marketingChannel: o.marketingChannel ?? null,
         shippingCost: o.shippingCost === null ? null : Number(o.shippingCost),
         shippingCostSource: o.shippingCostSource,
         items: (o.items ?? []).map((i: any) => ({

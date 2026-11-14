@@ -355,6 +355,68 @@ export default function MarketingAnalytics() {
                       )}
                     </CardContent>
                   </Card>
+                  {/* P8 canonical tables: rendered only when the backend sends
+                      them (new-channel model flag on). */}
+                  {data.data.salesChannelTypes ? (
+                    <Card className="chart-card rounded-2xl">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Revenue by Sales Type</CardTitle>
+                        <p className="text-[11px] text-muted-foreground">{plainLine(data.data.salesChannelTypes.dateBasis)}</p>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto" data-testid="sales-type-table">
+                          <table className="dash-table w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-xs text-muted-foreground">
+                                <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">Sales Type</th>
+                                <th className="py-2 pr-3 font-medium text-right">Orders</th>
+                                <th className="py-2 pr-3 font-medium text-right">Revenue</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {data.data.salesChannelTypes.rows.map((r) => (
+                                <tr key={r.key} className="border-t border-border/50 transition-colors hover:bg-muted/40" data-testid={`sales-type-row-${r.key}`}>
+                                  <td className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">{r.label}</td>
+                                  <td className="py-2 pr-3 tabular-nums text-right">{COUNT_FORMAT(r.orders)}</td>
+                                  <td className="py-2 pr-3 tabular-nums font-medium text-right">{formatBDT(r.revenue)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                  {data.data.marketingChannels ? (
+                    <Card className="chart-card rounded-2xl">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Revenue by Marketing Channel</CardTitle>
+                        <p className="text-[11px] text-muted-foreground">{plainLine(data.data.marketingChannels.dateBasis)}</p>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto" data-testid="marketing-channel-table">
+                          <table className="dash-table w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-xs text-muted-foreground">
+                                <th className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">Marketing Channel</th>
+                                <th className="py-2 pr-3 font-medium text-right">Orders</th>
+                                <th className="py-2 pr-3 font-medium text-right">Revenue</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {data.data.marketingChannels.rows.map((r) => (
+                                <tr key={r.key} className="border-t border-border/50 transition-colors hover:bg-muted/40" data-testid={`marketing-channel-row-${r.key}`}>
+                                  <td className="py-2 pr-3 font-medium sticky left-0 bg-card z-10">{r.label}</td>
+                                  <td className="py-2 pr-3 tabular-nums text-right">{COUNT_FORMAT(r.orders)}</td>
+                                  <td className="py-2 pr-3 tabular-nums font-medium text-right">{formatBDT(r.revenue)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null}
                 </div>
               </AnalyticsSection>
             </div>

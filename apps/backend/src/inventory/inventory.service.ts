@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
@@ -10,6 +11,9 @@ import { StockRouterService } from '../stock/stock-router.service';
 import { CostingLotService, CostingLotShortfallError } from '../stock/costing-lot.service';
 import { CacheService } from '../cache/cache.service';
 import { ManagedStockLedgerService } from './managed-stock-ledger.service';
+// Value import: Nest needs the runtime token for DI. Acyclic: the
+// stock-status module never imports the inventory module.
+import { StockStatusSyncService } from '../stores/sync/stock-status-sync.service';
 import {
   Prisma,
   ManagedStockMovementType,
@@ -64,7 +68,23 @@ export class InventoryService {
     private readonly costingLotService: CostingLotService,
     private readonly managedStockLedgerService: ManagedStockLedgerService,
     private readonly cache: CacheService,
+    // P5 §8.4: post-commit stock-change notification. @Optional so unit
+    // specs constructing InventoryService manually keep working; every call
+    // is guarded and non-propagating (R-2).
+    @Optional() private readonly stockStatus?: StockStatusSyncService,
   ) {}
+
+  /**
+   * P5 §8.4 change notification — post-commit, never propagates, never
+   * blocks. No provider call happens here (R-2): only a debounced enqueue.
+   */
+  private notifyStockChanged(productId: string, variantId?: string | null, reason?: string): void {
+    try {
+      void this.stockStatus?.notifyStockChanged(productId, variantId ?? null, reason).catch(() => undefined);
+    } catch {
+      // never propagate into the mutation path
+    }
+  }
 
   async lowStock() {
     const parseImages = (imgVal: any): string | null => {
@@ -808,6 +828,9 @@ export class InventoryService {
             productName: item.product.name,
             quantity: qty,
           });
+          // P5 §8.4: direct managed-stock write committed above (bypasses
+          // StockService.operate — notify explicitly).
+          this.notifyStockChanged(item.productId, item.variantId ?? null, 'inventory-combo-adjust');
         } else if (item.product.manageStock) {
           const avail = item.product.managedStockQuantity;
           if (qty < 0 && avail + qty < 0) {
@@ -847,6 +870,9 @@ export class InventoryService {
             productName: item.product.name,
             quantity: qty,
           });
+          // P5 §8.4: direct managed-stock write committed above (bypasses
+          // StockService.operate — notify explicitly).
+          this.notifyStockChanged(item.productId, null, 'inventory-combo-adjust');
         } else {
           skipped.push(
             `${item.product.name} (stock tracking not enabled — no change needed)`,
@@ -913,6 +939,10 @@ export class InventoryService {
         performedBy,
         ledgerType: ManagedStockMovementType.ADJUSTMENT,
       });
+      void targets;
+      // P5 §8.4: variant stock committed above (StockService.operate also
+      // notifies at the choke point — coalesced by jobId).
+      this.notifyStockChanged(variant.productId, variantId, 'inventory-variant-adjust');
       return {
         id: variant.id,
         sku: variant.sku,
@@ -958,12 +988,15 @@ export class InventoryService {
       confirmed: confirmDestructive,
     });
 
-    return this.adjustProductWithRetry(
+    const adjustedProduct = await this.adjustProductWithRetry(
       productId,
       q,
       reason || 'Manual stock adjustment',
       performedBy,
     );
+    // P5 §8.4: product stock committed above.
+    this.notifyStockChanged(productId, null, 'inventory-product-adjust');
+    return adjustedProduct;
   }
 
   private async adjustProductWithRetry(

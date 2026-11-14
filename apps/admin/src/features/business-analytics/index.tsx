@@ -120,6 +120,14 @@ export default function BusinessOverview() {
                   <TabsTrigger value="acquisition" className="tap-h">Acquisition</TabsTrigger>
                   <TabsTrigger value="source" className="tap-h">Source System</TabsTrigger>
                   <TabsTrigger value="category" className="tap-h">Category</TabsTrigger>
+                  {/* P8 canonical breakdowns: rendered only when the backend
+                      sends them (new-channel model flag on). */}
+                  {data.data.breakdowns.bySalesChannelType ? (
+                    <TabsTrigger value="sales-type" className="tap-h">Sales Type</TabsTrigger>
+                  ) : null}
+                  {data.data.breakdowns.byMarketingChannel ? (
+                    <TabsTrigger value="marketing" className="tap-h">Marketing Channel</TabsTrigger>
+                  ) : null}
                 </TabsList>
                 <TabsContent value="channel">
                   <BreakdownTable title="Net Sales by Channel" rows={data.data.breakdowns.byChannel ?? []} hint="Where the sale happened (Website, Messaging, Phone Call, POS)." />
@@ -139,6 +147,16 @@ export default function BusinessOverview() {
                 <TabsContent value="category">
                   <BreakdownTable title="Net Sales by Category (Top 8)" rows={data.data.breakdowns.byCategory ?? []} hint="By main category. Every taka counted once. Combo packs are split." />
                 </TabsContent>
+                {data.data.breakdowns.bySalesChannelType ? (
+                  <TabsContent value="sales-type">
+                    <BreakdownTable title="Net Sales by Sales Type" rows={data.data.breakdowns.bySalesChannelType} hint="Canonical Online / Offline split (P8). A phone call counts as Offline — it is an order origin, not a marketing platform." />
+                  </TabsContent>
+                ) : null}
+                {data.data.breakdowns.byMarketingChannel ? (
+                  <TabsContent value="marketing">
+                    <BreakdownTable title="Net Sales by Marketing Channel" rows={data.data.breakdowns.byMarketingChannel} hint="Independent platform-attribution dimension (P8)." />
+                  </TabsContent>
+                ) : null}
               </Tabs>
             </AnalyticsSection>
 

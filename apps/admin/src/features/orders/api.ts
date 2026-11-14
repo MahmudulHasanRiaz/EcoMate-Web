@@ -97,6 +97,18 @@ export interface OrderResponse {
   acquisitionType?: string | null;
   /** Joined display name for `sourceSlug`, resolved from the registry. */
   sourcePlatformName?: string | null;
+  // P6 order-ingestion provenance (§8.5). ingestFlags are informational only
+  // (BR-15) — they never blocked ingestion or any transition.
+  storeId?: string | null;
+  externalOrderId?: string | null;
+  ingestFlags?: string[];
+  storeMetadata?: Record<string, unknown> | null;
+  // P8 canonical channel dimensions (§9, BR-18). Nullable; legacy
+  // salesChannel/source* above stay and keep being written (dual-write).
+  salesChannelType?: 'ONLINE' | 'OFFLINE' | null;
+  showroomId?: string | null;
+  showroom?: { id: string; name: string } | null;
+  marketingChannel?: string | null;
   trashedAt?: string | null;
   createdAt: string; updatedAt: string;
   customer: { id: string; firstName: string; lastName: string; email: string; phoneNumber: string; name?: string; phone?: string } | null;

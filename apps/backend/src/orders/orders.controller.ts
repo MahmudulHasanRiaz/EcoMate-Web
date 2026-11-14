@@ -66,6 +66,14 @@ export class OrdersController {
     @Query('trashedOnly') trashedOnly?: string,
     @Query('kind') kind?: 'SALE' | 'RETURN' | 'EXCHANGE',
     @Query('type') type?: string,
+    // P6 additive channel filters (§10) + P8 canonical columns (§9).
+    // storeId is real (provenance); salesChannelType/showroomId/
+    // marketingChannel predicate the real canonical columns when the
+    // new-channel model flag is on, else the P6 preview approximations.
+    @Query('storeId') storeId?: string,
+    @Query('salesChannelType') salesChannelType?: string,
+    @Query('showroomId') showroomId?: string,
+    @Query('marketingChannel') marketingChannel?: string,
   ) {
     return this.svc.findAll({
       page: page ? parseInt(page) : undefined,
@@ -83,6 +91,10 @@ export class OrdersController {
       trashedOnly: trashedOnly === 'true',
       kind: kind === 'SALE' || kind === 'RETURN' || kind === 'EXCHANGE' ? kind : undefined,
       type,
+      storeId,
+      salesChannelType,
+      showroomId,
+      marketingChannel,
     });
   }
 

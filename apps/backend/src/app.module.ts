@@ -67,6 +67,7 @@ import { BlockedEntriesModule } from './blocked-entries/blocked-entries.module';
 import { BlockSettingsModule } from './block-settings/block-settings.module';
 import { CourierSettlementModule } from './courier-settlement/courier-settlement.module';
 import { MarketingModule } from './marketing/marketing.module';
+import { StoresModule } from './stores/stores.module';
 import { SecurityModule } from './security/security.module';
 import { SearchModule } from './search/search.module';
 import { LandingPagesModule } from './landing-pages/landing-pages.module';
@@ -175,6 +176,7 @@ import { SecurityDashboardModule } from './security-dashboard/security-dashboard
     BlockSettingsModule,
     CourierSettlementModule,
     MarketingModule,
+    StoresModule,
     SecurityModule,
     SearchModule,
     LandingPagesModule,

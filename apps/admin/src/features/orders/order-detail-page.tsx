@@ -39,6 +39,7 @@ import { OrderSummaryCard } from '@/features/orders/order-summary-card'
 import { OrderEditLockGuard } from '@/features/orders/order-edit-lock'
 import { ExchangeOrderSection } from '@/features/exchanges/exchange-order-section'
 import { OrderSourceBadges } from '@/features/orders/order-source-badge'
+import { IngestFlagBadges } from '@/features/orders/ingest-flag-badges'
 import {
   EMPTY_MANUAL_FORM,
   isCostNotSet,
@@ -890,17 +891,23 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                     acquisitionType={order.acquisitionType}
                   />
                   {!order.channel && !order.sourceSlug && !order.acquisitionType &&
-                    (order.salesChannel || order.sourcePlatform || order.sourceType || order.sourceEntity) ? (
+                    (order.salesChannel || order.sourcePlatform || order.sourceType || order.sourceEntity || order.salesChannelType || order.marketingChannel || order.showroom?.name) ? (
                       <OrderSourceBadges
                         attribution={{
                           salesChannel: order.salesChannel,
                           sourcePlatform: order.sourcePlatform,
                           sourceType: order.sourceType,
                           sourceEntity: order.sourceEntity,
+                          // P8 canonical badges (additive; absent on legacy rows).
+                          salesChannelType: order.salesChannelType,
+                          marketingChannel: order.marketingChannel,
+                          showroomName: order.showroom?.name,
                         }}
                         className='text-xs h-auto py-0.5'
                       />
                     ) : null}
+                  {/* P6 ingest flags (informational only, BR-15) */}
+                  <IngestFlagBadges flags={order.ingestFlags} />
                   {order.trashedAt && (
                     <Badge variant='destructive' className='text-xs gap-1 py-0.5'>
                       <Trash2 className='h-3 w-3' /> Trashed

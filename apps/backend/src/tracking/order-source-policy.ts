@@ -10,17 +10,21 @@
  * - POS: Point-of-sale orders (default: OFF)
  * - INCOMPLETE_CONVERSION: Checkout lead → order conversions (default: OFF)
  * - MANUAL: Admin/operator manually created orders (default: OFF)
+ * - EXTERNAL_STORE: External-store ingested orders (default: OFF, BR-24).
+ *   Fail-closed: the store's own pixel and EcoMate must never double-count.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { newSalesChannelModelEnabled } from '../orders/channels/channel-flags';
 
 /** Order source tracking categories. */
 export type OrderSourceCategory =
   | 'DIRECT_WEBSITE'
   | 'POS'
   | 'INCOMPLETE_CONVERSION'
-  | 'MANUAL';
+  | 'MANUAL'
+  | 'EXTERNAL_STORE';
 
 /** Configuration keys for source eligibility. */
 export const SOURCE_CONFIG_KEYS: Record<OrderSourceCategory, string> = {
@@ -28,6 +32,8 @@ export const SOURCE_CONFIG_KEYS: Record<OrderSourceCategory, string> = {
   POS: 'tracking_send_pos_orders',
   INCOMPLETE_CONVERSION: 'tracking_send_incomplete_conversion_orders',
   MANUAL: 'tracking_send_manual_orders',
+  // BR-24: external-store tracking dispatch is off by default (fail-closed).
+  EXTERNAL_STORE: 'tracking_send_external_store_orders',
 };
 
 /** Default eligibility for each source category. */
@@ -36,6 +42,8 @@ export const SOURCE_DEFAULTS: Record<OrderSourceCategory, boolean> = {
   POS: false,
   INCOMPLETE_CONVERSION: false,
   MANUAL: false,
+  // BR-24: fail-closed — default off.
+  EXTERNAL_STORE: false,
 };
 
 /** Human-readable labels for settings UI. */
@@ -44,18 +52,19 @@ export const SOURCE_LABELS: Record<OrderSourceCategory, string> = {
   POS: 'POS Orders',
   INCOMPLETE_CONVERSION: 'Incomplete Conversion Orders',
   MANUAL: 'Manual/Admin Orders',
+  EXTERNAL_STORE: 'External Store Orders',
 };
 
 /** Descriptions for settings UI. */
 export const SOURCE_DESCRIPTIONS: Record<OrderSourceCategory, string> = {
   DIRECT_WEBSITE:
     'Orders placed directly through the website checkout. These are standard e-commerce orders.',
-  POS:
-    'Orders created through the Point-of-Sale system in physical showrooms.',
+  POS: 'Orders created through the Point-of-Sale system in physical showrooms.',
   INCOMPLETE_CONVERSION:
     'Orders converted from incomplete checkout leads or phone orders.',
-  MANUAL:
-    'Orders manually created by admin/operators through the admin panel.',
+  MANUAL: 'Orders manually created by admin/operators through the admin panel.',
+  EXTERNAL_STORE:
+    'Orders ingested from connected external stores (WooCommerce / Shopify / bridge). Off by default so the store pixel and EcoMate never double-count (BR-24).',
 };
 
 interface OrderSourceInput {
@@ -65,6 +74,12 @@ interface OrderSourceInput {
   sourceType?: string | null;
   posSessionId?: string | null;
   idempotencyKey?: string | null;
+  // P8 additive (§9.3 dual-read): canonical dimensions. Read only with the
+  // new-channel model flag on.
+  salesChannelType?: string | null;
+  marketingChannel?: string | null;
+  storeId?: string | null;
+  showroomId?: string | null;
 }
 
 /**
@@ -76,8 +91,28 @@ interface OrderSourceInput {
  * attribution dimensions, because a converted checkout lead is staff-created yet
  * is genuinely website-origin traffic and must stay INCOMPLETE_CONVERSION rather
  * than being lumped into MANUAL.
+ *
+ * EXTERNAL_STORE (BR-24) is checked FIRST: any order carrying the external
+ * ingest identity (`idempotencyKey = 'store:{storeId}:order:{externalId}'`,
+ * written only by the P6 ingest worker) is an external-store order no matter
+ * what its legacy channel fields say. Fail-closed downstream (default off).
  */
 export function resolveOrderSourceCategory(order: OrderSourceInput): OrderSourceCategory {
+  // External-store ingest identity wins over every legacy signal (BR-24).
+  if (
+    typeof order.idempotencyKey === 'string' &&
+    order.idempotencyKey.startsWith('store:')
+  ) {
+    return 'EXTERNAL_STORE';
+  }
+
+  // P8 §9.3 dual-read: with the flag on, the canonical store identity
+  // (P6 provenance column, set only by the ingest worker) is an equivalent
+  // external-store signal. Flag off ⇒ this branch is dead ⇒ identical.
+  if (newSalesChannelModelEnabled() && typeof order.storeId === 'string' && order.storeId) {
+    return 'EXTERNAL_STORE';
+  }
+
   // POS orders: created through POS sessions
   if (order.posSessionId || order.source === 'POS') {
     return 'POS';
@@ -180,6 +215,7 @@ export class OrderSourcePolicyService {
       'POS',
       'INCOMPLETE_CONVERSION',
       'MANUAL',
+      'EXTERNAL_STORE',
     ];
 
     const settings = await this.prisma.systemSetting.findMany({

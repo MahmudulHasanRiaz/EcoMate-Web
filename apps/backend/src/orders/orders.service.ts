@@ -70,6 +70,8 @@ import { normalizePhone } from '../common/utils/phone-utils';
 import { resolveDivision } from '../delivery-areas/data/district-division';
 import { resolveActionSource } from '../tracking/meta-action-source';
 import { resolveWebAttribution } from './web-attribution';
+import { resolveChannels } from './channels/channel-resolver';
+import { newSalesChannelModelEnabled } from './channels/channel-flags';
 import { BlockedEntriesService } from '../blocked-entries/blocked-entries.service';
 import { SecurityService } from '../security/security.service';
 import { OrderEditLockService } from './order-edit-lock.service';
@@ -99,6 +101,10 @@ import {
   orderItemsSnapshotForClient,
   restoreStockForReturnTx,
 } from '../returns/return-guard';
+// Value import: Nest needs the runtime token for DI. Acyclic: StoresModule
+// imports only PrismaModule + BlockedEntries/Customers — it never imports
+// the orders module (ingest resolves OrdersService lazily via ModuleRef).
+import { StoreOrderPushService } from '../stores/orders/store-order-push.service';
 
 // Order-status transition rules live in one place — the runtime gate and the
 // seed share the same map (see order-transitions.ts for the Partial rule).
@@ -165,6 +171,45 @@ function shouldAutoAssign(
 ): boolean {
   return !isAutomatedActor(actor) && !currentAssignedToId;
 }
+
+/**
+ * P6 order-ingestion internal options (§8.5.2, BR-13/BR-16).
+ *
+ * ONE optional third parameter on `create()`. Inert by default: when absent
+ * (every controller passes only dto/ip/user — NO controller may pass
+ * `internal`), behaviour is byte-identical to before. Only four behaviours
+ * diverge, all gated on `internal.ingest === 'external_store'`:
+ *  - initial-status lookup replaced by `initialStatusName` when provided;
+ *  - `idempotencyKey` pass-through ('store:{storeId}:order:{externalId}');
+ *  - `allowStockShortfall`: a stock-availability failure becomes a warning +
+ *    STOCK_SHORTFALL flag + issue instead of a throw (BR-16);
+ *  - blocked-check bypass: the three storefront blocking checks are skipped
+ *    entirely and evaluated read-only for flagging only (BR-13/§8.5.1).
+ *    There is no blockedPolicy/reject switch anywhere (BR-13 absolute).
+ */
+export interface OrderCreateInternal {
+  ingest?: 'external_store';
+  storeId?: string;
+  externalOrderId?: string;
+  initialStatusName?: string;
+  idempotencyKey?: string;
+  allowStockShortfall?: boolean;
+  skipPurchaseTracking?: boolean;
+  storeMetadata?: Record<string, unknown>;
+  /**
+   * P6 §8.5: unresolved SKUs are created product-less (productId/variantId
+   * null, dto price kept) and raised as UNMATCHED_SKU issues with a one-click
+   * map action — the order is never lost. Only the ingest worker sets this.
+   */
+  allowProductlessItems?: boolean;
+}
+
+/** Ingest flags with operational meaning only — never blocking (BR-15). */
+export const INGEST_FLAG_BLOCKED_PHONE = 'BLOCKED_PHONE';
+export const INGEST_FLAG_BLOCKED_IP = 'BLOCKED_IP';
+export const INGEST_FLAG_SUSPENDED_CUSTOMER = 'SUSPENDED_CUSTOMER';
+export const INGEST_FLAG_STOCK_SHORTFALL = 'STOCK_SHORTFALL';
+export const INGEST_FLAG_UNMATCHED_SKU = 'UNMATCHED_SKU';
 
 /**
  * Analytics cost-capture mapping (P2, §3.2). A provided fulfillment cost is
@@ -360,6 +405,11 @@ export class OrdersService {
     // skips there. Unwired callers simply apply no automatic discount.
     @Optional()
     private readonly discountsService?: DiscountsService,
+    // P7 §8.6: post-commit status-push notification for mapped store orders.
+    // @Optional so unit specs constructing OrdersService manually keep
+    // working; every call is guarded and non-propagating (R-2).
+    @Optional()
+    private readonly storeOrderPush?: StoreOrderPushService,
   ) {}
 
   /**
@@ -502,6 +552,20 @@ export class OrdersService {
     return (
       candidates.find((w) => (byWarehouse.get(w) ?? 0) >= quantity) ?? null
     );
+  }
+
+  /**
+   * P7 §8.6 status-push notification — post-commit, never propagates, never
+   * blocks. No provider call happens here (R-2): the push service only
+   * enqueues (and only for orders with a StoreOrderMapping in a pushable
+   * status). Correctness comes from the worker's re-reads, not from here.
+   */
+  private notifyStoreOrderPush(orderId: string): void {
+    try {
+      void this.storeOrderPush?.notifyOrderStatusChanged(orderId).catch(() => undefined);
+    } catch {
+      // never propagate into the mutation path
+    }
   }
 
   private async resolveAndApplyStock(
@@ -966,6 +1030,15 @@ export class OrdersService {
     kind?: 'SALE' | 'RETURN' | 'EXCHANGE';
     /** Exchange scope filter — only honored with kind=EXCHANGE. */
     type?: string;
+    // P6 additive channel filters (§10) + P8 canonical columns (§9).
+    // storeId filters the P6 provenance column (real). salesChannelType /
+    // showroomId / marketingChannel predicate the REAL canonical columns
+    // when newSalesChannelModelEnabled() is on, else the P6 preview
+    // approximations (identical reads with the flag off).
+    storeId?: string;
+    salesChannelType?: string;
+    showroomId?: string;
+    marketingChannel?: string;
   }) {
     // 1000-row pages are a first-class use case (daily volume in the
     // thousands) — but an unbounded `take` with the full list include
@@ -1017,6 +1090,29 @@ export class OrdersService {
     if (query.courier) where.courierService = query.courier;
     if (query.assignedToId === 'unassigned') where.assignedToId = null;
     else if (query.assignedToId) where.assignedToId = query.assignedToId;
+    // P6 provenance filter: exact match on the ingesting store (null =
+    // native-only via storeId=null? No — absent means all; pass the string
+    // 'native' to select storeId IS NULL).
+    if (query.storeId === 'native') where.storeId = null;
+    else if (query.storeId) where.storeId = query.storeId;
+    // P8 §9.3 dual-read: with the canonical model enabled the channel
+    // filters predicate the REAL canonical columns (backfilled + dual-
+    // written). With the flag off the P6 preview approximations apply
+    // unchanged, so reads are identical to before P8.
+    if (newSalesChannelModelEnabled()) {
+      if (query.salesChannelType === 'ONLINE' || query.salesChannelType === 'OFFLINE') {
+        where.salesChannelType = query.salesChannelType;
+      }
+      if (query.showroomId) where.showroomId = query.showroomId;
+      if (query.marketingChannel) where.marketingChannel = query.marketingChannel;
+    } else {
+      // P8-preview approximations (documented; canonical columns land in P8):
+      // ONLINE ≡ legacy WEBSITE today (§9.2); platform attribution lives in
+      // sourcePlatform today. showroomId has no predicate yet (P8).
+      if (query.salesChannelType === 'ONLINE') where.salesChannel = 'WEBSITE';
+      else if (query.salesChannelType === 'OFFLINE') where.salesChannel = { not: 'WEBSITE' };
+      if (query.marketingChannel) where.sourcePlatform = query.marketingChannel;
+    }
     if (query.dateFrom || query.dateTo) {
       where.createdAt = {};
       if (query.dateFrom) where.createdAt.gte = new Date(query.dateFrom);
@@ -1067,6 +1163,8 @@ export class OrdersService {
               exchanges: { where: { trashedAt: null } },
             },
           },
+          // P8: canonical showroom (additive; null when no showroom sale).
+          showroom: { select: { id: true, name: true } },
         },
       }),
       this.prisma.order.count({ where }),
@@ -1291,6 +1389,8 @@ export class OrdersService {
           },
         },
       },
+      // P8: canonical showroom (additive; null when no showroom sale).
+      showroom: { select: { id: true, name: true } },
     } satisfies Prisma.OrderInclude;
 
     let order = await this.prisma.order.findUnique({
@@ -1586,9 +1686,16 @@ export class OrdersService {
     clientIp?: string,
     user?: any,
     userAgent?: string,
+    internal?: OrderCreateInternal,
   ) {
     const userId = user?.userId;
     const isCustomer = Boolean(user && user.role === 'customer');
+
+    // P6 §8.5.2: the ONLY internal entry point. No controller passes this.
+    // `internal` is the FIFTH positional arg (after userAgent) so the
+    // native create signature is untouched; the ingest worker passes
+    // `undefined` for userAgent.
+    const isExternalIngest = internal?.ingest === 'external_store';
 
     // NOTE: no displayId is minted here. It is minted inside the create
     // transaction below (generateDisplayIdInTx), AFTER every validation
@@ -1596,9 +1703,15 @@ export class OrdersService {
     // burns a number (dashboard-counts audit §1c/§6 P1.5; POS already
     // idempotency-checks before minting, web/admin now matches by
     // mint-after-validation).
-    const initialStatus = await this.prisma.orderStatus.findFirst({
-      where: { isInitial: true },
-    });
+    // P6 §8.5.2: initial-status override for external ingest; the default
+    // path (initial flag lookup) is untouched.
+    const initialStatus = isExternalIngest && internal?.initialStatusName
+      ? await this.prisma.orderStatus.findFirst({
+          where: { name: internal.initialStatusName },
+        })
+      : await this.prisma.orderStatus.findFirst({
+          where: { isInitial: true },
+        });
     if (!initialStatus)
       throw new BadRequestException('No initial order status configured');
 
@@ -1669,7 +1782,48 @@ export class OrdersService {
       }
     }
 
-    if (clientIp) {
+    // P6 §8.5.1 (BR-13/BR-15): an external order that already exists on the
+    // store is ALWAYS ingested. The three storefront blocking checks below
+    // are skipped entirely for external ingest — evaluated read-only for
+    // flagging only. Flags never block ingestion or any later transition.
+    // There is no blockedPolicy / reject mode / configurable override (BR-13).
+    const ingestFlags: string[] = [];
+    const ingestNotes: string[] = [];
+
+    if (isExternalIngest) {
+      if (clientIp) {
+        const orderBlockIp =
+          await this.blockedEntries.findOrderBlockedIp(clientIp);
+        if (orderBlockIp) {
+          ingestFlags.push(INGEST_FLAG_BLOCKED_IP);
+          ingestNotes.push(
+            'Ingested with blocked IP (storefront-ordering block is informational for external orders).',
+          );
+        }
+      }
+      const ingestBlockedPhone = dto.guestPhone
+        ? await this.blockedEntries.findBlockedPhone(dto.guestPhone)
+        : null;
+      if (ingestBlockedPhone) {
+        ingestFlags.push(INGEST_FLAG_BLOCKED_PHONE);
+        ingestNotes.push(
+          'Ingested with blocked phone number (storefront-ordering block is informational for external orders).',
+        );
+      }
+      if (dto.guestPhone && !dto.customerId) {
+        const ingestSuspended = await this.customersService.isPhoneBlocked(
+          dto.guestPhone,
+        );
+        if (ingestSuspended) {
+          ingestFlags.push(INGEST_FLAG_SUSPENDED_CUSTOMER);
+          ingestNotes.push(
+            'Ingested for a suspended customer account (informational for external orders).',
+          );
+        }
+      }
+    }
+
+    if (!isExternalIngest && clientIp) {
       const orderBlockIp =
         await this.blockedEntries.findOrderBlockedIp(clientIp);
       if (orderBlockIp) {
@@ -1682,7 +1836,7 @@ export class OrdersService {
       }
     }
 
-    const blockedPhone = dto.guestPhone
+    const blockedPhone = dto.guestPhone && !isExternalIngest
       ? await this.blockedEntries.findBlockedPhone(dto.guestPhone)
       : null;
     if (blockedPhone) {
@@ -1694,7 +1848,9 @@ export class OrdersService {
       warnings.push('This phone number is blocked for storefront ordering.');
     }
 
-    if (dto.guestPhone && !dto.customerId) {
+    // Native storefront path only — external ingest evaluated these
+    // read-only above (§8.5.1) and must never throw here (BR-13).
+    if (dto.guestPhone && !dto.customerId && !isExternalIngest) {
       const isBlocked = await this.customersService.isPhoneBlocked(
         dto.guestPhone,
       );
@@ -1746,9 +1902,17 @@ export class OrdersService {
         },
       });
       if (linkedCustomer?.status === 'suspended') {
-        throw new BadRequestException(
-          'This account has been blocked. Please contact support.',
-        );
+        // P6 §8.5.1: external ingest never rejects on suspension — flag only.
+        if (isExternalIngest) {
+          ingestFlags.push(INGEST_FLAG_SUSPENDED_CUSTOMER);
+          ingestNotes.push(
+            'Ingested for a suspended customer account (informational for external orders).',
+          );
+        } else {
+          throw new BadRequestException(
+            'This account has been blocked. Please contact support.',
+          );
+        }
       }
       // Ensure CustomerProfile exists (order FK now references CustomerProfile).
       //
@@ -1862,7 +2026,40 @@ export class OrdersService {
       }
     }
 
-    // ALWAYS_OUT_OF_STOCK guard: block order creation for these products
+    // ALWAYS_OUT_OF_STOCK guard: block order creation for these products.
+    // P6 BR-16: external ingest with allowStockShortfall never discards the
+    // order on a stock-state mismatch — the shortfall is flagged instead.
+    const allowStockShortfall =
+      isExternalIngest && internal?.allowStockShortfall === true;
+    const stockShortfalls: string[] = [];
+    const shortfallItems = new Set<object>();
+    const noteShortfall = (item: object | null, msg: string) => {
+      stockShortfalls.push(msg);
+      if (item) shortfallItems.add(item);
+    };
+    const guardAvailability = (
+      item: object,
+      opts: {
+        name: string;
+        availabilityMode?: string | null;
+        managedStockQuantity: number | null;
+        reservedStock: number | null;
+        quantity: number;
+      },
+    ) => {
+      if (!allowStockShortfall) {
+        this.assertManagedAvailability(opts);
+        return;
+      }
+      try {
+        this.assertManagedAvailability(opts);
+      } catch (err) {
+        noteShortfall(
+          item,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    };
     const itemProductIds = dto.items
       .filter((i) => i.productId)
       .map((i) => i.productId!);
@@ -1876,9 +2073,23 @@ export class OrdersService {
       });
       if (blockedProducts.length > 0) {
         const names = blockedProducts.map((p) => p.name).join(', ');
-        throw new BadRequestException(
-          `Cannot order "${names}" — this product is currently unavailable.`,
-        );
+        if (allowStockShortfall) {
+          for (const item of dto.items) {
+            if (
+              item.productId &&
+              blockedProducts.some((p) => p.id === item.productId)
+            ) {
+              noteShortfall(
+                item,
+                `Product "${blockedProducts.find((p) => p.id === item.productId)?.name}" is marked always-out-of-stock; order kept with shortfall flag.`,
+              );
+            }
+          }
+        } else {
+          throw new BadRequestException(
+            `Cannot order "${names}" — this product is currently unavailable.`,
+          );
+        }
       }
     }
 
@@ -2110,7 +2321,7 @@ export class OrdersService {
                   reservedStock: true,
                 },
               });
-              this.assertManagedAvailability({
+              guardAvailability(item, {
                 name: sub.product.name ?? sub.productId,
                 availabilityMode: sub.product.availabilityMode,
                 managedStockQuantity: compVariant?.managedStockQuantity ?? 0,
@@ -2118,7 +2329,7 @@ export class OrdersService {
                 quantity: cumulativeManagedQty(`v:${compVariantId}`, compQty),
               });
             } else {
-              this.assertManagedAvailability({
+              guardAvailability(item, {
                 name: sub.product?.name ?? sub.productId,
                 availabilityMode: sub.product?.availabilityMode,
                 managedStockQuantity: sub.product?.managedStockQuantity ?? 0,
@@ -2153,11 +2364,18 @@ export class OrdersService {
             throw new BadRequestException(`Product is no longer active`);
           }
           if (parentProduct.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
-            throw new BadRequestException(
-              `Product "${parentProduct.name}" is out of stock and cannot be ordered`,
-            );
+            if (allowStockShortfall) {
+              noteShortfall(
+                item,
+                `Product "${parentProduct.name}" is out of stock; order kept with shortfall flag.`,
+              );
+            } else {
+              throw new BadRequestException(
+                `Product "${parentProduct.name}" is out of stock and cannot be ordered`,
+              );
+            }
           }
-          this.assertManagedAvailability({
+          guardAvailability(item, {
             name: parentProduct.name,
             availabilityMode: parentProduct.availabilityMode,
             managedStockQuantity: variant.managedStockQuantity ?? 0,
@@ -2182,11 +2400,18 @@ export class OrdersService {
             throw new BadRequestException(`Product is no longer active`);
           }
           if (product.availabilityMode === 'ALWAYS_OUT_OF_STOCK') {
-            throw new BadRequestException(
-              `Product "${product.name}" is out of stock and cannot be ordered`,
-            );
+            if (allowStockShortfall) {
+              noteShortfall(
+                item,
+                `Product "${product.name}" is out of stock; order kept with shortfall flag.`,
+              );
+            } else {
+              throw new BadRequestException(
+                `Product "${product.name}" is out of stock and cannot be ordered`,
+              );
+            }
           }
-          this.assertManagedAvailability({
+          guardAvailability(item, {
             name: product.name,
             availabilityMode: product.availabilityMode,
             managedStockQuantity: product.managedStockQuantity ?? 0,
@@ -2194,6 +2419,12 @@ export class OrdersService {
             quantity: cumulativeManagedQty(`p:${item.productId}`, item.quantity),
           });
           item.price = Number(product.salePrice ?? product.basePrice);
+        } else if (isExternalIngest && internal?.allowProductlessItems && !item.productId && !item.variantId && !item.comboId) {
+          // P6 §8.5: unmatched-SKU item — created product-less with the
+          // external unit price kept verbatim (BR-17: external prices are
+          // never re-derived). The worker raises UNMATCHED_SKU with a
+          // one-click map action. Price stays exactly as supplied.
+          item.price = Number(item.price ?? 0);
         } else {
           throw new BadRequestException(
             'Each item must have a productId, variantId, or comboId',
@@ -2612,6 +2843,61 @@ export class OrdersService {
       const resolvedSourceType =
         dto.sourceType || webAttribution?.sourceType || null;
 
+      // P8 §9.1 (BR-18): canonical channel dual-write. Legacy
+      // salesChannel/source* above are still written verbatim (untouched);
+      // the canonical dimensions are derived by the single ChannelResolver
+      // and written in the SAME transaction. Best-effort session/showroom
+      // reads never break ordering (null on any failure).
+      const resolvedSalesChannel = dto.salesChannel || 'WEBSITE';
+      let channelUtmSource: string | null = null;
+      if (dto.trackingSessionId) {
+        try {
+          const session = await this.prisma.marketingSession.findUnique({
+            where: { sessionToken: dto.trackingSessionId },
+            select: { utmSource: true },
+          });
+          channelUtmSource = session?.utmSource ?? null;
+        } catch {
+          channelUtmSource = null;
+        }
+      }
+      const resolvedChannels = resolveChannels({
+        salesChannel: resolvedSalesChannel,
+        source: null,
+        sourcePlatform: resolvedSourcePlatform,
+        sourceType: resolvedSourceType,
+        sourceEntity: dto.sourceEntity || null,
+        utmSource: channelUtmSource,
+      });
+      let resolvedShowroomId: string | null = null;
+      // Explicit showroomId (admin POS picker) wins when it names a real
+      // showroom row; otherwise fall back to sourceEntity name resolution.
+      if (dto.showroomId) {
+        try {
+          const explicit = await this.prisma.warehouse.findFirst({
+            where: { id: dto.showroomId, type: 'showroom' },
+            select: { id: true },
+          });
+          resolvedShowroomId = explicit?.id ?? null;
+        } catch {
+          resolvedShowroomId = null;
+        }
+      }
+      if (!resolvedShowroomId && resolvedChannels.showroomName) {
+        try {
+          const warehouse = await this.prisma.warehouse.findFirst({
+            where: {
+              type: 'showroom',
+              name: { equals: resolvedChannels.showroomName, mode: 'insensitive' },
+            },
+            select: { id: true },
+          });
+          resolvedShowroomId = warehouse?.id ?? null;
+        } catch {
+          resolvedShowroomId = null;
+        }
+      }
+
       // Order-time customer snapshot: capture customer data at order creation
       // time so it's preserved independently of later CustomerProfile mutations.
       // This is the immutable record of what was known about the customer when
@@ -2683,6 +2969,18 @@ export class OrdersService {
       // coupon, attribution) has already passed, and if anything below
       // still fails the rollback undoes the mint too — no burned numbers.
       const displayId = await this.generateDisplayIdInTx(tx);
+      // P6 §8.5.2: stock shortfalls collected during validation become a
+      // flag + warning + issue instead of a throw (BR-16). Folded into the
+      // ingest flag set before the order row is written.
+      if (allowStockShortfall && stockShortfalls.length > 0) {
+        ingestFlags.push(INGEST_FLAG_STOCK_SHORTFALL);
+        for (const msg of stockShortfalls) {
+          ingestNotes.push(`Stock shortfall (order kept): ${msg}`);
+        }
+      }
+      // Index boundary: shortfalls recorded from here on are reservation-time
+      // (late) and are appended post-create without rewriting the row.
+      const validatedShortfallCount = stockShortfalls.length;
 
       const created = await tx.order.create({
         data: {
@@ -2699,6 +2997,18 @@ export class OrdersService {
           autoDiscountBreakdown: autoDiscountBreakdown,
           total: finalTotal,
           viewToken: randomUUID(),
+          // P6 §8.5.2: idempotency + provenance pass-through. Present ONLY
+          // on the external-ingest path so the default payload is
+          // byte-identical to before (R-1).
+          ...(isExternalIngest
+            ? {
+                idempotencyKey: internal?.idempotencyKey ?? undefined,
+                storeId: internal?.storeId ?? undefined,
+                externalOrderId: internal?.externalOrderId ?? undefined,
+                ingestFlags,
+                storeMetadata: (internal?.storeMetadata ?? undefined) as any,
+              }
+            : {}),
           shippingAddress: {
             ...(typeof dto.shippingAddress === 'object' && dto.shippingAddress
               ? dto.shippingAddress
@@ -2738,6 +3048,11 @@ export class OrdersService {
           // as mapped. That marker is what stops the historical backfill from
           // ever reprocessing it.
           channelMappedAt: new Date(),
+          // P8 §9.1 dual-write: canonical dimensions beside the legacy
+          // columns, same row, same transaction (BR-18).
+          salesChannelType: resolvedChannels.salesChannelType,
+          showroomId: resolvedShowroomId,
+          marketingChannel: resolvedChannels.marketingChannel,
           trackingSessionId: dto.trackingSessionId ?? null,
           // Frozen technical + attribution context (never updated afterwards).
           ipAddress: clientIp || null,
@@ -2811,12 +3126,21 @@ export class OrdersService {
             {
               status: initialStatus.name,
               timestamp: new Date().toISOString(),
-              note: 'Order created',
+              note: isExternalIngest
+                ? `Order ingested from external store${internal?.externalOrderId ? ` (external id ${internal.externalOrderId})` : ''}`
+                : 'Order created',
               // Record WHO created the order — staff email for admin creates,
               // 'Customer' for guest storefront orders. The admin timeline UI
               // reads performedBy to render the actor badge.
               performedBy: user?.email || 'Customer',
             },
+            // P6 §8.5.1/BR-16: every flag is recorded as a timeline note for
+            // operational visibility. Flags never block anything (BR-15).
+            ...ingestNotes.map((note) => ({
+              status: initialStatus.name,
+              timestamp: new Date().toISOString(),
+              note,
+            })),
           ] as any,
         },
         include: {
@@ -3002,6 +3326,9 @@ export class OrdersService {
         // Manual lines SKIP every stock path (Workstream C): no reserve,
         // no allocation, no ledger — they must never create stock work.
         if (item.isManual) continue;
+        // P6 BR-16: items already flagged short during validation keep their
+        // rows but receive no reservation — the order is kept, never dropped.
+        if (allowStockShortfall && shortfallItems.has(item)) continue;
         const createdItem = created.items.find((ci) => {
           if (item.comboId) {
             return ci.comboId === item.comboId;
@@ -3046,14 +3373,26 @@ export class OrdersService {
                 snapshot.product.availabilityMode === 'MANAGED_STOCK' &&
                 snapshot.product.manageStock
               ) {
-                await this.stockService.operate('reserve', {
-                  productId: snapshot.productId,
-                  variantId: snapshot.variantId ?? undefined,
-                  quantity: snapshot.totalQuantity,
-                  reference: `Order create: ${displayId}`,
-                  performedBy: 'system',
-                  tx,
-                });
+                // P6 BR-16: a reservation failure on external ingest keeps
+                // the component row and flags the shortfall instead of
+                // rolling back the whole order.
+                try {
+                  await this.stockService.operate('reserve', {
+                    productId: snapshot.productId,
+                    variantId: snapshot.variantId ?? undefined,
+                    quantity: snapshot.totalQuantity,
+                    reference: `Order create: ${displayId}`,
+                    performedBy: 'system',
+                    tx,
+                  });
+                } catch (err) {
+                  if (!allowStockShortfall) throw err;
+                  noteShortfall(
+                    item,
+                    err instanceof Error ? err.message : String(err),
+                  );
+                  continue;
+                }
                 await tx.orderItemComboComponent.update({
                   where: { id: snapshot.id },
                   data: { managedStockReserved: true },
@@ -3101,6 +3440,14 @@ export class OrdersService {
                       snapshot.totalQuantity,
                     );
                     if (!chosenWh) {
+                      // P6 BR-16: physical shortfall keeps the order.
+                      if (allowStockShortfall) {
+                        noteShortfall(
+                          item,
+                          `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availability.totalAvailable}, needed: ${snapshot.totalQuantity}.`,
+                        );
+                        continue;
+                      }
                       throw new BadRequestException(
                         `Insufficient physical stock for "${snapshot.product.name}" in combo. Available: ${availability.totalAvailable}, needed: ${snapshot.totalQuantity}.`,
                       );
@@ -3121,18 +3468,57 @@ export class OrdersService {
             }
           }
         } else if (createdItem) {
-          await this.resolveAndApplyStock(
-            'reserve',
-            item.productId,
-            item.variantId,
-            item.quantity,
-            displayId,
-            tx,
-            {
-              orderId: created.id,
-              orderItemId: createdItem.id,
+          // P6 BR-16: reservation failure on external ingest keeps the order.
+          try {
+            await this.resolveAndApplyStock(
+              'reserve',
+              item.productId,
+              item.variantId,
+              item.quantity,
+              displayId,
+              tx,
+              {
+                orderId: created.id,
+                orderItemId: createdItem.id,
+              },
+            );
+          } catch (err) {
+            if (!allowStockShortfall) throw err;
+            noteShortfall(
+              item,
+              err instanceof Error ? err.message : String(err),
+            );
+          }
+        }
+      }
+
+      // P6 BR-16 (late shortfalls): a reservation-time failure appends the
+      // flag post-create via a targeted update — the row is never rewritten.
+      if (allowStockShortfall && stockShortfalls.length > validatedShortfallCount) {
+        const lateFlags = ingestFlags.includes(INGEST_FLAG_STOCK_SHORTFALL)
+          ? ingestFlags
+          : [...ingestFlags, INGEST_FLAG_STOCK_SHORTFALL];
+        const extraNotes = stockShortfalls
+          .slice(validatedShortfallCount)
+          .map((note) => ({
+            status: initialStatus.name,
+            timestamp: new Date().toISOString(),
+            note: `Stock shortfall (order kept): ${note}`,
+          }));
+        if (
+          lateFlags.length !== ingestFlags.length ||
+          extraNotes.length > 0
+        ) {
+          const currentTimeline = Array.isArray((created as any).timeline)
+            ? [...(created as any).timeline]
+            : this.parseTimeline((created as any).timeline);
+          await tx.order.update({
+            where: { id: created.id },
+            data: {
+              ingestFlags: lateFlags,
+              timeline: [...currentTimeline, ...extraNotes] as any,
             },
-          );
+          });
         }
       }
 
@@ -3189,11 +3575,23 @@ export class OrdersService {
         },
       });
       if (orderWithItems) {
-        await this.firePurchaseInstant(
-          orderWithItems as any,
-          tx,
-          preloadedPurchaseSettings,
-        );
+        // P6 §8.5.3 (BR-24): external-store orders never dispatch tracking
+        // from the create path. Defense in depth: the explicit skip flag AND
+        // the EXTERNAL_STORE source-policy gate inside each fire* method
+        // (fail-closed, default off) must both agree — zero CAPI by default.
+        const skipExternalTracking =
+          isExternalIngest && internal?.skipPurchaseTracking === true;
+        if (skipExternalTracking) {
+          this.logger.log(
+            `Skipping purchase tracking capture for external-store order ${created.id} (BR-24)`,
+          );
+        } else {
+          await this.firePurchaseInstant(
+            orderWithItems as any,
+            tx,
+            preloadedPurchaseSettings,
+          );
+        }
         // OrderPlaced fires at receipt ONLY when no instant Purchase fired —
         // an instant Purchase already signals receipt (same modes gate as
         // firePurchaseInstant). Validated-mode orders get OrderPlaced now and
@@ -3204,7 +3602,7 @@ export class OrdersService {
             'instant') === 'instant' ||
           (preloadedPurchaseSettings['tracking_tiktok_purchase_mode'] ||
             'instant') === 'instant';
-        if (!instantFired) {
+        if (!instantFired && !skipExternalTracking) {
           try {
             await this.fireOrderPlacedEvent(orderWithItems as any, tx);
           } catch (err) {
@@ -4959,6 +5357,12 @@ export class OrdersService {
     }
 
     await this.invalidateAnalytics();
+    // P7 §8.6: post-commit status-push enqueue for mapped store orders
+    // (cancel/return/Delivered hooks). Non-propagating; the worker re-reads
+    // live state and no-ops for non-mapped orders.
+    if (['Cancelled', 'Delivered', 'Returned'].includes(updated.status.name)) {
+      this.notifyStoreOrderPush(updated.id);
+    }
     return updated;
   }
 
@@ -6207,6 +6611,11 @@ export class OrdersService {
     }
 
     await this.invalidateAnalytics();
+    // P7 §8.6: bulk cancel/return/Delivered hook — post-commit enqueue per
+    // transitioned order, non-propagating.
+    if (['Cancelled', 'Delivered', 'Returned'].includes(targetStatus.name)) {
+      for (const bulkPushedId of validIds) this.notifyStoreOrderPush(bulkPushedId);
+    }
     return {
       updated: validIds.length,
       skipped: failedDetails.length,
@@ -6589,6 +6998,8 @@ export class OrdersService {
     }
 
     await this.invalidateAnalytics();
+    // P7 §8.6: customer-cancel hook — post-commit enqueue, non-propagating.
+    this.notifyStoreOrderPush(orderId);
     return updated;
   }
 
@@ -6804,6 +7215,11 @@ export class OrdersService {
     // Recognition input changed (statusId drives delivered-only revenue) —
     // drop cached analytics like updateStatus/cancelByCustomer do.
     await this.invalidateAnalytics();
+
+    // P7 §8.6: transition hook — post-commit enqueue, non-propagating.
+    if (['Cancelled', 'Delivered', 'Returned'].includes(newStatus)) {
+      this.notifyStoreOrderPush(orderId);
+    }
 
     return result;
   }

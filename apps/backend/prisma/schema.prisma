@@ -157,6 +157,27 @@ enum AcquisitionType {
   UNKNOWN
 }
 
+// P8 §9.1 (BR-18): canonical sales/marketing channel dimensions. Legacy
+// SalesChannel/source* stay and keep being written (dual-write); these new
+// nullable columns are derived by the single ChannelResolver. CALL/PHONE/
+// DIRECT never yield a marketing channel; canonical enum has no CALL.
+enum SalesChannelType {
+  ONLINE
+  OFFLINE
+}
+
+enum MarketingChannel {
+  FACEBOOK
+  MESSENGER
+  INSTAGRAM
+  INSTAGRAM_INBOX
+  TIKTOK
+  TIKTOK_INBOX
+  WHATSAPP
+  THREADS
+  OTHER
+}
+
 model UserProfile {
   id                  String     @id @default(uuid())
   firstName           String
@@ -545,6 +566,7 @@ model Category {
   children          Category[]        @relation("CategoryTree")
   products          Product[]         @relation("ProductCategory")
   productCategories ProductCategory[]
+  storeAvailabilityRules StoreAvailabilityRule[]
   combos            Combo[]
   sizeChartId       String?
   sizeChart         SizeChart?        @relation(fields: [sizeChartId], references: [id], onDelete: SetNull)
@@ -661,6 +683,8 @@ model Product {
   physicalReservations     PhysicalReservation[]
   orderItemComboComponents OrderItemComboComponent[]
   transferItems            StockTransferItem[]
+  storeAssignments ProductStoreAssignment[]
+  storeFieldStates ProductStoreFieldState[]
 
   @@index([isActive])
   @@index([categoryId])
@@ -951,6 +975,31 @@ model Order {
   posSessionId             String?
   idempotencyKey           String?            @unique
   posSession               PosSession?        @relation(fields: [posSessionId], references: [id])
+  // P8 §9.1 (BR-18): canonical channel dimensions. Nullable + additive;
+  // legacy salesChannel/source* above remain and keep being written
+  // (dual-write in the same transaction). salesChannelType = ONLINE/OFFLINE;
+  // showroomId = FK Warehouse(type='showroom') for OFFLINE showroom sales;
+  // marketingChannel = independent platform-attribution dimension (CALL is
+  // not a member — a phone call is an order origin, never marketing).
+  salesChannelType         SalesChannelType?
+  showroomId               String?
+  showroom                 Warehouse?         @relation("OrderShowroom", fields: [showroomId], references: [id], onDelete: SetNull)
+  marketingChannel         MarketingChannel?
+  // P6 order ingestion (§8.5): provenance for external-store orders.
+  // storeId = which external store (null = native). ingestFlags =
+  // operational visibility only (BLOCKED_PHONE | BLOCKED_IP |
+  // SUSPENDED_CUSTOMER | STOCK_SHORTFALL | UNMATCHED_SKU) — flags never
+  // block ingestion or any later transition (BR-13/BR-15). externalOrderId
+  // = the store-side id (authoritative identity lives in
+  // StoreOrderMapping @@unique([storeId, externalOrderId]), BR-12).
+  // storeMetadata = mutable store-side metadata only (status mirror,
+  // currency, external timestamps). Totals/items/prices are immutable
+  // after ingest (BR-17).
+  storeId                  String?
+  store                    Store?             @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  externalOrderId          String?
+  ingestFlags              String[]           @default([])
+  storeMetadata            Json?
   paymentStatus            PaymentStatus      @default(PAYMENT_PENDING)
   paymentProof             Json?              @default("{}")
   partialAmount            Decimal?           @db.Decimal(10, 2)
@@ -1019,6 +1068,7 @@ model Order {
   stockTransfers               StockTransfer[]
   orderAttribution             OrderAttribution?
   marketingAllocations         MarketingCostAllocation[]
+  storeOrderMapping    StoreOrderMapping?
   commissionEarnings           CommissionEarning[]
   statusTransitions            OrderStatusTransition[]
   commissionLedgerV2           CommissionLedgerV2[]
@@ -1044,7 +1094,12 @@ model Order {
   @@index([secondaryPhone])
   @@index([posSessionId])
   @@index([source])
+  @@index([storeId])
+  @@index([externalOrderId])
   @@index([salesChannel])
+  @@index([salesChannelType])
+  @@index([showroomId])
+  @@index([marketingChannel])
   // Canonical attribution dimensions: analytics filters and breakdowns group on
   // these, and the backfill's work set is (channelMappedAt IS NULL, createdAt<=boundary).
   @@index([channel])
@@ -3379,6 +3434,7 @@ model Warehouse {
   zones                              Zone[]
   binLocations                       BinLocation[]
   posSessions                        PosSession[]
+  showroomOrders                     Order[]                            @relation("OrderShowroom")
   physicalInventories                PhysicalInventory[]
   physicalLedgers                    PhysicalInventoryLedger[]
   physicalReservations               PhysicalReservation[]
@@ -5125,6 +5181,479 @@ model CommissionReversal {
 
   // Partial-unique (orderId non-null only) created in migration SQL.
   @@index([commissionEarningId])
+}
+
+
+// ---------- Central Commerce / Multi-Store — P1 Store foundation (§7, P1) ----------
+// BR-20: NATIVE is the native website surface, never a provider target.
+// BR-25: every new surface is double-gated (license feature + runtime flag).
+
+enum StoreKind {
+  NATIVE
+  WOOCOMMERCE
+  SHOPIFY
+  CUSTOM
+}
+
+enum StoreStatus {
+  PENDING
+  CONNECTED
+  DISCONNECTED
+  AUTH_FAILED
+  ATTENTION_REQUIRED
+}
+
+enum StoreHealthState {
+  HEALTHY
+  ATTENTION_REQUIRED
+  ERROR
+  DISCONNECTED
+}
+
+model Store {
+  id                  String       @id @default(uuid())
+  kind                StoreKind
+  name                String
+  domainNormalised    String?
+  identityFingerprint String?      @unique
+  providerStoreId     String?
+  status              StoreStatus  @default(PENDING)
+  healthState         StoreHealthState @default(DISCONNECTED)
+  autoSyncEnabled     Boolean      @default(true)
+  settings            Json?        @default("{}")
+  pluginVersion       String?
+  capabilities        Json?
+  lastSyncAt          DateTime?
+  lastHealthCheckAt   DateTime?
+  lastError           String?      @db.Text
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  credentials StoreCredential[]
+  healthChecks StoreHealthCheck[]
+  assignments ProductStoreAssignment[]
+  availabilityRules StoreAvailabilityRule[]
+  fieldStates ProductStoreFieldState[]
+  syncRuns SyncRun[]
+  issues StoreSyncIssue[]
+  webhookDeliveries StoreWebhookDelivery[]
+  productMappings StoreProductMapping[]
+  variantMappings StoreVariantMapping[]
+  categoryMappings StoreCategoryMapping[]
+  skuMappings StoreSkuMapping[]
+  orderMappings StoreOrderMapping[]
+  orderStatusMaps StoreOrderStatusMap[]
+  orders Order[]
+  mediaMappings StoreMediaMapping[]
+
+  // §8.10: duplicate protection — one row per logical store.
+  @@unique([kind, domainNormalised])
+  @@index([kind])
+  @@index([status])
+}
+
+model StoreCredential {
+  id           String   @id @default(uuid())
+  storeId      String
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  // AES-256-GCM ciphertext (EncryptionService). Write-only: never returned by any read.
+  credentialsEnc String  @db.Text
+  keyFingerprint String?
+  rotatedAt    DateTime @default(now())
+  rotatedById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([storeId])
+}
+
+model StoreHealthCheck {
+  id          String           @id @default(uuid())
+  storeId     String
+  store       Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  state       StoreHealthState
+  // Probe reasons: ok | pending | hooks_broken | auth_error | store_down | unknown | disabled (§12).
+  reason      String?
+  reachable   Boolean          @default(false)
+  authenticated Boolean        @default(false)
+  permissionsOk Boolean        @default(false)
+  mediaReachable Boolean?
+  detail      Json?
+  checkedAt   DateTime         @default(now())
+
+  @@index([storeId])
+  @@index([checkedAt])
+}
+
+// ---------- Central Commerce / Multi-Store — P3 Distribution & ownership (§8.2, §8.3) ----------
+// Additive only. Assignment OFF/ON and rules NEVER write Product rows — the
+// storefront read path (isActive + status != draft) is untouched by design.
+
+enum StoreAssignmentSource {
+  MANUAL
+  RULE
+}
+
+enum FieldOwnership {
+  ECOMATE
+  EXTERNAL
+  CONFLICT
+}
+
+enum OwnershipEvidence {
+  PLUGIN
+  INFERRED
+}
+
+/// Per-product store override. source=MANUAL rows are the §8.2 `override`
+/// layer (override ?? rule ?? default). No NATIVE rows may exist (BR-20 —
+/// rejected 400 at the API, excluded from bulk).
+model ProductStoreAssignment {
+  id        String                @id @default(uuid())
+  storeId   String
+  store     Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  source    StoreAssignmentSource @default(MANUAL)
+  available Boolean               @default(true)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  @@unique([storeId, productId])
+  @@index([productId])
+  @@index([storeId])
+}
+
+/// Per-category availability rule for one external store. Resolution (§8.2):
+/// nearest category with a rule wins; a rule with inheritFromParent=false
+/// governs only its own category (walk continues upward); inheritFromParent
+/// =true (default) propagates down until a nearer own-value rule overrides.
+/// No NATIVE rows may exist (BR-20).
+model StoreAvailabilityRule {
+  id                String   @id @default(uuid())
+  storeId           String
+  store             Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  categoryId        String
+  category          Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  available         Boolean  @default(true)
+  inheritFromParent Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([storeId, categoryId])
+  @@index([storeId])
+  @@index([categoryId])
+}
+
+/// Per-(store, product, field) sync ownership state (§8.3). Written by the
+/// P4 sync engine; P3 owns the shape plus the pure decision function.
+/// baselineHash = hash EcoMate last pushed (or adopted at first contact,
+/// BR-05); ecoMateHashAtRebase anchors eco-change detection after an
+/// adopt/rebase so the next EcoMate edit pushes normally instead of
+/// freezing the field.
+model ProductStoreFieldState {
+  id                  String             @id @default(uuid())
+  storeId             String
+  store               Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  field               String
+  ownership           FieldOwnership     @default(ECOMATE)
+  baselineHash        String?
+  externalHash        String?
+  ecoMateHashAtRebase String?
+  evidence            OwnershipEvidence?
+  lastPushedAt        DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@unique([storeId, productId, field])
+  @@index([storeId, productId])
+}
+
+// ---------- Central Commerce — P4 Product sync (§8.1, §8.3, §8.8, §8.9, §8.11, §10) ----------
+// Additive only. Every external identity is store-scoped UNIQUE; every write
+// carries SyncRun + SyncRunItem/SyncAttempt; no automatic resolution (BR-26).
+
+enum SyncRunScope {
+  PRODUCT
+  STOCK
+  ORDER_INGEST
+  ORDER_PUSH
+  RECONCILE
+  MAINTENANCE
+  PUBLISH
+}
+
+enum SyncRunStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum SyncTriggerType {
+  MANUAL
+  SCHEDULED
+  WEBHOOK
+  RETRY
+  SYSTEM
+}
+
+enum SyncItemStatus {
+  PENDING
+  SUCCESS
+  SKIPPED
+  FAILED
+  DEAD
+}
+
+enum SyncObjectType {
+  PRODUCT
+  VARIANT
+  CATEGORY
+  MEDIA
+  ORDER
+  PUBLICATION
+  DELETION
+}
+
+enum SyncIssueStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+}
+
+model SyncRun {
+  id             String         @id @default(uuid())
+  scope          SyncRunScope
+  status         SyncRunStatus  @default(RUNNING)
+  triggerType    SyncTriggerType @default(MANUAL)
+  storeId        String?
+  store          Store?         @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  initiatedById  String?
+  windowDays     Int?
+  wideningReason String?        @db.Text
+  createdCount   Int            @default(0)
+  updatedCount   Int            @default(0)
+  skippedCount   Int            @default(0)
+  failedCount    Int            @default(0)
+  totalCount     Int            @default(0)
+  correlationId  String?
+  errorCategory  String?
+  startedAt      DateTime       @default(now())
+  finishedAt     DateTime?
+  createdAt      DateTime       @default(now())
+
+  items    SyncRunItem[]
+  attempts SyncAttempt[]
+
+  @@index([storeId])
+  @@index([scope])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model SyncRunItem {
+  id               String         @id @default(uuid())
+  runId            String
+  run              SyncRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  storeId          String?
+  productId        String?
+  objectType       SyncObjectType
+  externalObjectId String?
+  status           SyncItemStatus @default(PENDING)
+  reason           String?        @db.Text
+  field            String?
+  auditLevel       String?        // F = field-level, G = group-level (§8.11)
+  durationMs       Int?
+  errorCategory    String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([runId])
+  @@index([storeId, productId])
+  @@index([status])
+}
+
+model SyncAttempt {
+  id            String         @id @default(uuid())
+  runId         String?
+  run           SyncRun?       @relation(fields: [runId], references: [id], onDelete: SetNull)
+  storeId       String?
+  objectType    SyncObjectType
+  objectKey     String         // store-scoped object identity (e.g. store:product:field)
+  productId     String?
+  field         String?
+  attemptNo     Int            @default(1)
+  status        SyncItemStatus @default(PENDING)
+  errorCategory String?
+  errorMessage  String?        @db.Text
+  nextRetryAt   DateTime?
+  createdAt     DateTime       @default(now())
+
+  @@index([storeId, objectKey])
+  @@index([runId])
+  @@index([createdAt])
+}
+
+/// Compact current-state row per broken object (BR-19: OPEN rows persist as
+/// state, never as retained attempt history).
+model StoreSyncIssue {
+  id            String          @id @default(uuid())
+  storeId       String
+  store         Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  code          String          // MISSING_SKU | SKU_MISMATCH | STOCK_VERIFY_FAILED | CATEGORY_UNSUPPORTED | MANUAL_ACTION_REQUIRED | EXTERNAL_DELETE_FAILED | STRUCTURAL_CHANGE_REQUIRES_ACTION | UNMATCHED_SKU | CAPABILITY_UNSUPPORTED | DEAD_LETTER | ...
+  objectType    SyncObjectType
+  objectKey     String
+  productId     String?
+  field         String?
+  message       String          @db.Text
+  status        SyncIssueStatus @default(OPEN)
+  occurrences   Int             @default(1)
+  firstSeenAt   DateTime        @default(now())
+  lastSeenAt    DateTime        @updatedAt
+  resolvedAt    DateTime?
+  resolveNote   String?         @db.Text
+
+  @@unique([storeId, code, objectKey])
+  @@index([storeId, status])
+  @@index([status])
+}
+
+model StoreWebhookDelivery {
+  id           String   @id @default(uuid())
+  storeId      String
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  deliveryKey  String   @unique // sha256(storeId + provider delivery id) — §4.1
+  retryKey     String?  // separate execution identity for manual retries
+  topic        String?
+  occurrences  Int      @default(1)
+  firstSeenAt  DateTime @default(now())
+  lastSeenAt   DateTime @updatedAt
+
+  @@index([storeId])
+}
+
+model StoreProductMapping {
+  id         String   @id @default(uuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId  String
+  externalId String
+  externalUrl String?
+  lastEvaluatedVersion String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([storeId, productId])
+  @@index([storeId, externalId])
+  @@index([productId])
+}
+
+model StoreVariantMapping {
+  id         String   @id @default(uuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId  String
+  variantId  String
+  externalId String
+  /// P5 stock-status monotonic guard: max stock-row updatedAt + ledger
+  /// timestamp last evaluated for this variant (lexicographic version).
+  lastEvaluatedVersion String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([storeId, variantId])
+  @@index([storeId, productId])
+}
+
+model StoreCategoryMapping {
+  id            String   @id @default(uuid())
+  storeId       String
+  store         Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  categoryId    String
+  externalTermId String
+  externalPath  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([storeId, categoryId])
+  @@index([storeId, externalTermId])
+}
+
+model StoreSkuMapping {
+  id        String   @id @default(uuid())
+  storeId   String
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sku       String
+  productId String?
+  variantId String?
+  lastVerifiedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([storeId, sku])
+  @@index([productId])
+}
+
+model StoreMediaMapping {
+  id         String   @id @default(uuid())
+  storeId    String
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  mediaKey   String   // sourceUrl or content hash (ingest + hash/id reuse)
+  externalId String
+  createdAt  DateTime @default(now())
+
+  @@unique([storeId, mediaKey])
+}
+
+// ---------- Central Commerce — P6 Order ingestion (§8.5, BR-11/BR-12/BR-13/BR-16/BR-17) ----------
+// Additive only. Identity is store-scoped and DB-enforced (BR-12):
+// StoreOrderMapping @@unique([storeId, externalOrderId]) + Order.idempotencyKey
+// 'store:{storeId}:order:{externalId}'. Status mapping seeded from the CSV
+// importer's STATUS_MAP (order-import.service.ts).
+
+/// One row per ingested external order — the store-scoped identity (BR-12).
+/// Disconnect never deletes these rows (§8.10); the Order row is retained.
+model StoreOrderMapping {
+  id               String   @id @default(uuid())
+  storeId          String
+  store            Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  externalOrderId  String
+  orderId          String   @unique
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lastExternalStatus String?
+  externalUpdatedAt DateTime?
+  /// P7 (§8.6): canonical push target last confirmed on the store
+  /// ('cancelled' | 'completed'). Idempotency key for status push — a repeat
+  /// run with the same target no-ops without a provider call. NULL = never
+  /// pushed. Written only by StoreOrderPushService after read-back verify.
+  lastPushedStatus String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([storeId, externalOrderId])
+  @@index([storeId])
+  @@index([orderId])
+}
+
+/// External status → internal OrderStatus name, per store (§8.5 ingest
+/// worker step 4). Seeded from the import STATUS_MAP; operator-editable via
+/// a future Sync Center UI (P11). Unknown external statuses fall back to the
+/// seeded default map, then to the initial status.
+model StoreOrderStatusMap {
+  id                 String   @id @default(uuid())
+  storeId            String
+  store              Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  externalStatus     String
+  internalStatusName String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([storeId, externalStatus])
+  @@index([storeId])
 }
 
 // ── Courier Settlement & Invoice Management (PRD §5–§14) ──────────────────────

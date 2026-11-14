@@ -52,6 +52,12 @@ export function Settings() {
       ],
     },
     {
+      groupLabel: 'Catalog',
+      items: [
+        { title: 'Store Availability Rules', href: '/mon/settings/store-availability', icon: <Package size={18} /> },
+      ],
+    },
+    {
       groupLabel: 'Content',
       items: [
         { title: 'Menu', href: '/mon/settings/menu', icon: <List size={18} /> },

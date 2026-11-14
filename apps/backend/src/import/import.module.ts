@@ -8,6 +8,7 @@ import { StorageService } from '../storage/storage.service';
 import { CustomersModule } from '../customers/customers.module';
 import { ProductsModule } from '../products/products.module';
 import { ImportJobManager } from './import-job-manager';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
   controllers: [ImportController],
@@ -19,7 +20,7 @@ import { ImportJobManager } from './import-job-manager';
     StorageService,
     ImportJobManager,
   ],
-  imports: [CustomersModule, ProductsModule],
+  imports: [CustomersModule, ProductsModule, StoresModule],
   exports: [ImportService, OrderImportService, ImportJobManager],
 })
 export class ImportModule {}

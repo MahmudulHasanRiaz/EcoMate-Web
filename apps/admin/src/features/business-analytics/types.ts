@@ -160,6 +160,9 @@ export interface OverviewData {
     byChannelEntity: BreakdownRow[]
     bySourcePlatform: BreakdownRow[]
     byAcquisitionType: BreakdownRow[]
+    // P8 additive: present only with the new-channel model flag on.
+    bySalesChannelType?: BreakdownRow[]
+    byMarketingChannel?: BreakdownRow[]
   }
 }
 
@@ -184,6 +187,12 @@ export interface AnalyticsFilters {
   sourceSlug?: string
   acquisitionType?: string
   marketingSource?: string
+  // P8 canonical dimensions (§9, BR-18). Optional; sent only when set, and
+  // honoured backend-side only with the new-channel model flag on.
+  salesChannelType?: string
+  storeId?: string
+  showroomId?: string
+  marketingChannel?: string
   paymentMethod?: string
   categoryId?: string
   location?: string
@@ -406,6 +415,9 @@ export interface SalesSummaryData {
     byPriorStage: { stage: string; orders: number; value: number }[]
     bySalesChannel: BreakdownRow[]
     byChannel: BreakdownRow[]
+    // P8 additive: present only with the new-channel model flag on.
+    bySalesChannelType?: BreakdownRow[]
+    byMarketingChannel?: BreakdownRow[]
   }
   returns: {
     events: number
@@ -610,6 +622,9 @@ export interface MarketingSummaryData {
   cost: MarketingCostBlock
   sources: { rows: MarketingSourceRow[]; unattributed: { orders: number; revenue: number }; dateBasis: string }
   channels: { rows: MarketingSourceRow[]; dateBasis: string }
+  // P8 additive: present only with the new-channel model flag on.
+  salesChannelTypes?: { rows: MarketingSourceRow[]; dateBasis: string }
+  marketingChannels?: { rows: MarketingSourceRow[]; dateBasis: string }
   segments: {
     newOrders: number
     newRevenue: number

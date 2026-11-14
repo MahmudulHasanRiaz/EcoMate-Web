@@ -27,6 +27,7 @@ import {
   MARKETING_UNATTRIBUTED,
   type CustomerSegment,
 } from './analytics-filter.dto';
+import { newSalesChannelModelEnabled } from '../orders/channels/channel-flags';
 
 export { MARKETING_UNATTRIBUTED };
 
@@ -174,6 +175,19 @@ export class AnalyticsFilterService {
     if (filters.channelEntity) where.channelEntity = filters.channelEntity;
     if (filters.sourceSlug) where.sourceSlug = filters.sourceSlug;
     if (filters.acquisitionType) where.acquisitionType = filters.acquisitionType as any;
+    // P8 §9.3 dual-read: canonical predicates apply ONLY with the new-channel
+    // model flag on. Flag off ⇒ new filters are ignored ⇒ the where clause
+    // is identical to pre-P8 (asserted by the analytics-parity suite).
+    if (newSalesChannelModelEnabled()) {
+      if (filters.salesChannelType === 'ONLINE' || filters.salesChannelType === 'OFFLINE') {
+        where.salesChannelType = filters.salesChannelType as any;
+      }
+      if (filters.storeId) where.storeId = filters.storeId;
+      if (filters.showroomId) where.showroomId = filters.showroomId;
+      if (filters.marketingChannel) {
+        where.marketingChannel = filters.marketingChannel as any;
+      }
+    }
 
     if (filters.paymentMethod) {
       where.payments = {

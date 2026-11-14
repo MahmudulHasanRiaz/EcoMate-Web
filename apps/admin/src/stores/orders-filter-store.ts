@@ -9,6 +9,9 @@ export interface OrdersFilters {
   statusFilter: string
   courierFilter: string
   assigneeFilter: string
+  // P6 provenance filter: 'all' | 'native' | <storeId>. Full channel columns
+  // (salesChannelType/showroomId/marketingChannel) land in P8.
+  storeFilter: string
   sort: string
   order: 'asc' | 'desc'
   perPage: number
@@ -23,6 +26,7 @@ export interface OrdersFilterStore extends OrdersFilters {
   setStatusFilter: (v: string) => void
   setCourierFilter: (v: string) => void
   setAssigneeFilter: (v: string) => void
+  setStoreFilter: (v: string) => void
   setSort: (v: string) => void
   setOrder: (v: 'asc' | 'desc') => void
   setPerPage: (v: number) => void
@@ -35,6 +39,7 @@ export const ORDER_FILTER_DEFAULTS: OrdersFilters = {
   statusFilter: 'all',
   courierFilter: 'all',
   assigneeFilter: 'all',
+  storeFilter: 'all',
   sort: 'createdAt',
   order: 'desc',
   perPage: 10,
@@ -79,6 +84,7 @@ export const useOrdersFilterStore = create<OrdersFilterStore>((set, get) => ({
   setStatusFilter: (statusFilter) => { set({ statusFilter }); saveFilters(get()) },
   setCourierFilter: (courierFilter) => { set({ courierFilter }); saveFilters(get()) },
   setAssigneeFilter: (assigneeFilter) => { set({ assigneeFilter }); saveFilters(get()) },
+  setStoreFilter: (storeFilter) => { set({ storeFilter }); saveFilters(get()) },
   setSort: (sort) => { set({ sort }); saveFilters(get()) },
   setOrder: (order) => { set({ order }); saveFilters(get()) },
   setPerPage: (perPage) => { set({ perPage }); saveFilters(get()) },

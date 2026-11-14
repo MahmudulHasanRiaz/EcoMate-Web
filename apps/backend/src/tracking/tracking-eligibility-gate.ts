@@ -38,6 +38,10 @@ export interface EligibilityResult {
     salesChannel?: string | null;
     sourcePlatform?: string | null;
     posSessionId?: string | null;
+    // P8 additive: canonical dimensions (observability only).
+    salesChannelType?: string | null;
+    marketingChannel?: string | null;
+    storeId?: string | null;
   };
 }
 
@@ -114,7 +118,8 @@ export class TrackingEligibilityGate {
       };
     }
 
-    // Fetch order metadata for source classification
+    // Fetch order metadata for source classification (P8: canonical
+    // columns ride along for the dual-read policy; legacy set unchanged).
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       select: {
@@ -125,6 +130,10 @@ export class TrackingEligibilityGate {
         sourceType: true,
         posSessionId: true,
         idempotencyKey: true,
+        salesChannelType: true,
+        marketingChannel: true,
+        storeId: true,
+        showroomId: true,
       },
     });
 
@@ -153,6 +162,9 @@ export class TrackingEligibilityGate {
         salesChannel: order.salesChannel,
         sourcePlatform: order.sourcePlatform,
         posSessionId: order.posSessionId,
+        salesChannelType: (order as any).salesChannelType ?? null,
+        marketingChannel: (order as any).marketingChannel ?? null,
+        storeId: (order as any).storeId ?? null,
       },
     };
 

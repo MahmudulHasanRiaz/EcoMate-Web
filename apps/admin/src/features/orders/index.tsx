@@ -674,6 +674,8 @@ export function Orders() {
   const setCourierFilter = useOrdersFilterStore(s => s.setCourierFilter)
   const assigneeFilter = useOrdersFilterStore(s => s.assigneeFilter)
   const setAssigneeFilter = useOrdersFilterStore(s => s.setAssigneeFilter)
+  const storeFilter = useOrdersFilterStore(s => s.storeFilter)
+  const setStoreFilter = useOrdersFilterStore(s => s.setStoreFilter)
   const sort = useOrdersFilterStore(s => s.sort)
   const setSort = useOrdersFilterStore(s => s.setSort)
   const order = useOrdersFilterStore(s => s.order)
@@ -708,14 +710,18 @@ export function Orders() {
   const statusList = (Array.isArray(statuses) ? statuses : []) as any[]
   const { data: staffList } = useQuery({ queryKey: ['staff-list'], queryFn: () => apiClient.get('/orders/staff/list').then(r => r.data as any[]) })
   const staff = (Array.isArray(staffList) ? staffList : []) as any[]
+  // P6: external-store options for the provenance filter (NATIVE excluded —
+  // the native website is never a sync provider, BR-20).
+  const { data: storeList } = useQuery({ queryKey: ['stores'], queryFn: () => apiClient.get('/stores').then(r => r.data as any[]) })
+  const storeOptions = ((Array.isArray(storeList) ? storeList : []) as any[]).filter((s: any) => s.kind !== 'NATIVE')
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: showTrashed
       ? ['orders', 'trashed', page, perPage, debouncedSearch]
-      : ['orders', page, perPage, debouncedSearch, statusFilter, courierFilter, assigneeFilter, sort, order, kindFilter],
+      : ['orders', page, perPage, debouncedSearch, statusFilter, courierFilter, assigneeFilter, storeFilter, sort, order, kindFilter],
     queryFn: () => showTrashed
       ? ordersApi.list({ page, perPage, search: debouncedSearch || undefined, includeTrashed: true, trashedOnly: true }).then(r => r.data)
-      : ordersApi.list({ page, perPage, search: debouncedSearch || undefined, statusId: statusFilter !== 'all' ? statusFilter : undefined, courier: courierFilter !== 'all' ? courierFilter : undefined, assignedToId: assigneeFilter !== 'all' ? assigneeFilter : undefined, sort, order, kind: kindFilter !== 'all' ? kindFilter : undefined }).then(r => r.data),
+      : ordersApi.list({ page, perPage, search: debouncedSearch || undefined, statusId: statusFilter !== 'all' ? statusFilter : undefined, courier: courierFilter !== 'all' ? courierFilter : undefined, assignedToId: assigneeFilter !== 'all' ? assigneeFilter : undefined, storeId: storeFilter !== 'all' ? storeFilter : undefined, sort, order, kind: kindFilter !== 'all' ? kindFilter : undefined }).then(r => r.data),
   })
 
   const statusMut = useMutation({
@@ -851,7 +857,7 @@ export function Orders() {
   // and no Reset button. In trash mode only search filters the list.
   const hasActiveFilters = showTrashed
     ? !!search
-    : !!(search || statusFilter !== 'all' || courierFilter !== 'all' || assigneeFilter !== 'all' || kindFilter !== 'all')
+    : !!(search || statusFilter !== 'all' || courierFilter !== 'all' || assigneeFilter !== 'all' || kindFilter !== 'all' || storeFilter !== 'all')
 
   const statusCountMap = useMemo(() => {
     return data?.meta?.statusCounts || {} as Record<string, number>
@@ -990,6 +996,20 @@ export function Orders() {
               </div>
             )}
 
+            {/* P6 provenance filter: native vs external store (full channel columns land in P8) */}
+            <div className='w-[150px]'>
+              <Select value={storeFilter} onValueChange={v => { setStoreFilter(v); setPage(1) }}>
+                <SelectTrigger className='h-8.5 text-xs bg-background/80 focus:bg-background border-border/60 shadow-2xs rounded-lg'>
+                  <SelectValue placeholder='Source' />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='all' className='text-xs'>All Sources</SelectItem>
+                  <SelectItem value='native' className='text-xs'>Native Website</SelectItem>
+                  {storeOptions.map((s: any) => <SelectItem key={s.id} value={s.id} className='text-xs'>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className='w-[90px]'>
               <Select value={String(perPage)} onValueChange={v => { if (v === 'custom') { setShowCustomRows(true) } else { setPerPage(parseInt(v)); setPage(1) } }}>
                 <SelectTrigger className='h-8.5 text-xs bg-background/80 focus:bg-background border-border/60 shadow-2xs rounded-lg'>
@@ -1046,6 +1066,16 @@ export function Orders() {
                   <button onClick={() => { setAssigneeFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-0.5 text-[11px] font-medium border border-border/70 shadow-2xs hover:bg-surface-raised transition-colors'>
                     <UserCheck className='h-3 w-3 text-muted-foreground' />
                     <span>{assigneeFilter === 'unassigned' ? 'Unassigned' : person ? `${person.firstName}` : 'Staff'}</span>
+                    <X className='h-3 w-3 ml-0.5 text-muted-foreground' />
+                  </button>
+                )
+              })()}
+              {!showTrashed && storeFilter !== 'all' && (() => {
+                const st = storeFilter === 'native' ? null : storeOptions.find((s: any) => s.id === storeFilter)
+                return (
+                  <button onClick={() => { setStoreFilter('all'); setPage(1) }} className='inline-flex items-center gap-1.5 rounded-full bg-background/90 px-2.5 py-0.5 text-[11px] font-medium border border-border/70 shadow-2xs hover:bg-surface-raised transition-colors'>
+                    <span className='text-muted-foreground'>Source:</span>
+                    <span>{storeFilter === 'native' ? 'Native Website' : st ? st.name : 'Store'}</span>
                     <X className='h-3 w-3 ml-0.5 text-muted-foreground' />
                   </button>
                 )
@@ -1192,13 +1222,17 @@ export function Orders() {
                               acquisitionType={o.acquisitionType}
                             />
                             {!o.channel && !o.sourceSlug && !o.acquisitionType &&
-                              (o.salesChannel || o.sourcePlatform || o.sourceType || o.sourceEntity) ? (
+                              (o.salesChannel || o.sourcePlatform || o.sourceType || o.sourceEntity || o.salesChannelType || o.marketingChannel || (o as any).showroom?.name) ? (
                               <OrderSourceBadges
                                 attribution={{
                                   salesChannel: o.salesChannel,
                                   sourcePlatform: o.sourcePlatform,
                                   sourceType: o.sourceType,
                                   sourceEntity: o.sourceEntity,
+                                  // P8 canonical badges (additive; absent on legacy rows).
+                                  salesChannelType: o.salesChannelType,
+                                  marketingChannel: o.marketingChannel,
+                                  showroomName: (o as any).showroom?.name,
                                 }}
                               />
                             ) : null}

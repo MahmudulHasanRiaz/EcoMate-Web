@@ -709,6 +709,152 @@ probe_ddl() {
       fi
       ;;
 
+    20261114120000_p1_store_foundation)
+      # DDL (central-commerce P1): enums StoreKind/StoreStatus/StoreHealthState;
+      #      Store + StoreCredential + StoreHealthCheck tables.
+      enum_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_type t WHERE t.typname IN ('StoreKind','StoreStatus','StoreHealthState');"
+      )"
+      tbl_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_tables WHERE schemaname='public'
+           AND tablename IN ('Store','StoreCredential','StoreHealthCheck');"
+      )"
+      if [ "$enum_count" = "3" ] && [ "$tbl_count" = "3" ]; then
+        echo "APPLIED"
+      elif [ "$enum_count" = "0" ] && [ "$tbl_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20261114120100_p3_distribution_ownership)
+      # DDL (central-commerce P3): enums StoreAssignmentSource/FieldOwnership/
+      #      OwnershipEvidence; ProductStoreAssignment + StoreAvailabilityRule
+      #      + ProductStoreFieldState tables.
+      enum_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_type t WHERE t.typname IN ('StoreAssignmentSource','FieldOwnership','OwnershipEvidence');"
+      )"
+      tbl_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_tables WHERE schemaname='public'
+           AND tablename IN ('ProductStoreAssignment','StoreAvailabilityRule','ProductStoreFieldState');"
+      )"
+      if [ "$enum_count" = "3" ] && [ "$tbl_count" = "3" ]; then
+        echo "APPLIED"
+      elif [ "$enum_count" = "0" ] && [ "$tbl_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20261114120200_p4_product_sync)
+      # DDL (central-commerce P4): enums SyncRunScope/SyncRunStatus/
+      #      SyncTriggerType/SyncItemStatus/SyncObjectType/SyncIssueStatus;
+      #      SyncRun + SyncRunItem + SyncAttempt + StoreSyncIssue +
+      #      StoreWebhookDelivery + StoreProductMapping + StoreVariantMapping +
+      #      StoreCategoryMapping + StoreSkuMapping + StoreMediaMapping tables.
+      enum_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_type t WHERE t.typname IN ('SyncRunScope','SyncRunStatus','SyncTriggerType','SyncItemStatus','SyncObjectType','SyncIssueStatus');"
+      )"
+      tbl_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_tables WHERE schemaname='public'
+           AND tablename IN ('SyncRun','SyncRunItem','SyncAttempt','StoreSyncIssue','StoreWebhookDelivery','StoreProductMapping','StoreVariantMapping','StoreCategoryMapping','StoreSkuMapping','StoreMediaMapping');"
+      )"
+      if [ "$enum_count" = "6" ] && [ "$tbl_count" = "10" ]; then
+        echo "APPLIED"
+      elif [ "$enum_count" = "0" ] && [ "$tbl_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20261114120300_p5_stock_variant_version)
+      # DDL (central-commerce P5): single column
+      #      StoreVariantMapping.lastEvaluatedVersion.
+      col_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM information_schema.columns
+           WHERE table_name = 'StoreVariantMapping' AND column_name = 'lastEvaluatedVersion';"
+      )"
+      if [ "$col_count" = "1" ]; then
+        echo "APPLIED"
+      elif [ "$col_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20261114120400_p6_order_ingestion)
+      # DDL (central-commerce P6): Order.storeId/externalOrderId/ingestFlags/
+      #      storeMetadata columns; StoreOrderMapping + StoreOrderStatusMap tables.
+      col_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM information_schema.columns
+           WHERE table_name = 'Order'
+             AND column_name IN ('storeId','externalOrderId','ingestFlags','storeMetadata');"
+      )"
+      tbl_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_tables WHERE schemaname='public'
+           AND tablename IN ('StoreOrderMapping','StoreOrderStatusMap');"
+      )"
+      if [ "$col_count" = "4" ] && [ "$tbl_count" = "2" ]; then
+        echo "APPLIED"
+      elif [ "$col_count" = "0" ] && [ "$tbl_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20261114120500_p7_order_status_push)
+      # DDL (central-commerce P7): single column
+      #      StoreOrderMapping.lastPushedStatus.
+      col_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM information_schema.columns
+           WHERE table_name = 'StoreOrderMapping' AND column_name = 'lastPushedStatus';"
+      )"
+      if [ "$col_count" = "1" ]; then
+        echo "APPLIED"
+      elif [ "$col_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
+    20261114120600_p8_sales_marketing_channels)
+      # DDL (central-commerce P8): enums SalesChannelType/MarketingChannel;
+      #      Order.salesChannelType/showroomId/marketingChannel columns.
+      enum_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_type t WHERE t.typname IN ('SalesChannelType','MarketingChannel');"
+      )"
+      col_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM information_schema.columns
+           WHERE table_name = 'Order'
+             AND column_name IN ('salesChannelType','showroomId','marketingChannel');"
+      )"
+      if [ "$enum_count" = "2" ] && [ "$col_count" = "3" ]; then
+        echo "APPLIED"
+      elif [ "$enum_count" = "0" ] && [ "$col_count" = "0" ]; then
+        echo "NOT_APPLIED"
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
     *)
       echo "UNKNOWN"
       ;;

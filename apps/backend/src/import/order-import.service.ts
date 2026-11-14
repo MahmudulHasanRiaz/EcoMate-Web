@@ -11,7 +11,12 @@ import type {
   OrderImportError,
 } from './types/order-import.types';
 
-const STATUS_MAP: Record<string, string> = {
+/**
+ * WooCommerce → internal status seed map. Exported for central-commerce P6:
+ * `StoreOrderStatusMap` rows are seeded from this table (§8.5 ingest worker
+ * step 4). The canonical owner stays here (CSV importer); P6 only reads it.
+ */
+export const STATUS_MAP: Record<string, string> = {
   completed: 'Delivered',
   cancelled: 'Cancelled',
   refunded: 'Returned',

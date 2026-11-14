@@ -43,6 +43,11 @@ const FILTER_KEYS: (keyof AnalyticsFilters)[] = [
   'channelEntity',
   'sourceSlug',
   'acquisitionType',
+  // P8 canonical dimensions (sent only when set; flag-gated backend-side).
+  'salesChannelType',
+  'storeId',
+  'showroomId',
+  'marketingChannel',
   'marketingSource',
   'paymentMethod',
   'categoryId',

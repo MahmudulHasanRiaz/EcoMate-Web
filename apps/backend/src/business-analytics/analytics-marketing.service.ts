@@ -41,6 +41,7 @@ import {
   resolveMarketingSource,
 } from './analytics-filter.service';
 import { MARKETING_UNATTRIBUTED } from './analytics-filter.dto';
+import { newSalesChannelModelEnabled } from '../orders/channels/channel-flags';
 import type { MarketingQueryDto } from './analytics-marketing.dto';
 import { marketingPagination } from './analytics-marketing.dto';
 import type { AnalyticsFilterDto } from './analytics-filter.dto';
@@ -131,6 +132,10 @@ export interface AttributedRevenueInput {
   source: string;
   channel: string;
   revenue: number;
+  // P8 additive (§9.3 dual-read): canonical dimensions, populated by the
+  // service mapping only with the new-channel model flag on.
+  salesChannelType?: string;
+  marketingChannel?: string;
 }
 
 export interface SourceRevenueRow {
@@ -145,6 +150,9 @@ export interface SourceRevenueResult {
   channels: SourceRevenueRow[];
   unattributed: { orders: number; revenue: number };
   total: { orders: number; revenue: number };
+  // P8 additive (§9.3 dual-read): present only with the flag on.
+  salesChannelTypes?: SourceRevenueRow[];
+  marketingChannels?: SourceRevenueRow[];
 }
 
 /** Recognised revenue grouped by Marketing Source and by sales channel. */
@@ -153,6 +161,10 @@ export function aggregateSourceRevenue(
 ): SourceRevenueResult {
   const bySource = new Map<string, { orders: number; revenue: number }>();
   const byChannel = new Map<string, { orders: number; revenue: number }>();
+  // P8 additive: canonical groupings accumulate always but are only exposed
+  // with the flag on — flag-off results stay identical.
+  const bySalesChannelType = new Map<string, { orders: number; revenue: number }>();
+  const byMarketingChannel = new Map<string, { orders: number; revenue: number }>();
   let unattributedOrders = 0;
   let unattributedRevenue = 0;
   for (const o of orders) {
@@ -164,6 +176,18 @@ export function aggregateSourceRevenue(
     c.orders += 1;
     c.revenue += o.revenue;
     byChannel.set(o.channel, c);
+    if (o.salesChannelType) {
+      const t = bySalesChannelType.get(o.salesChannelType) ?? { orders: 0, revenue: 0 };
+      t.orders += 1;
+      t.revenue += o.revenue;
+      bySalesChannelType.set(o.salesChannelType, t);
+    }
+    if (o.marketingChannel) {
+      const m = byMarketingChannel.get(o.marketingChannel) ?? { orders: 0, revenue: 0 };
+      m.orders += 1;
+      m.revenue += o.revenue;
+      byMarketingChannel.set(o.marketingChannel, m);
+    }
     if (o.source === MARKETING_UNATTRIBUTED) {
       unattributedOrders += 1;
       unattributedRevenue += o.revenue;
@@ -175,11 +199,22 @@ export function aggregateSourceRevenue(
   const channels = [...byChannel.entries()]
     .map(([key, v]) => ({ key, label: key, ...v }))
     .sort((a, b) => b.revenue - a.revenue);
+  const toRows = (m: Map<string, { orders: number; revenue: number }>) =>
+    [...m.entries()]
+      .map(([key, v]) => ({ key, label: key, ...v }))
+      .sort((a, b) => b.revenue - a.revenue);
   return {
     sources,
     channels,
     unattributed: { orders: unattributedOrders, revenue: unattributedRevenue },
     total: { orders: orders.length, revenue: orders.reduce((s, o) => s + o.revenue, 0) },
+    // P8 dual-read: canonical rows are additive and flag-gated.
+    ...(newSalesChannelModelEnabled()
+      ? {
+          salesChannelTypes: toRows(bySalesChannelType),
+          marketingChannels: toRows(byMarketingChannel),
+        }
+      : {}),
   };
 }
 
@@ -665,6 +700,8 @@ export class AnalyticsMarketingService {
         customerPhone: true,
         guestPhone: true,
         salesChannel: true,
+        salesChannelType: true,
+        marketingChannel: true,
         trackingSessionId: true,
         items: { select: { price: true, quantity: true } },
         dispatches: {
@@ -738,6 +775,14 @@ export class AnalyticsMarketingService {
         key: customerKeyOf(o),
         source: resolveMarketingSource(o.orderAttribution ?? null, session),
         channel: o.salesChannel ?? 'unspecified',
+        // P8 dual-read: canonical dimensions ride along only with the flag
+        // on; flag off ⇒ absent ⇒ aggregateSourceRevenue output identical.
+        ...(newSalesChannelModelEnabled()
+          ? {
+              salesChannelType: (o.salesChannelType as string) ?? 'unspecified',
+              marketingChannel: (o.marketingChannel as string) ?? 'unspecified',
+            }
+          : {}),
       };
     });
 
@@ -817,10 +862,13 @@ export class AnalyticsMarketingService {
       range,
     );
     const grouped = aggregateSourceRevenue(
-      revenue.inCohort.map((c) => ({
+      revenue.inCohort.map((c: any) => ({
         source: c.source,
         channel: c.channel,
         revenue: c.revenue,
+        // P8 pass-through (present on candidates only with the flag on).
+        ...(c.salesChannelType !== undefined ? { salesChannelType: c.salesChannelType } : {}),
+        ...(c.marketingChannel !== undefined ? { marketingChannel: c.marketingChannel } : {}),
       })),
     );
     const segments = computeSegmentRevenue(
@@ -877,6 +925,13 @@ export class AnalyticsMarketingService {
           dateBasis: DATE_BASIS_RECOGNISED,
         },
         channels: { rows: grouped.channels, dateBasis: DATE_BASIS_RECOGNISED },
+        // P8 additive (§9.3 dual-read): present only with the flag on.
+        ...(grouped.salesChannelTypes !== undefined
+          ? {
+              salesChannelTypes: { rows: grouped.salesChannelTypes, dateBasis: DATE_BASIS_RECOGNISED },
+              marketingChannels: { rows: grouped.marketingChannels ?? [], dateBasis: DATE_BASIS_RECOGNISED },
+            }
+          : {}),
         segments: { ...segments, dateBasis: DATE_BASIS_RECOGNISED },
         unrecognisedSpend: {
           amount: unrecognised.amount,

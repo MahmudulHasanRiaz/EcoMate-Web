@@ -9,6 +9,7 @@ import { ReconciliationFixAllService } from '../reconciliation/reconciliation-fi
 import { Q8SettleService } from '../reconciliation/q8-settle.service';
 import { BackupModule } from '../backup/backup.module';
 import { StockModule } from '../stock/stock.module';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
   controllers: [InventoryController, PhysicalInventoryController],
@@ -28,6 +29,7 @@ import { StockModule } from '../stock/stock.module';
     ReconciliationFixAllService,
     Q8SettleService,
   ],
-  imports: [StockModule, BackupModule],
+  // P5: inventory writers notify StockStatusSyncService post-commit.
+  imports: [StockModule, BackupModule, StoresModule],
 })
 export class InventoryModule {}

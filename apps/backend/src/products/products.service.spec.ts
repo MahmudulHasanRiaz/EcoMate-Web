@@ -17,6 +17,7 @@ import { CacheService } from '../cache/cache.service';
 import { StockRouterService } from '../stock/stock-router.service';
 import { StockService } from '../stock/stock.service';
 import { CustomizationService } from '../customization/customization.service';
+import { SyncQueuesService } from '../stores/sync/sync-queues.service';
 
 jest.mock('uuid', () => ({
   v4: jest.fn(() => 'mock-uuid-v4'),
@@ -75,6 +76,7 @@ describe('ProductsService', () => {
   let cache: CacheService;
   let stockRouter: StockRouterService;
   let stockService: StockService;
+  let queues: SyncQueuesService;
 
   beforeEach(async () => {
     const prismaMock = {
@@ -207,11 +209,16 @@ describe('ProductsService', () => {
           provide: CustomizationService,
           useValue: new CustomizationService({ canUse: () => true } as any),
         },
+        {
+          provide: SyncQueuesService,
+          useValue: { enqueue: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 
     service = module.get<ProductsService>(ProductsService);
     prisma = module.get<PrismaService>(PrismaService);
+    queues = module.get<SyncQueuesService>(SyncQueuesService);
     media = module.get<MediaService>(MediaService);
     cache = module.get<CacheService>(CacheService);
     stockRouter = module.get<StockRouterService>(StockRouterService);
@@ -1260,6 +1267,42 @@ describe('ProductsService', () => {
         'Not found',
       );
       expect(prisma.product.delete).not.toHaveBeenCalled();
+    });
+
+    it('enqueues product-delete per mapped store after hard delete (BR-09)', async () => {
+      (prisma.product.findUniqueOrThrow as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([]);
+      (media.detachAll as jest.Mock).mockResolvedValue(undefined);
+      (prisma.product.delete as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma as any).storeProductMapping = {
+        findMany: jest.fn().mockResolvedValue([{ storeId: 'store-a' }, { storeId: 'store-b' }]),
+      };
+
+      await expect(service.remove('prod-1')).resolves.toEqual({ message: 'Product deleted' });
+      expect(queues.enqueue).toHaveBeenCalledTimes(2);
+      expect(queues.enqueue).toHaveBeenCalledWith(
+        'store-product-sync',
+        'product-delete',
+        { storeId: 'store-a', productId: 'prod-1' },
+        expect.stringContaining('store-a'),
+      );
+    });
+
+    it('unmapped delete enqueues nothing; queue failure never fails the delete', async () => {
+      (prisma.product.findUniqueOrThrow as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma.productVariant.findMany as jest.Mock).mockResolvedValue([]);
+      (media.detachAll as jest.Mock).mockResolvedValue(undefined);
+      (prisma.product.delete as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma as any).storeProductMapping = { findMany: jest.fn().mockResolvedValue([]) };
+
+      await expect(service.remove('prod-1')).resolves.toEqual({ message: 'Product deleted' });
+      expect(queues.enqueue).not.toHaveBeenCalled();
+
+      (prisma as any).storeProductMapping = {
+        findMany: jest.fn().mockResolvedValue([{ storeId: 'store-a' }]),
+      };
+      (queues.enqueue as jest.Mock).mockRejectedValueOnce(new Error('redis down'));
+      await expect(service.remove('prod-1')).resolves.toEqual({ message: 'Product deleted' });
     });
   });
 
