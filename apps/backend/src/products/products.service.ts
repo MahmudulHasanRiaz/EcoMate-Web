@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateProductDto,
@@ -288,9 +289,11 @@ export class ProductsService {
     fromMode: string;
     toMode: string;
     performedBy?: string;
+    client?: Prisma.TransactionClient | PrismaService;
   }): Promise<void> {
     const { productId, fromMode, toMode, performedBy } = params;
-    const product = await this.prisma.product.findUnique({
+    const client = params.client ?? this.prisma;
+    const product = await client.product.findUnique({
       where: { id: productId },
       select: { type: true, managedStockQuantity: true, reservedStock: true },
     });
@@ -315,7 +318,7 @@ export class ProductsService {
       qty: number;
       variant: boolean;
     }) => {
-      await this.prisma.managedStockLedger.create({
+      await client.managedStockLedger.create({
         data: {
           productId,
           ...(args.variantId ? { variantId: args.variantId } : {}),
@@ -334,7 +337,7 @@ export class ProductsService {
 
     if (product.type === 'variable') {
       const variants =
-        (await this.prisma.productVariant.findMany({
+        (await client.productVariant.findMany({
           where: { productId },
           select: { id: true, managedStockQuantity: true, reservedStock: true },
         })) ?? [];
@@ -342,7 +345,7 @@ export class ProductsService {
         const qty = v.managedStockQuantity ?? 0;
         await recordClearing({ variantId: v.id, qty, variant: true });
         if (qty !== 0) {
-          await this.prisma.productVariant.update({
+          await client.productVariant.update({
             where: { id: v.id },
             data: { managedStockQuantity: 0 },
           });
@@ -355,7 +358,7 @@ export class ProductsService {
         });
       }
       if ((product.managedStockQuantity ?? 0) !== 0) {
-        await this.prisma.product.update({
+        await client.product.update({
           where: { id: productId },
           data: { managedStockQuantity: 0 },
         });
@@ -367,7 +370,7 @@ export class ProductsService {
       const qty = product.managedStockQuantity ?? 0;
       await recordClearing({ qty, variant: false });
       if (qty !== 0) {
-        await this.prisma.product.update({
+        await client.product.update({
           where: { id: productId },
           data: { managedStockQuantity: 0 },
         });
@@ -383,6 +386,7 @@ export class ProductsService {
       toMode,
       performedBy,
       counters,
+      client,
     });
   }
 
@@ -431,8 +435,10 @@ export class ProductsService {
       variantId?: string;
       reserved: number;
     }>;
+    client?: Prisma.TransactionClient | PrismaService;
   }): Promise<void> {
     const { productId, fromMode, toMode, performedBy, counters } = params;
+    const client = params.client ?? this.prisma;
     const counterByKey = new Map(
       counters.map((c) => [`${c.model}:${c.id}`, c]),
     );
@@ -442,7 +448,7 @@ export class ProductsService {
         : counterByKey.get(`product:${productId}`);
 
     const [items, components] = await Promise.all([
-      this.prisma.orderItem.findMany({
+      client.orderItem.findMany({
         where: { productId, managedStockReserved: true },
         select: {
           id: true,
@@ -452,7 +458,7 @@ export class ProductsService {
           order: { select: { id: true, displayId: true } },
         },
       }),
-      this.prisma.orderItemComboComponent.findMany({
+      client.orderItemComboComponent.findMany({
         where: { productId, managedStockReserved: true },
         select: {
           id: true,
@@ -506,13 +512,13 @@ export class ProductsService {
         .filter((l) => l.kind === 'component')
         .map((l) => l.id);
       if (itemIds.length > 0) {
-        await this.prisma.orderItem.updateMany({
+        await client.orderItem.updateMany({
           where: { id: { in: itemIds } },
           data: { managedStockReserved: false },
         });
       }
       if (compIds.length > 0) {
-        await this.prisma.orderItemComboComponent.updateMany({
+        await client.orderItemComboComponent.updateMany({
           where: { id: { in: compIds } },
           data: { managedStockReserved: false },
         });
@@ -532,12 +538,12 @@ export class ProductsService {
           released = Math.min(line.qty, counter.reserved);
           if (released > 0) {
             if (counter.model === 'product') {
-              await this.prisma.product.update({
+              await client.product.update({
                 where: { id: counter.id },
                 data: { reservedStock: { decrement: released } },
               });
             } else {
-              await this.prisma.productVariant.update({
+              await client.productVariant.update({
                 where: { id: counter.id },
                 data: { reservedStock: { decrement: released } },
               });
@@ -545,7 +551,7 @@ export class ProductsService {
             counter.reserved -= released;
           }
         }
-        await this.prisma.managedStockLedger.create({
+        await client.managedStockLedger.create({
           data: {
             productId,
             ...(counter?.variantId ? { variantId: counter.variantId } : {}),
@@ -571,7 +577,7 @@ export class ProductsService {
         // Already deducted at delivery: the counter was decremented then,
         // so no counter move here — only the stale flag is cleared,
         // recorded by a quantity-0 RELEASE entry.
-        await this.prisma.managedStockLedger.create({
+        await client.managedStockLedger.create({
           data: {
             productId,
             ...(counter?.variantId ? { variantId: counter.variantId } : {}),
@@ -601,18 +607,18 @@ export class ProductsService {
       if (counter.reserved > 0) {
         const residual = counter.reserved;
         if (counter.model === 'product') {
-          await this.prisma.product.update({
+          await client.product.update({
             where: { id: counter.id },
             data: { reservedStock: 0 },
           });
         } else {
-          await this.prisma.productVariant.update({
+          await client.productVariant.update({
             where: { id: counter.id },
             data: { reservedStock: 0 },
           });
         }
         counter.reserved = 0;
-        await this.prisma.managedStockLedger.create({
+        await client.managedStockLedger.create({
           data: {
             productId,
             ...(counter.variantId ? { variantId: counter.variantId } : {}),
@@ -631,6 +637,259 @@ export class ProductsService {
         });
       }
     }
+  }
+
+  /**
+   * Physical-row seeding for a switch INTO INVENTORY_CONTROLLED
+   * (2026-11-24, Issue 2). The switch zeroes the managed counter but
+   * the Physical tab lists `PhysicalInventory` rows, not products — so
+   * without a row the product lands in NEITHER tab. Seeding one
+   * zero-qty row per stock unit (simple: one row, variantId NULL;
+   * variable: one row per variant) makes it appear in the Physical tab
+   * immediately, at 0/0, with a working Adjust entry point.
+   *
+   * Warehouse rule (owner edge decision): the product's own
+   * `warehouseId` when set, else the first active warehouse; zero
+   * active warehouses fails loud (see resolveSeedWarehouseId) — never
+   * a silent pick. Combo products are NOT seeded: a combo's
+   * availability is its components' physical stock (the confirm gate
+   * checks components, never the combo row), so a zero row on the
+   * combo itself would be dead data no flow reads.
+   *
+   * Idempotent: a row may already exist for a (product, variant) —
+   * an earlier switch, a physical adjust, a purchase receive — so
+   * only the missing slots are created. A re-run therefore seeds
+   * exactly the gaps (e.g. a variant added after the switch) and
+   * never duplicates a row. Warehouse resolution runs only when at
+   * least one slot is missing, so an already-covered product never
+   * fails for want of a warehouse.
+   *
+   * Sequential check-then-create (not upsert): the warehouse-level
+   * partial unique index would reject a duplicate create, so the
+   * findFirst above is the idempotency guard. Two switches racing
+   * each other could still collide on the index — the admin form
+   * saves serially, so this is accepted, not handled.
+   */
+  private async seedPhysicalRowsForModeChange(params: {
+    productId: string;
+    client?: Prisma.TransactionClient | PrismaService;
+  }): Promise<void> {
+    const client = params.client ?? this.prisma;
+    const product = await client.product.findUnique({
+      where: { id: params.productId },
+      select: { type: true, warehouseId: true },
+    });
+    if (!product || product.type === 'combo') return;
+    const variantIds: Array<string | null> =
+      product.type === 'variable'
+        ? (
+            (await client.productVariant.findMany({
+              where: { productId: params.productId },
+              select: { id: true },
+              orderBy: { sortOrder: 'asc' },
+            })) ?? []
+          ).map((v) => v.id)
+        : [null];
+    const missing: Array<string | null> = [];
+    for (const variantId of variantIds) {
+      const existing = await client.physicalInventory.findFirst({
+        where: { productId: params.productId, variantId },
+        select: { id: true },
+      });
+      if (!existing) missing.push(variantId);
+    }
+    if (missing.length === 0) return;
+    const warehouseId = await this.resolveSeedWarehouseId(client, product);
+    for (const variantId of missing) {
+      await client.physicalInventory.create({
+        data: {
+          productId: params.productId,
+          variantId,
+          warehouseId,
+          quantity: 0,
+          reservedQuantity: 0,
+        },
+      });
+    }
+  }
+
+  /**
+   * Which warehouse a seeded zero-row belongs to. The product's own
+   * warehouse wins when it names an ACTIVE one; otherwise the first
+   * active warehouse (oldest first, deterministic). Fails loud in both
+   * directions — a set warehouse that is missing/inactive is a data
+   * problem staff must fix, and zero active warehouses means there is
+   * nowhere to put the row — never silently pick another warehouse.
+   */
+  private async resolveSeedWarehouseId(
+    client: Prisma.TransactionClient | PrismaService,
+    product: { warehouseId?: string | null },
+  ): Promise<string> {
+    if (product.warehouseId) {
+      const own = await client.warehouse.findUnique({
+        where: { id: product.warehouseId },
+        select: { id: true, isActive: true },
+      });
+      if (own?.isActive) return own.id;
+      throw new BadRequestException(
+        'Cannot seed physical stock: the product\u2019s warehouse is missing or inactive. Pick an active warehouse first.',
+      );
+    }
+    const first = await client.warehouse.findFirst({
+      where: { isActive: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true },
+    });
+    if (!first) {
+      throw new BadRequestException(
+        'Cannot seed physical stock: no active warehouse exists. Create a warehouse first.',
+      );
+    }
+    return first.id;
+  }
+
+  /**
+   * The mode-switch side effects — managed cleanup + physical seeding —
+   * as ONE transaction (2026-11-24, Issue 2 hardening). Before this
+   * round the caller's main update had already flipped the mode while
+   * the cleanup ran as bare sequential awaits, so a failure
+   * mid-cleanup (or in the tag/media steps before it) left a flipped
+   * mode with stranded managed stock and no rollback. Now a failure
+   * anywhere in the pair rolls the whole pair back — and the re-save
+   * repair below can re-run it once the cause is fixed. No-ops (no
+   * transaction opened) when the switch owes nothing: cleanup only
+   * fires when leaving MANAGED_STOCK, seeding only when entering
+   * INVENTORY_CONTROLLED.
+   *
+   * `seedPhysical: false` (draft autosave only): run the cleanup but
+   * defer seeding to publish — a fail-loud seeding error (no active
+   * warehouse) must not break editing a non-live draft, and a draft
+   * must not surface in the Physical tab before it goes live.
+   * publishDraft() seeds, either via the switch here or via the
+   * repair below when the draft already stores INVENTORY_CONTROLLED.
+   */
+  private async applyModeSwitchEffects(params: {
+    productId: string;
+    fromMode: string;
+    toMode: string;
+    performedBy?: string;
+    seedPhysical?: boolean;
+  }): Promise<void> {
+    const { productId, fromMode, toMode, performedBy } = params;
+    if (fromMode !== 'MANAGED_STOCK' && toMode !== 'INVENTORY_CONTROLLED')
+      return;
+    await this.prisma.$transaction(async (tx) => {
+      if (fromMode === 'MANAGED_STOCK') {
+        await this.clearManagedStockForModeChange({
+          productId,
+          fromMode,
+          toMode,
+          performedBy,
+          client: tx,
+        });
+      }
+      if (toMode === 'INVENTORY_CONTROLLED' && params.seedPhysical !== false) {
+        await this.seedPhysicalRowsForModeChange({ productId, client: tx });
+      }
+    });
+  }
+
+  /**
+   * Re-runnable repair for a switch whose side effects never landed
+   * (2026-11-24, Issue 2 secondary risk). Trigger: a save that
+   * RESTATES INVENTORY_CONTROLLED on a product already stored as
+   * INVENTORY_CONTROLLED — the admin form always sends
+   * availabilityMode, so the next form save after a failed switch
+   * repairs it; a bare rename with no mode in the payload does not,
+   * keeping mode handling out of mode-untouched saves. Repairs
+   * exactly what is owed and nothing more: stranded managed
+   * quantities/reservations are cleared (with the usual ledger rows —
+   * the counter being retired IS managed stock, so the note names
+   * MANAGED_STOCK as the mode left even though the stored mode is
+   * already INVENTORY_CONTROLLED), and missing physical rows are
+   * seeded; a product that is already clean is a pure read-only
+   * no-op, so ordinary re-saves never write duplicate ledger rows.
+   */
+  private async repairModeSwitchIfNeeded(params: {
+    productId: string;
+    targetMode: string;
+    performedBy?: string;
+  }): Promise<void> {
+    const { productId, targetMode, performedBy } = params;
+    if (targetMode !== 'INVENTORY_CONTROLLED') return;
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { type: true, managedStockQuantity: true, reservedStock: true },
+    });
+    if (!product) return;
+    let stranded =
+      (product.managedStockQuantity ?? 0) !== 0 ||
+      (product.reservedStock ?? 0) !== 0;
+    let variantIds: string[] = [];
+    if (product.type === 'variable') {
+      const variants =
+        (await this.prisma.productVariant.findMany({
+          where: { productId },
+          select: { id: true, managedStockQuantity: true, reservedStock: true },
+        })) ?? [];
+      variantIds = variants.map((v) => v.id);
+      if (
+        variants.some(
+          (v) =>
+            (v.managedStockQuantity ?? 0) !== 0 ||
+            (v.reservedStock ?? 0) !== 0,
+        )
+      ) {
+        stranded = true;
+      }
+    }
+    // Stale reservation flags with zero counters still owe a cleanup:
+    // releaseManagedReservationsForModeChange clears them (with
+    // RELEASE ledger rows), but the counter-only check above would
+    // miss them — e.g. flags left over from lines already deducted
+    // at delivery, where the counter was decremented then.
+    if (!stranded) {
+      const [flaggedItems, flaggedComponents] = await Promise.all([
+        this.prisma.orderItem.findMany({
+          where: { productId, managedStockReserved: true },
+          select: { id: true },
+        }),
+        this.prisma.orderItemComboComponent.findMany({
+          where: { productId, managedStockReserved: true },
+          select: { id: true },
+        }),
+      ]);
+      stranded =
+        (flaggedItems ?? []).length > 0 ||
+        (flaggedComponents ?? []).length > 0;
+    }
+    let missingRows = false;
+    if (product.type !== 'combo') {
+      const rows =
+        (await this.prisma.physicalInventory.findMany({
+          where: { productId },
+          select: { variantId: true },
+        })) ?? [];
+      const covered = new Set(rows.map((r) => r.variantId ?? null));
+      const targets: Array<string | null> =
+        product.type === 'variable' ? variantIds : [null];
+      missingRows = targets.some((t) => !covered.has(t));
+    }
+    if (!stranded && !missingRows) return;
+    await this.prisma.$transaction(async (tx) => {
+      if (stranded) {
+        await this.clearManagedStockForModeChange({
+          productId,
+          fromMode: 'MANAGED_STOCK',
+          toMode: targetMode,
+          performedBy,
+          client: tx,
+        });
+      }
+      if (missingRows) {
+        await this.seedPhysicalRowsForModeChange({ productId, client: tx });
+      }
+    });
   }
 
   private buildWhere(query: {
@@ -1793,14 +2052,34 @@ export class ProductsService {
             },
           });
         }
-      } else if (p.availabilityMode === 'MANAGED_STOCK') {
-        await this.clearManagedStockForModeChange({
+      } else {
+        // Leaving MANAGED_STOCK and/or entering INVENTORY_CONTROLLED:
+        // cleanup + physical seeding run as ONE transaction (see
+        // applyModeSwitchEffects), so a failure rolls the pair back
+        // atomically. Note the mode flip itself already landed in
+        // the main update above, so a failure here still leaves the
+        // mode flipped with the pair rolled back — the re-save
+        // repair below is what recovers that state.
+        await this.applyModeSwitchEffects({
           productId: id,
           fromMode: p.availabilityMode,
           toMode: newMode,
           performedBy,
         });
       }
+    } else if (
+      newMode === 'INVENTORY_CONTROLLED' &&
+      p.availabilityMode === 'INVENTORY_CONTROLLED'
+    ) {
+      // Re-save restating INVENTORY_CONTROLLED: repair a switch whose
+      // cleanup/seeding never landed (e.g. the old non-transactional
+      // switch failed after the mode flip). A bare rename with no mode
+      // in the payload does not trigger this.
+      await this.repairModeSwitchIfNeeded({
+        productId: id,
+        targetMode: newMode,
+        performedBy,
+      });
     }
 
     await this.cache.invalidateByPrefix('product:');
@@ -2271,16 +2550,20 @@ export class ProductsService {
       // update (incl. any wholesale variant replacement), so it reads
       // the final stored quantities. performedBy is not threaded into
       // the draft endpoints, so the ledger actor stays unset here.
-      if (
-        p.availabilityMode === 'MANAGED_STOCK' &&
-        newMode &&
-        newMode !== 'MANAGED_STOCK' &&
-        newMode !== p.availabilityMode
-      ) {
-        await this.clearManagedStockForModeChange({
+      // Entering INVENTORY_CONTROLLED does NOT seed here: a fail-loud
+      // seeding error (no active warehouse) must not break editing a
+      // non-live draft on autosave, and a draft must not surface in
+      // the Physical tab before it goes live. The cleanup still runs
+      // transactionally now, and the seeding is deferred to publish
+      // (publishDraft seeds via the switch, or via the repair when
+      // the draft already stores INVENTORY_CONTROLLED). No re-save
+      // repair here either: autosave fires on every keystroke.
+      if (newMode && newMode !== p.availabilityMode) {
+        await this.applyModeSwitchEffects({
           productId: id,
           fromMode: p.availabilityMode,
           toMode: newMode,
+          seedPhysical: false,
         });
       }
       await this.cache.invalidateByPrefix('product:');
@@ -2511,12 +2794,25 @@ export class ProductsService {
 
       // Mode-switch cleanup on the publish path (2026-11-11): a draft
       // stored as MANAGED_STOCK that publishes into another mode gets
-      // the same clear + ledger treatment as update()/updateDraft().
-      if (p.availabilityMode === 'MANAGED_STOCK' && newMode !== 'MANAGED_STOCK') {
-        await this.clearManagedStockForModeChange({
+      // the same clear + ledger treatment as update()/updateDraft(),
+      // and publishing into INVENTORY_CONTROLLED seeds the zero-qty
+      // physical row(s) — both in one transaction. Publishing an
+      // already-INVENTORY_CONTROLLED draft repairs a switch whose
+      // cleanup/seeding never landed, so the product never goes live
+      // in NEITHER tab.
+      if (newMode !== p.availabilityMode) {
+        await this.applyModeSwitchEffects({
           productId: id,
           fromMode: p.availabilityMode,
           toMode: newMode,
+        });
+      } else if (
+        newMode === 'INVENTORY_CONTROLLED' &&
+        p.availabilityMode === 'INVENTORY_CONTROLLED'
+      ) {
+        await this.repairModeSwitchIfNeeded({
+          productId: id,
+          targetMode: newMode,
         });
       }
 

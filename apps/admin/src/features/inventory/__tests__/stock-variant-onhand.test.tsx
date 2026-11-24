@@ -290,3 +290,83 @@ describe('Stock menu — variant-level on-hand rows', () => {
     expect(rowCells(findRow(ui, 'Variable Tee'))[onHandIdx]).toBe('12')
   })
 })
+
+describe('Stock menu — Physical tab lists row-less products (virtual rows)', () => {
+  /** A row-less MANAGED_STOCK product, as listPhysical synthesises it. */
+  const VIRTUAL_ROW = {
+    id: 'virtual-prod-rowless-base',
+    productId: 'prod-rowless',
+    variantId: null,
+    warehouseId: null,
+    binLocationId: null,
+    quantity: 0,
+    reservedQuantity: 0,
+    product: {
+      id: 'prod-rowless',
+      name: 'Rowless Tee',
+      sku: 'ROW-1',
+      images: [],
+      lowStockQty: 5,
+      type: 'simple',
+      availabilityMode: 'MANAGED_STOCK',
+      warehouseId: null,
+    },
+    variant: null,
+    warehouse: null,
+    binLocation: null,
+    createdAt: null,
+    updatedAt: null,
+    _virtual: true,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('a row-less MANAGED_STOCK product appears as a 0/0 row with an Adjust entry point', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (String(url).includes('/inventory/stock-overview'))
+        return Promise.resolve({ data: STOCK_OVERVIEW })
+      if (String(url).includes('/inventory/physical'))
+        return Promise.resolve({ data: [VIRTUAL_ROW] })
+      if (String(url).includes('/warehouses')) return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+
+    const ui = await renderInventory()
+    await vi.waitFor(() => {
+      findRow(ui, 'Rowless Tee')
+    })
+
+    const { index: onHandIdx } = await onHandColumnIndex(ui)
+    const cells = rowCells(findRow(ui, 'Rowless Tee'))
+    expect(cells[onHandIdx]).toBe('0')
+    // The mode badge comes from the product payload, not the (absent) row.
+    expect(textOf(findRow(ui, 'Rowless Tee'))).toContain('Managed')
+    // The row exposes Adjust, so staff can seed the first stock.
+    const adjustBtn = Array.from(findRow(ui, 'Rowless Tee').querySelectorAll('button')).find((b) =>
+      textOf(b).includes('Adjust'),
+    )
+    expect(adjustBtn).toBeDefined()
+  })
+
+  it('virtual rows sit alongside real rows without disturbing their figures', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (String(url).includes('/inventory/stock-overview'))
+        return Promise.resolve({ data: STOCK_OVERVIEW })
+      if (String(url).includes('/inventory/physical'))
+        return Promise.resolve({ data: [...PHYSICAL_ROWS, VIRTUAL_ROW] })
+      if (String(url).includes('/warehouses')) return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+
+    const ui = await renderInventory()
+    await expandVariableProduct(ui)
+
+    const { index: onHandIdx } = await onHandColumnIndex(ui)
+    expect(rowCells(findRow(ui, 'TEE-S'))[onHandIdx]).toBe('7')
+    expect(rowCells(findRow(ui, 'TEE-M'))[onHandIdx]).toBe('3')
+    expect(rowCells(findRow(ui, 'Variable Tee'))[onHandIdx]).toBe('10')
+    expect(rowCells(findRow(ui, 'Rowless Tee'))[onHandIdx]).toBe('0')
+  })
+})

@@ -6,10 +6,15 @@ export interface WarehousePhysicalStockRow {
   id: string
   productId: string
   variantId: string | null
-  warehouseId: string
+  // Null for a virtual 0/0 row (2026-11-24 product-based listing): the
+  // row-less product has no warehouse yet. Virtual rows carry quantity 0,
+  // so they flow through the on-hand sums below unchanged.
+  warehouseId: string | null
   binLocationId: string | null
   quantity: number
   reservedQuantity: number
+  /** True for a synthetic 0/0 row standing in for a product with no physical record yet. */
+  _virtual?: boolean
 }
 
 /**

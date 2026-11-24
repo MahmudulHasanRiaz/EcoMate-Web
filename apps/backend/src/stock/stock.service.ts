@@ -1894,6 +1894,23 @@ export class StockService {
     }
   }
 
+  /**
+   * Physical tab listing — PRODUCT-based, not row-based (2026-11-24 fix).
+   *
+   * The tab used to list `PhysicalInventory` rows only, so a product with
+   * no physical row (every MS-mode product, every product just switched to
+   * INVENTORY_CONTROLLED) was invisible and staff had no Adjust entry point
+   * to seed its first stock. Now every stock-tracked product appears:
+   * real rows keep their exact shape, and a row-less MANAGED_STOCK /
+   * INVENTORY_CONTROLLED product (or a variant of one) gets one synthetic
+   * "virtual" row with 0/0 — `_virtual: true`, no warehouse/bin — so the
+   * tab can Adjust it into existence via the existing operatePhysical('add')
+   * path. ALWAYS_* products never get a virtual row (they hold no stock by
+   * definition); their REAL rows, and rows of inactive/draft products, are
+   * still returned exactly as before, so the other readers of this endpoint
+   * (detail page, drawer, warehouse stats, on-hand pre-validation) see no
+   * behaviour change for stocked products.
+   */
   async listPhysical(productId?: string, warehouseId?: string, binLocationId?: string) {
     const where: any = {};
     if (productId) where.productId = productId;
@@ -1903,10 +1920,21 @@ export class StockService {
     } else if (binLocationId === '') {
       where.binLocationId = null;
     }
-    return this.prisma.physicalInventory.findMany({
+    const rows = await this.prisma.physicalInventory.findMany({
       where,
       include: {
-        product: { select: { id: true, name: true, sku: true, images: true, lowStockQty: true } },
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            images: true,
+            lowStockQty: true,
+            type: true,
+            availabilityMode: true,
+            warehouseId: true,
+          },
+        },
         variant: {
           include: {
             attributeValues: {
@@ -1923,6 +1951,95 @@ export class StockService {
       },
       orderBy: { updatedAt: 'desc' },
     });
+
+    // One virtual 0/0 row per stockable unit with no matching real row.
+    // The query's where-clause is the primary filter; the in-JS guards keep
+    // the synthesis correct (and unit-testable) even if the query widens.
+    const covered = new Set(rows.map((r) => `${r.productId}|${r.variantId ?? ''}`));
+    const products = await this.prisma.product.findMany({
+      where: {
+        status: { not: 'draft' },
+        isActive: true,
+        availabilityMode: { in: ['MANAGED_STOCK', 'INVENTORY_CONTROLLED'] },
+        ...(productId ? { id: productId } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        images: true,
+        lowStockQty: true,
+        type: true,
+        availabilityMode: true,
+        warehouseId: true,
+        isActive: true,
+        status: true,
+        variants: {
+          where: { isActive: true },
+          include: {
+            attributeValues: {
+              include: {
+                attributeValue: {
+                  select: { id: true, value: true, attribute: { select: { name: true } } },
+                },
+              },
+            },
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const virtualRows: any[] = [];
+    for (const p of products) {
+      if (!p.isActive || p.status === 'draft') continue;
+      if (p.availabilityMode !== 'MANAGED_STOCK' && p.availabilityMode !== 'INVENTORY_CONTROLLED') continue;
+      const productPayload = {
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        images: p.images,
+        lowStockQty: p.lowStockQty,
+        type: p.type,
+        availabilityMode: p.availabilityMode,
+        warehouseId: p.warehouseId,
+      };
+      const pushVirtual = (variant: any) =>
+        virtualRows.push({
+          id: `virtual-${p.id}-${variant?.id ?? 'base'}`,
+          productId: p.id,
+          variantId: variant?.id ?? null,
+          warehouseId: null,
+          binLocationId: null,
+          quantity: 0,
+          reservedQuantity: 0,
+          product: productPayload,
+          variant: variant ?? null,
+          warehouse: null,
+          binLocation: null,
+          createdAt: null,
+          updatedAt: null,
+          _virtual: true,
+        });
+      if (p.type === 'variable') {
+        const variants = (p as any).variants ?? [];
+        if (variants.length === 0) {
+          // Variable product with no variants yet: one base row keeps it
+          // visible; the adjust endpoint still refuses product-level
+          // adjustments for variable products with a clear error.
+          if (!covered.has(`${p.id}|`)) pushVirtual(null);
+        } else {
+          for (const v of variants) {
+            if (!covered.has(`${p.id}|${v.id}`)) pushVirtual(v);
+          }
+        }
+      } else if (!covered.has(`${p.id}|`)) {
+        pushVirtual(null);
+      }
+    }
+
+    return [...rows, ...virtualRows];
   }
 
   async listReservations(warehouseId?: string, productId?: string) {

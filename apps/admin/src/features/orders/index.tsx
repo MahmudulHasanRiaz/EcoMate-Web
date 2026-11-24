@@ -39,6 +39,8 @@ import { CanonicalAttributionBadges } from '@/features/orders/canonical-attribut
 import { formatCourierDispatchToast } from '@/features/dispatch/courier-errors'
 import { useSteadfastSets } from '@/features/dispatch/steadfast-set-picker'
 import { BulkSteadfastDefaultWarning } from '@/features/orders/bulk-steadfast-warning'
+import { resolvePhysicalStockConfirmError, type PhysicalStockConfirmError } from '@/features/orders/physical-stock-confirm-error'
+import { PhysicalStockConfirmHelp } from '@/features/orders/components/physical-stock-confirm-help'
 
 const fallbackStatusColors: Record<string, string> = { Pending: 'var(--warning)', Confirmed: 'var(--info)', Cancelled: 'var(--danger)', 'On Hold': 'var(--accent-violet)', 'Hold': 'var(--accent-violet)', 'Recall': 'var(--warning)', 'No Response': 'var(--muted-foreground)', Packed: 'var(--accent-cyan)', Shipped: 'var(--success)', 'Shipping': 'var(--accent-cyan)', 'In Courier': 'var(--accent-violet)', Delivered: 'var(--success)', 'Partial Return': 'var(--warning)', 'Return Pending': 'var(--accent-pink)', Returned: 'var(--danger)', Damaged: 'var(--danger)' }
 const nn = (v: number | string) => Number(v)
@@ -693,6 +695,10 @@ export function Orders() {
   const [statusDialog, setStatusDialog] = useState<{ order: OrderResponse; newStatusId: string; newStatusName: string } | null>(null)
   const [statusNote, setStatusNote] = useState('')
   const [blockPhones, setBlockPhones] = useState<{ phones: string[]; contextLabel?: string } | null>(null)
+  // Confirm-gate physical-stock help (2026-11-24, Issue 4): when confirm
+  // fails for missing/insufficient physical stock, the dialog shows the
+  // reason plus a direct path to add stock for that product.
+  const [physicalStockError, setPhysicalStockError] = useState<PhysicalStockConfirmError | null>(null)
 
   useEffect(() => { const t = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 350); return () => clearTimeout(t) }, [search])
 
@@ -721,8 +727,21 @@ export function Orders() {
   const statusMut = useMutation({
     mutationFn: ({ id, statusId, note }: { id: string; statusId: string; note?: string }) => ordersApi.updateStatus(id, statusId, note),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['orders'] }); toast.success('Status updated') },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update status'),
+    onError: (e: any, variables) => {
+      const msg = e?.response?.data?.message || 'Failed to update status'
+      // Confirm-gate physical-stock failure (2026-11-24, Issue 4): keep
+      // the toast, but ALSO show the reason with a direct path to add
+      // physical stock for that product inside the still-open dialog.
+      const failedOrder = (data?.data || []).find((o: OrderResponse) => o.id === variables?.id)
+      const stockError = resolvePhysicalStockConfirmError(msg, (failedOrder?.items as any[]) || [])
+      if (stockError) setPhysicalStockError(stockError)
+      toast.error(msg)
+    },
   })
+
+  // A failed confirm starts fresh each time the dialog opens for another
+  // order/status (or closes) — a stale "add stock" banner must never linger.
+  useEffect(() => { setPhysicalStockError(null) }, [statusDialog])
 
   const bulkStatusMut = useMutation({
     mutationFn: (d: { ids: string[]; statusId: string }) => apiClient.post('/orders/bulk/status', d),
@@ -1662,6 +1681,7 @@ export function Orders() {
                     <p className="text-sm font-semibold mt-0.5 text-primary">{statusDialog.newStatusName}</p>
                   </div>
                 </div>
+                <PhysicalStockConfirmHelp error={physicalStockError} />
                 <div className="space-y-1.5">
                   <Label htmlFor="status-note" className="text-xs font-medium">Note (optional)</Label>
                   <Textarea id="status-note" placeholder="Reason for this status change..." value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2} className="text-xs rounded-lg border-border/70" />
