@@ -709,6 +709,32 @@ probe_ddl() {
       fi
       ;;
 
+    20261124215959_purchase_status_default_repair)
+      # DDL: none observable — this migration only drops a blocking TEXT
+      # default on "Purchase"."status" when the column is not yet the enum,
+      # so 20261124220000's ALTER COLUMN TYPE can run (Postgres 42804
+      # otherwise). APPLIED = the blocking state is gone: column is the
+      # enum, or text WITHOUT a default, or no such column at all.
+      # NOT_APPLIED = column is text WITH a default (a retry can drop it).
+      col_type="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT COALESCE(udt_name, '') FROM information_schema.columns
+           WHERE table_name = 'Purchase' AND column_name = 'status';"
+      )"
+      has_default="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_attrdef d
+           JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+           JOIN pg_class c ON c.oid = d.adrelid
+           WHERE c.relname = 'Purchase' AND a.attname = 'status';"
+      )"
+      if [ "$col_type" = "PurchaseStatus" ] || [ -z "$col_type" ] || [ "$has_default" = "0" ]; then
+        echo "APPLIED"
+      else
+        echo "NOT_APPLIED"
+      fi
+      ;;
+
     20261124220000_purchase_status_enum_repair)
       # DDL: "PurchaseStatus" enum (5 labels) + "Purchase"."status" column
       # of that type with its 'draft' default. Repairs drifted tenant DBs

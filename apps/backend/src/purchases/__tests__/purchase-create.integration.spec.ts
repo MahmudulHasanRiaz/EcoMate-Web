@@ -49,6 +49,23 @@ const REPAIR_MIGRATION_SQL = fs.readFileSync(
   'utf8',
 );
 
+// Pre-repair for the above (20261124215959): drops a blocking TEXT default
+// on "Purchase"."status" so the repair migration's ALTER COLUMN TYPE can
+// run. Applied first, in deploy order, wherever the repair is applied.
+const PRE_REPAIR_MIGRATION_SQL = fs.readFileSync(
+  path.resolve(
+    __dirname,
+    '..',
+    '..',
+    '..',
+    'prisma',
+    'migrations',
+    '20261124215959_purchase_status_default_repair',
+    'migration.sql',
+  ),
+  'utf8',
+);
+
 const EXPECTED_ENUM_LABELS = [
   'draft',
   'ordered',
@@ -140,7 +157,12 @@ describe('purchase create — real-DB smoke (FixedPlus 42704 / P2039)', () => {
       const [{ exists }] = await prisma.$queryRaw<{ exists: boolean }[]>`
         SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PurchaseStatus') AS exists
       `;
-      if (!exists) await pool.query(REPAIR_MIGRATION_SQL);
+      if (!exists) {
+        // Pre-repair first: on a text column WITH a default the repair
+        // alone fails with 42804 (see the with-default drift test below).
+        await pool.query(PRE_REPAIR_MIGRATION_SQL);
+        await pool.query(REPAIR_MIGRATION_SQL);
+      }
     } catch {
       // Best-effort repair only; the assertions above already reported.
     }
@@ -233,6 +255,80 @@ describe('purchase create — real-DB smoke (FixedPlus 42704 / P2039)', () => {
       expect(created.status).toBe('ordered');
     } finally {
       // Always leave the database healthy, even on assertion failure.
+      await pool.query(REPAIR_MIGRATION_SQL);
+    }
+  });
+
+  it('drift WITH a text default: repair alone fails 42804, pre-repair + repair fixes it', async () => {
+    try {
+      // The exact FixedPlus state the first round MISSED: text column WITH
+      // a TEXT default ('draft'::text), enum type gone. That round's
+      // scratch repro used a text column with NO default, so the repair
+      // migration's ALTER succeeded there and the 42804 was never seen —
+      // until the live redeploy crash-looped on it (P3018).
+      await pool.query(
+        'ALTER TABLE "Purchase" ALTER COLUMN "status" DROP DEFAULT',
+      );
+      await pool.query(
+        'ALTER TABLE "Purchase" ALTER COLUMN "status" TYPE text USING "status"::text',
+      );
+      await pool.query(
+        `ALTER TABLE "Purchase" ALTER COLUMN "status" SET DEFAULT 'draft'::text`,
+      );
+      await pool.query('DROP TYPE "PurchaseStatus"');
+
+      const [{ column_default: driftDefault, udt_name: driftType }] =
+        await prisma.$queryRaw<{ udt_name: string; column_default: string }[]>`
+          SELECT udt_name, column_default FROM information_schema.columns
+          WHERE table_name = 'Purchase' AND column_name = 'status'
+        `;
+      expect(driftType).toBe('text');
+      expect(driftDefault).toContain('draft');
+
+      // Purchase create fails the same way as live (42704 / P2039).
+      let failure: any;
+      try {
+        await createPurchaseViaServiceShape(supplierId, productId);
+      } catch (e) {
+        failure = e;
+      }
+      expect(failure).toBeDefined();
+      expect(failure.code).toBe('P2039');
+      expect(JSON.stringify(failure.meta)).toContain('42704');
+
+      // THE REGRESSION: the repair migration ALONE cannot fix this state —
+      // Postgres refuses ALTER COLUMN TYPE while a text default exists.
+      let repairFailure: any;
+      try {
+        await pool.query(REPAIR_MIGRATION_SQL);
+      } catch (e) {
+        repairFailure = e;
+      }
+      expect(repairFailure).toBeDefined();
+      expect(
+        String(
+          (repairFailure as any)?.code ?? repairFailure?.message ?? '',
+        ),
+      ).toContain('42804');
+
+      // Pre-repair (drop the blocking default) + repair, in deploy order.
+      await pool.query(PRE_REPAIR_MIGRATION_SQL);
+      await pool.query(REPAIR_MIGRATION_SQL);
+
+      const created = await createPurchaseViaServiceShape(supplierId, productId);
+      purchaseIds.push(created.id);
+      expect(created.status).toBe('ordered');
+      const [{ udt_name: colType, column_default: colDefault }] =
+        await prisma.$queryRaw<{ udt_name: string; column_default: string }[]>`
+          SELECT udt_name, column_default FROM information_schema.columns
+          WHERE table_name = 'Purchase' AND column_name = 'status'
+        `;
+      expect(colType).toBe('PurchaseStatus');
+      expect(colDefault).toContain('draft');
+    } finally {
+      // Always leave the database healthy, even on assertion failure:
+      // pre-repair first, otherwise the repair alone fails on this state.
+      await pool.query(PRE_REPAIR_MIGRATION_SQL);
       await pool.query(REPAIR_MIGRATION_SQL);
     }
   });
