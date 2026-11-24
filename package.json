@@ -87,7 +87,8 @@
     },
     "@eslint/config-array": {
       "minimatch": "^11.0.4"
-    }
+    },
+    "effect": "^3.22.1"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
