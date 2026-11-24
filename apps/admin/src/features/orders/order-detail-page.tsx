@@ -87,6 +87,8 @@ import { DISPATCH_STATUSES, getDispatchIdentifierLabels } from '@/features/dispa
 import { formatCourierDispatchToast } from '@/features/dispatch/courier-errors'
 import { STATUS_COLORS as statusColors } from '@/features/orders/status-transitions'
 import { countTimelineSources, filterTimeline, loadTimelineFilter, saveTimelineFilter, timelineActorBadge, type TimelineFilter } from '@/features/orders/timeline-filter'
+import { resolvePhysicalStockConfirmError, type PhysicalStockConfirmError } from '@/features/orders/physical-stock-confirm-error'
+import { PhysicalStockConfirmHelp } from '@/features/orders/components/physical-stock-confirm-help'
 
 const nn = (v: number | string) => Number(v)
 const fmt = (v: number | string) => nn(v).toFixed(2)
@@ -339,6 +341,10 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
   const [showStatusDialog, setShowStatusDialog] = useState<string | null>(null)
   const [blockPhones, setBlockPhones] = useState<{ phones: string[]; contextLabel?: string } | null>(null)
   const [statusNote, setStatusNote] = useState('')
+  // Confirm-gate physical-stock help (2026-11-24, Issue 4): when confirm
+  // fails for missing/insufficient physical stock, the dialog shows the
+  // reason plus a direct path to add stock for that product.
+  const [physicalStockError, setPhysicalStockError] = useState<PhysicalStockConfirmError | null>(null)
 
   // ── Collapsible sidebar panels ────────────────────────────────────
 
@@ -454,9 +460,18 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
         setShowRecordRefund(true)
         return
       }
+      // Confirm-gate physical-stock failure (2026-11-24, Issue 4): keep
+      // the toast, but ALSO show the reason with a direct path to add
+      // physical stock for that product inside the still-open dialog.
+      const stockError = resolvePhysicalStockConfirmError(msg, (order?.items as any[]) || [])
+      if (stockError) setPhysicalStockError(stockError)
       toast.error(msg)
     },
   })
+
+  // A failed confirm starts fresh each time the dialog opens for another
+  // status (or closes) — a stale "add stock" banner must never linger.
+  useEffect(() => { setPhysicalStockError(null) }, [showStatusDialog])
 
   // ── Pre-cancel live verification + refund choices (owner spec
   // 2026-10-30) ── When the status dialog targets Cancelled on an order
@@ -2458,6 +2473,7 @@ export function OrderDetailPage({ id, backTo = '/op/orders', backLabel = 'Back' 
                   </div>
                 </div>
               ) : null}
+              <PhysicalStockConfirmHelp error={physicalStockError} />
               <div><Label>Note (optional)</Label><Textarea value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2} /></div>
             </div>
             <div className='flex justify-end gap-2'>

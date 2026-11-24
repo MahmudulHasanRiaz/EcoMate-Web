@@ -115,6 +115,15 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
   const lastAuditedAt: string | null = ledgerEntries[0]?.performedAt ?? ledgerEntries[0]?.createdAt ?? null
   const reservations: any[] = Array.isArray(reservationsData) ? reservationsData : []
 
+  // Physical tab listing is product-based (2026-11-24): a row-less product
+  // arrives as one synthetic `_virtual` 0/0 row, not an empty list — so
+  // the table below renders a "— / — / 0" line for it. Name that line for
+  // what it is, or staff read it as a real (empty) location.
+  const allPhysicalRowsVirtual =
+    Array.isArray(physicalData) &&
+    physicalData.length > 0 &&
+    physicalData.every((pi: any) => pi._virtual)
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="sm:max-w-2xl flex flex-col gap-0 p-0">
@@ -219,6 +228,11 @@ export function InventoryDetailDrawer({ open, onOpenChange, productDetails, onAd
               {/* Locations / Lots */}
               {imEnabled && (
               <TabsContent value="locations" className="space-y-4 pt-4">
+                {allPhysicalRowsVirtual && (
+                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                    No physical stock recorded for this product yet — use Adjust to add the first stock.
+                  </p>
+                )}
                 <div className="rounded-md border bg-card">
                   <Table>
                     <TableHeader>

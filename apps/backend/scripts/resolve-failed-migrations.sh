@@ -709,6 +709,53 @@ probe_ddl() {
       fi
       ;;
 
+    20261124220000_purchase_status_enum_repair)
+      # DDL: "PurchaseStatus" enum (5 labels) + "Purchase"."status" column
+      # of that type with its 'draft' default. Repairs drifted tenant DBs
+      # where the type is gone (Prisma purchase.create() -> 42704 / P2039).
+      # APPLIED = type complete AND column is the enum — a healthy DB that
+      # never drifted is already APPLIED (the migration is a no-op there).
+      # NOT_APPLIED = type missing AND column not the enum (pre-migration
+      # drift state), OR type complete AND column still text with only
+      # valid enum values (a retry can convert it). Anything else
+      # (partial enum labels, out-of-enum stored values) -> UNKNOWN:
+      # the migration itself refuses those states, so a human must fix
+      # the rows first.
+      enum_count="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+           WHERE t.typname = 'PurchaseStatus'
+             AND e.enumlabel IN ('draft','ordered','partially_received','received','cancelled');"
+      )"
+      col_is_enum="$(
+        psql "$DATABASE_URL" -tAc \
+          "SELECT count(*) FROM information_schema.columns
+           WHERE table_name = 'Purchase' AND column_name = 'status'
+             AND udt_name = 'PurchaseStatus';"
+      )"
+      if [ "$enum_count" = "5" ] && [ "$col_is_enum" = "1" ]; then
+        echo "APPLIED"
+      elif [ "$enum_count" = "0" ] && [ "$col_is_enum" = "0" ]; then
+        echo "NOT_APPLIED"
+      elif [ "$enum_count" = "5" ] && [ "$col_is_enum" = "0" ]; then
+        # Type exists but the column is still text: re-runnable only when
+        # every stored value is a valid enum label. If the table does not
+        # exist the query errors and bad_vals is empty -> UNKNOWN (safe).
+        bad_vals="$(
+          psql "$DATABASE_URL" -tAc \
+            "SELECT count(*) FROM \"Purchase\"
+             WHERE \"status\" NOT IN ('draft','ordered','partially_received','received','cancelled');"
+        )"
+        if [ "$bad_vals" = "0" ]; then
+          echo "NOT_APPLIED"
+        else
+          echo "UNKNOWN"
+        fi
+      else
+        echo "UNKNOWN"
+      fi
+      ;;
+
     *)
       echo "UNKNOWN"
       ;;

@@ -22,10 +22,19 @@ interface AdjustStockModalProps {
   variantName?: string
   productName?: string
   availabilityMode?: string
+  /**
+   * Physical tab entry point (2026-11-24): the warehouse the dialog opens
+   * with — the warehouse staff are already filtered to, else the product's
+   * own warehouse (set by the Stock page from the row). The picker stays
+   * changeable; a default that is not among the loaded warehouses is
+   * ignored rather than sent blindly, and with several warehouses and no
+   * default the picker asks instead of silently picking one.
+   */
+  defaultWarehouseId?: string
   onSuccess?: () => void
 }
 
-export function AdjustStockModal({ open, onOpenChange, productId, variantId, variantName, productName, availabilityMode, onSuccess }: AdjustStockModalProps) {
+export function AdjustStockModal({ open, onOpenChange, productId, variantId, variantName, productName, availabilityMode, defaultWarehouseId, onSuccess }: AdjustStockModalProps) {
   const { data: imEnabled = true } = useInventoryManagement()
   const [quantity, setQuantity] = useState('')
   const [reason, setReason] = useState('')
@@ -100,6 +109,21 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
       setWarehouseId(warehouses[0].id)
     }
   }, [warehouses, warehouseId])
+
+  // Physical tab entry point: open on the caller's default warehouse
+  // (the filtered warehouse, else the product's own) once the warehouse
+  // list has loaded. Applies only while nothing is picked yet, so a
+  // manual choice is never overwritten, and only when the default is
+  // actually among the loaded warehouses — a stale id is ignored rather
+  // than sent to the server. With several warehouses and no default the
+  // picker stays empty and asks; with zero warehouses the fail-loud
+  // banner below blocks the save instead of silently picking one.
+  useEffect(() => {
+    if (!open || warehouseId) return
+    if (defaultWarehouseId && warehouses?.some((w: any) => w.id === defaultWarehouseId)) {
+      setWarehouseId(defaultWarehouseId)
+    }
+  }, [open, defaultWarehouseId, warehouses, warehouseId])
 
   // Reset dependent selections when parent changes
   useEffect(() => {
@@ -215,6 +239,13 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
 
   const hasZones = zones && zones.length > 0
 
+  // Owner edge decision (2026-11-24): a physical row needs a warehouse.
+  // Zero active warehouses is a loud failure, never a silent default —
+  // the banner names the missing piece and Save stays disabled until a
+  // warehouse exists. `warehouses === undefined` is still loading, not
+  // zero, so the banner only fires once the list has resolved empty.
+  const noWarehouses = !!warehouses && warehouses.length === 0
+
   return (
     <>
     <Dialog open={open} onOpenChange={(v) => {
@@ -248,6 +279,13 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
                 <div className='bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2'>
                   <p className='text-xs text-blue-700 dark:text-blue-300'>
                     <strong>Managed Stock product:</strong> This adjustment updates physical warehouse stock used for order processing. To update storefront availability, set the managed stock quantity in the product settings.
+                  </p>
+                </div>
+              )}
+              {noWarehouses && (
+                <div role="alert" className='bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-md px-3 py-2'>
+                  <p className='text-xs text-red-700 dark:text-red-300'>
+                    <strong>No warehouse exists yet.</strong> Physical stock must live in a warehouse — create a warehouse first, then adjust stock.
                   </p>
                 </div>
               )}
@@ -410,6 +448,7 @@ export function AdjustStockModal({ open, onOpenChange, productId, variantId, var
                 onClick={handleSave}
                 disabled={
                   adjustMut.isPending ||
+                  noWarehouses ||
                   insufficientStock ||
                   (availabilityMode != null &&
                     availabilityMode !== 'MANAGED_STOCK' &&

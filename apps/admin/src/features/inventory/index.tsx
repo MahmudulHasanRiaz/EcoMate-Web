@@ -308,10 +308,13 @@ export function Inventory() {
 
       return items
     } else {
-      // PHYSICAL view: one row per product that HAS physical records,
-      // built entirely from the physical endpoint's own (complete,
-      // server-filtered) rows — the product catalogue is not involved, so
-      // products outside any single catalogue page are no longer dropped.
+      // PHYSICAL view: one row per product — real physical records where
+      // they exist, plus a virtual 0/0 row for every stock-tracked product
+      // (MANAGED_STOCK / INVENTORY_CONTROLLED) with no physical record yet
+      // (backend listPhysical synthesises those, `_virtual: true`), so a
+      // row-less product is visible and Adjust can seed its first stock.
+      // Products outside any single catalogue page are never dropped: the
+      // endpoint returns the complete server-filtered set.
       let items = physicalGroups.map((g) => {
         const records = g.records as any[]
         const prod = g.product ?? {}
@@ -321,6 +324,8 @@ export function Inventory() {
         const hasVariants = records.some((r) => r.variantId)
         // One expanded row per variant (aggregated across warehouses/bins)
         // for variable products; per location record for simple ones.
+        // Virtual (row-less) variant rows flow through the same dedupe —
+        // they carry `_virtual: true` and 0/0, and sort with the rest.
         const displayVariants = hasVariants ? dedupePhysicalVariants(records) : records
         const warehouseNames = [...new Set(records.map((r) => r.warehouse?.name).filter(Boolean))] as string[]
         const binCodes = [...new Set(records.map((r) => r.binLocation?.code).filter(Boolean))] as string[]
@@ -336,7 +341,7 @@ export function Inventory() {
           productId: prod.id,
           name: prod.name,
           sku: prod.sku || '—',
-          availabilityMode: undefined as string | undefined,
+          availabilityMode: prod.availabilityMode as string | undefined,
           warehouse: hasVariants && displayVariants.length > 1
             ? `${displayVariants.length} variants`
             : warehouseNames.length > 1
@@ -361,7 +366,8 @@ export function Inventory() {
             sku: prod.sku,
             images: prod.images,
             lowStockQty,
-            type: hasVariants ? 'variable' : 'simple',
+            type: prod.type ?? (hasVariants ? 'variable' : 'simple'),
+            warehouseId: prod.warehouseId ?? null,
             onHand: totalQty,
             available: avail,
             reserved: totalReserved,
@@ -369,7 +375,7 @@ export function Inventory() {
           },
           _physicalVariants: displayVariants,
           _expandable: hasVariants || records.length > 1,
-          _hasPhysicalStock: true,
+          _hasPhysicalStock: records.some((r) => !r._virtual),
         }
       })
 
@@ -417,6 +423,11 @@ export function Inventory() {
 
   const [adjustAvailabilityMode, setAdjustAvailabilityMode] = useState<string | undefined>()
   const [adjustVariantName, setAdjustVariantName] = useState<string | undefined>()
+  // Physical tab: warehouse the Adjust dialog opens with — the warehouse
+  // staff are already filtered to, else the product's own warehouse. The
+  // dialog still lets them change it; with several warehouses and no
+  // default the picker asks instead of silently picking one.
+  const [adjustDefaultWarehouseId, setAdjustDefaultWarehouseId] = useState<string | undefined>()
   const handleQuickAdjust = (productId?: string, variantId?: string, variantName?: string) => {
     if (!productId) return
     const item = stockRows.find(p => p.productId === productId)
@@ -432,6 +443,11 @@ export function Inventory() {
     setAdjustVariantId(variantId)
     setAdjustVariantName(variantName)
     setAdjustAvailabilityMode(item?.availabilityMode)
+    setAdjustDefaultWarehouseId(
+      viewMode === 'PHYSICAL'
+        ? (selectedWarehouse !== 'all_wh' ? selectedWarehouse : (item?.raw?.warehouseId ?? undefined))
+        : undefined,
+    )
     setAdjustOpen(true)
   }
 
@@ -880,6 +896,7 @@ export function Inventory() {
           variantName={adjustVariantName}
           productName={stockRows.find(p => p.productId === adjustProductId)?.name}
           availabilityMode={adjustAvailabilityMode}
+          defaultWarehouseId={adjustDefaultWarehouseId}
           onSuccess={() => {
             // Finding 3: invalidating only the list keys left the drawer's
             // per-product queries (and the detail page) stale.

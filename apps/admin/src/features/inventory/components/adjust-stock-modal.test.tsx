@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { userEvent } from 'vitest/browser'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { AdjustStockModal } from './adjust-stock-modal'
 
 const mockGet = vi.hoisted(() => vi.fn())
@@ -15,11 +16,11 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: v
 const CODE_ERR = { response: { data: { code: 'DESTRUCTIVE_ADJUSTMENT', message: 'server guard' } } }
 const CONFIRM_TEXT = 'This removes most or all of the remaining available stock at this location. Confirm?'
 
-function renderModal() {
+function renderModal(props: { defaultWarehouseId?: string } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <AdjustStockModal open onOpenChange={() => {}} productId="prod-1" productName="Test Product" availabilityMode="INVENTORY_CONTROLLED" />
+      <AdjustStockModal open onOpenChange={() => {}} productId="prod-1" productName="Test Product" availabilityMode="INVENTORY_CONTROLLED" defaultWarehouseId={props.defaultWarehouseId} />
     </QueryClientProvider>,
   )
 }
@@ -210,5 +211,71 @@ describe('AdjustStockModal insufficient-stock pre-validation', () => {
     await userEvent.click(ui.getByRole('button', { name: 'Save Adjustment' }))
     expect(mockPost).toHaveBeenCalledTimes(1)
     expect(mockPost.mock.calls[0][1]).toMatchObject({ quantity: 5, unitCost: 120 })
+  })
+})
+
+describe('AdjustStockModal default warehouse (Physical tab virtual rows)', () => {
+  function mockWarehousesApi(warehouses: { id: string; name: string }[]) {
+    mockGet.mockImplementation((url: string) => {
+      if (String(url).includes('inventory-enabled')) return Promise.resolve({ data: { enabled: true } })
+      if (String(url) === '/inventory/physical') {
+        return Promise.resolve({
+          data: [{ id: 'pi-1', productId: 'prod-1', variantId: null, warehouseId: 'wh-1', binLocationId: null, quantity: 10, reservedQuantity: 0 }],
+        })
+      }
+      if (String(url).includes('bin-locations')) return Promise.resolve({ data: [] })
+      if (String(url).includes('/zones') || String(url).includes('/racks') || String(url).includes('/shelves')) return Promise.resolve({ data: [] })
+      if (String(url).startsWith('/warehouses')) return Promise.resolve({ data: warehouses })
+      return Promise.resolve({ data: [] })
+    })
+  }
+
+  async function fillAdd(ui: Awaited<ReturnType<typeof renderModal>>) {
+    await userEvent.fill(ui.getByLabelText(/Adjustment Quantity/), '5')
+    await userEvent.fill(ui.getByLabelText(/Unit Cost/), '120')
+    await userEvent.click(ui.getByRole('combobox').filter({ hasText: 'Select reason' }))
+    await userEvent.click(ui.getByRole('option', { name: 'Damage' }))
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPost.mockResolvedValue({ data: { ok: true } })
+  })
+
+  it('opens on the default warehouse when several exist (picker stays changeable)', async () => {
+    mockWarehousesApi([{ id: 'wh-1', name: 'Main' }, { id: 'wh-2', name: 'Second' }])
+    const ui = await renderModal({ defaultWarehouseId: 'wh-2' })
+
+    // The trigger shows the default once the warehouse list has loaded.
+    await expect.element(ui.getByText('Second')).toBeInTheDocument()
+    await fillAdd(ui)
+
+    await userEvent.click(ui.getByRole('button', { name: 'Save Adjustment' }))
+    expect(mockPost).toHaveBeenCalledTimes(1)
+    expect(mockPost.mock.calls[0][1]).toMatchObject({ quantity: 5, unitCost: 120, warehouseId: 'wh-2' })
+  })
+
+  it('a default that is not among the loaded warehouses is ignored, never sent blindly', async () => {
+    mockWarehousesApi([{ id: 'wh-1', name: 'Main' }, { id: 'wh-2', name: 'Second' }])
+    const ui = await renderModal({ defaultWarehouseId: 'wh-gone' })
+
+    // Picker stays empty — staff must choose instead of the dialog
+    // silently posting a warehouse that no longer exists.
+    await expect.element(ui.getByText('Select warehouse')).toBeInTheDocument()
+    await fillAdd(ui)
+
+    await userEvent.click(ui.getByRole('button', { name: 'Save Adjustment' }))
+    expect(mockPost).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('Select a warehouse')
+  })
+
+  it('zero warehouses fails loud: banner shown and Save disabled', async () => {
+    mockWarehousesApi([])
+    const ui = await renderModal({ defaultWarehouseId: undefined })
+
+    await expect.element(ui.getByText('No warehouse exists yet.')).toBeInTheDocument()
+    await expect.element(ui.getByText(/create a warehouse first/)).toBeInTheDocument()
+    await expect.element(ui.getByRole('button', { name: 'Save Adjustment' })).toBeDisabled()
+    expect(mockPost).not.toHaveBeenCalled()
   })
 })
